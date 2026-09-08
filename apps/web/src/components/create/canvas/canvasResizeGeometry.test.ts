@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
+  getEditorResizeOffset,
   resizeEditorRect,
   resizeNodeRect,
   type CanvasResizeRect,
@@ -71,6 +72,63 @@ describe('canvas resize geometry', () => {
       width: 760,
       height: 380,
     })
+  })
+
+  test('keeps node corners inside supplied Canvas stage bounds', () => {
+    assert.deepEqual(resizeNodeRect({
+      rect: nodeRect,
+      handle: 'nw',
+      deltaX: -1_000,
+      deltaY: -1_000,
+      positionBounds: { minX: 32, minY: 80, maxX: 900, maxY: 700 },
+    }), {
+      x: 32,
+      y: 166,
+      width: 468,
+      height: 234,
+    })
+    assert.deepEqual(resizeNodeRect({
+      rect: nodeRect,
+      handle: 'se',
+      deltaX: 1_000,
+      deltaY: 1_000,
+      positionBounds: { minX: 32, minY: 80, maxX: 620, maxY: 420 },
+    }), {
+      x: 100,
+      y: 200,
+      width: 440,
+      height: 220,
+    })
+  })
+
+  test('returns a stage-bounded node even when its starting position is partly outside the stage', () => {
+    assert.deepEqual(resizeNodeRect({
+      rect: { x: -40, y: 120, width: 400, height: 200 },
+      handle: 'se',
+      deltaX: 20,
+      deltaY: 20,
+      positionBounds: { minX: 16, minY: 16, maxX: 720, maxY: 520 },
+    }), {
+      x: 16,
+      y: 120,
+      width: 420,
+      height: 210,
+    })
+  })
+
+  test('keeps a node within the stage when a partly outside node grows toward the southeast', () => {
+    const result = resizeNodeRect({
+      rect: { x: -40, y: 120, width: 400, height: 200 },
+      handle: 'se',
+      deltaX: 1_000,
+      deltaY: 1_000,
+      positionBounds: { minX: 16, minY: 16, maxX: 720, maxY: 520 },
+    })
+
+    assert.ok(result.x >= 16)
+    assert.ok(result.y >= 16)
+    assert.ok(result.x + result.width <= 720)
+    assert.ok(result.y + result.height <= 520)
   })
 
   test('moves only the north edge vertically', () => {
@@ -143,6 +201,27 @@ describe('canvas resize geometry', () => {
       width: 440,
       height: 225,
     })
+  })
+
+  test('offsets a centered editor shell so its opposite edge stays pinned', () => {
+    assert.deepEqual(getEditorResizeOffset({
+      handle: 'w',
+      offset: { x: 0, y: 0 },
+      startSize: { width: 400, height: 240 },
+      nextSize: { width: 440, height: 240 },
+    }), { x: -20, y: 0 })
+    assert.deepEqual(getEditorResizeOffset({
+      handle: 'n',
+      offset: { x: 0, y: 0 },
+      startSize: { width: 400, height: 240 },
+      nextSize: { width: 400, height: 280 },
+    }), { x: 0, y: -20 })
+    assert.deepEqual(getEditorResizeOffset({
+      handle: 'se',
+      offset: { x: 12, y: -8 },
+      startSize: { width: 400, height: 240 },
+      nextSize: { width: 440, height: 280 },
+    }), { x: 32, y: 12 })
   })
 
   test('clamps editor dimensions to supplied bounds while preserving opposing edges', () => {

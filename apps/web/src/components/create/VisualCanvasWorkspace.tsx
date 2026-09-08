@@ -17,10 +17,13 @@ import {
   getCanvasNodeSize,
   normalizeLegacyCanvasNodeSize,
   stabilizeCanvasTaskDialogSizing,
+  type CanvasOffset,
   type CanvasTaskDialogMeasurements,
   type CanvasStageRect,
 } from '@/components/create/canvas/canvasWorkspaceLayout'
 import {
+  getEditorResizeOffset,
+  resizeEditorRect,
   resizeNodeRect,
   type CanvasResizeHandle,
 } from '@/components/create/canvas/canvasResizeGeometry'
@@ -474,6 +477,14 @@ function devPerf(label: string, mode: 'mark' | 'start' | 'end' = 'mark') {
 }
 
 type CanvasNodeResizeHandle = Extract<CanvasResizeHandle, 'nw' | 'ne' | 'se' | 'sw'>
+type CanvasTaskEditorResizeHandle = CanvasResizeHandle
+
+type CanvasTaskEditorSize = {
+  width: number
+  height: number
+}
+
+type CanvasTaskEditorOffset = CanvasOffset
 
 type VisualCanvasNode = CanvasNodeCardNode & {
   assetId?: string
@@ -1019,6 +1030,31 @@ function metadataRecord(metadataJson: unknown) {
   return metadataJson && typeof metadataJson === 'object' && !Array.isArray(metadataJson)
     ? metadataJson as Record<string, unknown>
     : {}
+}
+
+function getTaskEditorSize(metadataJson: unknown): CanvasTaskEditorSize | null {
+  const size = metadataRecord(metadataJson).taskEditorSize
+  if (!size || typeof size !== 'object' || Array.isArray(size)) return null
+  const { width, height } = size as Record<string, unknown>
+  if (
+    typeof width !== 'number'
+    || typeof height !== 'number'
+    || !Number.isFinite(width)
+    || !Number.isFinite(height)
+    || width <= 0
+    || height <= 0
+  ) return null
+  return { width, height }
+}
+
+function getTaskEditorOffset(metadataJson: unknown): CanvasTaskEditorOffset {
+  const offset = metadataRecord(metadataJson).taskEditorOffset
+  if (!offset || typeof offset !== 'object' || Array.isArray(offset)) return { x: 0, y: 0 }
+  const { x, y } = offset as Record<string, unknown>
+  if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return { x: 0, y: 0 }
+  }
+  return { x, y }
 }
 
 function stringValue(value: unknown) {
@@ -2623,6 +2659,9 @@ export function VisualCanvasWorkspace({
   const [activeNodeContextCategory, setActiveNodeContextCategory] = useState<NodeContextCategory | null>(null)
   const [nodeTaskDialogHeight, setNodeTaskDialogHeight] = useState(292)
   const [nodeTaskDialogCompactControls, setNodeTaskDialogCompactControls] = useState(false)
+  const [nodeTaskDialogChromeHeight, setNodeTaskDialogChromeHeight] = useState(0)
+  const [taskEditorSize, setTaskEditorSize] = useState<CanvasTaskEditorSize | null>(null)
+  const [taskEditorOffset, setTaskEditorOffset] = useState<CanvasTaskEditorOffset>({ x: 0, y: 0 })
   const nodeContextPanAdjustmentKeyRef = useRef<string | null>(null)
   const nodeTaskDialogFixedTopRef = useRef<HTMLDivElement | null>(null)
   const nodeTaskDialogFixedBottomRef = useRef<HTMLDivElement | null>(null)
@@ -2907,6 +2946,18 @@ export function VisualCanvasWorkspace({
     startClientY: number
     startRect: Pick<VisualCanvasNode, 'x' | 'y' | 'width' | 'height'>
     latestRect: Pick<VisualCanvasNode, 'x' | 'y' | 'width' | 'height'>
+  } | null>(null)
+  const taskEditorResizeRef = useRef<{
+    nodeId: string
+    pointerId: number
+    handle: CanvasTaskEditorResizeHandle
+    startClientX: number
+    startClientY: number
+    startSize: CanvasTaskEditorSize
+    startOuterSize: CanvasTaskEditorSize
+    startOffset: CanvasTaskEditorOffset
+    latestSize: CanvasTaskEditorSize
+    latestOffset: CanvasTaskEditorOffset
   } | null>(null)
   const connectionDragRef = useRef<{
     nodeId: string
@@ -4781,6 +4832,32 @@ export function VisualCanvasWorkspace({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (event.isComposing) return
+        const nodeResize = nodeResizeRef.current
+        if (nodeResize) {
+          nodeResizeRef.current = null
+          const restored = latestNodesRef.current.map((node) => (
+            node.id === nodeResize.nodeId ? { ...node, ...nodeResize.startRect } : node
+          ))
+          latestNodesRef.current = restored
+          explicitCanvasAutosaveSuppressionRef.current = createCanvasAutosaveSuppression(
+            restored,
+            latestEdgesRef.current,
+            latestViewportRef.current,
+          )
+          setNodes(restored)
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
+        const taskResize = taskEditorResizeRef.current
+        if (taskResize) {
+          taskEditorResizeRef.current = null
+          setTaskEditorSize(taskResize.startSize)
+          setTaskEditorOffset(taskResize.startOffset)
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
         // If a managed modal/panel is open, close only that one and stop.
         if (activeCanvasModal) {
           event.preventDefault()
@@ -7529,7 +7606,15 @@ export function VisualCanvasWorkspace({
     nodeId: string,
     event: React.PointerEvent<HTMLDivElement>,
   ) => {
-    if (event.button !== 0) return
+    if (
+      event.button !== 0
+      || !event.isPrimary
+      || isPanning
+      || nodeDragRef.current
+      || nodeResizeRef.current
+      || taskEditorResizeRef.current
+      || connectionDragRef.current
+    ) return
     const node = nodes.find((item) => item.id === nodeId)
     if (!node) return
 
@@ -7560,14 +7645,22 @@ export function VisualCanvasWorkspace({
     setDraggingNodeId(nodeId)
     setContextMenu(null)
     setNodeAddMenu(null)
-  }, [activePreviewNodeId, closeActivePreview, nodes])
+  }, [activePreviewNodeId, closeActivePreview, isPanning, nodes])
 
   const handleNodeResizeStart = useCallback((
     nodeId: string,
     event: React.PointerEvent<HTMLButtonElement>,
     handle: CanvasNodeResizeHandle,
   ) => {
-    if (event.button !== 0) return
+    if (
+      event.button !== 0
+      || !event.isPrimary
+      || isPanning
+      || nodeDragRef.current
+      || nodeResizeRef.current
+      || taskEditorResizeRef.current
+      || connectionDragRef.current
+    ) return
     const node = nodes.find((item) => item.id === nodeId)
     if (!node) return
 
@@ -7597,7 +7690,42 @@ export function VisualCanvasWorkspace({
     setActiveEdgeId(null)
     setContextMenu(null)
     setNodeAddMenu(null)
-  }, [nodes])
+  }, [isPanning, nodes])
+
+  const previewNodeResizePatch = useCallback((nodeId: string, patch: Pick<VisualCanvasNode, 'x' | 'y' | 'width' | 'height'>) => {
+    const next = latestNodesRef.current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node))
+    latestNodesRef.current = next
+    explicitCanvasAutosaveSuppressionRef.current = createCanvasAutosaveSuppression(
+      next,
+      latestEdgesRef.current,
+      latestViewportRef.current,
+    )
+    setNodes(next)
+  }, [])
+
+  const discardNodeResizePreview = useCallback((nodeId: string, startRect: Pick<VisualCanvasNode, 'x' | 'y' | 'width' | 'height'>) => {
+    const restored = latestNodesRef.current.map((node) => (
+      node.id === nodeId ? { ...node, ...startRect } : node
+    ))
+    latestNodesRef.current = restored
+    explicitCanvasAutosaveSuppressionRef.current = createCanvasAutosaveSuppression(
+      restored,
+      latestEdgesRef.current,
+      latestViewportRef.current,
+    )
+    setNodes(restored)
+  }, [])
+
+  const persistNodeResize = useCallback((nodeId: string) => {
+    dirtyNodeIdsRef.current.add(nodeId)
+    dirtyNodeRevisionRef.current.set(nodeId, ++dirtyRevisionRef.current)
+    const next = [...latestNodesRef.current]
+    latestNodesRef.current = next
+    skipNextAutosaveRef.current = true
+    setNodes(next)
+    flushLocalSnapshot()
+    scheduleCanvasSave(0, { snapshot: 'already-flushed' })
+  }, [flushLocalSnapshot, scheduleCanvasSave])
 
   const pendingCommentCount = useMemo(() => comments.filter(isPendingCanvasComment).length, [comments])
 
@@ -7612,9 +7740,20 @@ export function VisualCanvasWorkspace({
           handle: resize.handle,
           deltaX: (event.clientX - resize.startClientX) / canvasZoom,
           deltaY: (event.clientY - resize.startClientY) / canvasZoom,
+          positionBounds: (() => {
+            if (!canvasStageBounds) return undefined
+            const surfaceOffset = getSurfaceOffset(surfaceRef.current)
+            const margin = 16 / canvasZoom
+            const minX = (-surfaceOffset.left - canvasPan.x) / canvasZoom + margin
+            const minY = (-surfaceOffset.top - canvasPan.y) / canvasZoom + margin
+            const maxX = (canvasStageBounds.right - canvasStageBounds.left - surfaceOffset.left - canvasPan.x) / canvasZoom - margin
+            const maxY = (canvasStageBounds.bottom - canvasStageBounds.top - surfaceOffset.top - canvasPan.y) / canvasZoom - margin
+            if (maxX < minX || maxY < minY) return undefined
+            return { minX, minY, maxX, maxY }
+          })(),
         })
         resize.latestRect = nextRect
-        handleNodePatch(resize.nodeId, nextRect)
+        previewNodeResizePatch(resize.nodeId, nextRect)
         return
       }
 
@@ -7638,9 +7777,7 @@ export function VisualCanvasWorkspace({
         nodeResizeRef.current = null
         event.preventDefault()
         event.stopPropagation()
-        handleNodePatch(resize.nodeId, resize.latestRect)
-        flushLocalSnapshot()
-        scheduleCanvasSave(0)
+        persistNodeResize(resize.nodeId)
         return
       }
 
@@ -7659,15 +7796,55 @@ export function VisualCanvasWorkspace({
       scheduleCanvasSave(0)
     }
 
+    const handlePointerCancel = (event: PointerEvent) => {
+      const resize = nodeResizeRef.current
+      if (resize?.pointerId === event.pointerId) {
+        nodeResizeRef.current = null
+        discardNodeResizePreview(resize.nodeId, resize.startRect)
+        return
+      }
+
+      const drag = nodeDragRef.current
+      if (drag?.pointerId !== event.pointerId) return
+      nodeDragRef.current = null
+      setDraggingNodeId('')
+      handleNodePatch(drag.nodeId, {
+        x: drag.startX,
+        y: drag.startY,
+      })
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !nodeResizeRef.current) return
+      const resize = nodeResizeRef.current
+      nodeResizeRef.current = null
+      discardNodeResizePreview(resize.nodeId, resize.startRect)
+    }
+
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
-    window.addEventListener('pointercancel', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerCancel)
+    window.addEventListener('lostpointercapture', handlePointerCancel, true)
+    window.addEventListener('keydown', handleKeyDown)
     return () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
-      window.removeEventListener('pointercancel', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
+      window.removeEventListener('lostpointercapture', handlePointerCancel, true)
+      window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [canvasZoom, flushLocalSnapshot, handleNodePatch, scheduleCanvasSave])
+  }, [
+    canvasPan.x,
+    canvasPan.y,
+    canvasStageBounds,
+    canvasZoom,
+    discardNodeResizePreview,
+    flushLocalSnapshot,
+    handleNodePatch,
+    persistNodeResize,
+    previewNodeResizePatch,
+    scheduleCanvasSave,
+  ])
 
   const syncPromptPreset = useCallback((kind: VisualCanvasNodeKind) => {
     const meta = NODE_META[kind]
@@ -9545,7 +9722,15 @@ export function VisualCanvasWorkspace({
   }, [openNodeAddMenu])
 
   const startConnectionDrag = useCallback((nodeId: string, direction: 'in' | 'out', event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return
+    if (
+      event.button !== 0
+      || !event.isPrimary
+      || isPanning
+      || nodeDragRef.current
+      || nodeResizeRef.current
+      || taskEditorResizeRef.current
+      || connectionDragRef.current
+    ) return
     const sourceNode = nodes.find((node) => node.id === nodeId)
     if (!sourceNode) return
 
@@ -9576,7 +9761,7 @@ export function VisualCanvasWorkspace({
         : sourceNode.x - CONNECTOR_CENTER_OFFSET - CONNECTION_DRAFT_HANDLE_OFFSET,
       y2: sourceNode.y + sourceNode.height / 2,
     })
-  }, [activePreviewNodeId, closeActivePreview, nodes])
+  }, [activePreviewNodeId, closeActivePreview, isPanning, nodes])
 
   const openNodeContextMenu = useCallback((nodeId: string, clientX: number, clientY: number) => {
     const position = clampMenuPosition(clientX, clientY, NODE_MENU_WIDTH, NODE_MENU_HEIGHT)
@@ -9926,7 +10111,16 @@ export function VisualCanvasWorkspace({
   }, [canStartCanvasPan])
 
   const handleCanvasPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !canStartCanvasPan(event.target)) return
+    if (
+      event.button !== 0
+      || !event.isPrimary
+      || isPanning
+      || nodeDragRef.current
+      || nodeResizeRef.current
+      || taskEditorResizeRef.current
+      || connectionDragRef.current
+      || !canStartCanvasPan(event.target)
+    ) return
 
     closeActivePreview({ closeReviewWindows: false })
     closePromptInspector()
@@ -9946,7 +10140,7 @@ export function VisualCanvasWorkspace({
       panY: canvasPan.y,
     }
     event.currentTarget.setPointerCapture(event.pointerId)
-  }, [canStartCanvasPan, canvasPan.x, canvasPan.y, closeActivePreview, closeCreativeAssets, closeEdgeDirector, closePromptInspector])
+  }, [canStartCanvasPan, canvasPan.x, canvasPan.y, closeActivePreview, closeCreativeAssets, closeEdgeDirector, closePromptInspector, isPanning])
 
   const handleCanvasPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!isPanning || event.pointerId !== panStartRef.current.pointerId) return
@@ -10214,8 +10408,13 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     nodeTaskDialogNoncompactMeasurementsRef.current = null
+    if (!taskEditorResizeRef.current) {
+      setTaskEditorSize(getTaskEditorSize(editingNode?.metadataJson))
+      setTaskEditorOffset(getTaskEditorOffset(editingNode?.metadataJson))
+    }
     setNodeTaskDialogHeight(282)
     setNodeTaskDialogCompactControls(false)
+    setNodeTaskDialogChromeHeight(0)
   }, [nodeTaskDialogMeasurementKey])
 
   useEffect(() => {
@@ -10241,6 +10440,9 @@ export function VisualCanvasWorkspace({
         compactFixedControls: nodeTaskDialogCompactControls,
         noncompactMeasurements: nodeTaskDialogNoncompactMeasurementsRef.current,
       })
+      setNodeTaskDialogChromeHeight(
+        fixedTop.offsetHeight + fixedBottom.offsetHeight + promptHeader.offsetHeight + promptFooter.offsetHeight,
+      )
       nodeTaskDialogNoncompactMeasurementsRef.current = sizing.noncompactMeasurements
       setNodeTaskDialogHeight((current) => current === sizing.height ? current : sizing.height)
       setNodeTaskDialogCompactControls((current) => (
@@ -10260,6 +10462,16 @@ export function VisualCanvasWorkspace({
   }, [canvasStageBounds, nodeTaskDialogCompactControls, nodeTaskDialogMeasurementKey])
 
   const nodeContextDialogHeight = activeNodeContextCategory === 'task' ? nodeTaskDialogHeight : 210
+  const nodeTaskEditorContentHeight = useMemo(() => (
+    taskEditorSize?.height ?? Math.max(0, nodeTaskDialogHeight - nodeTaskDialogChromeHeight)
+  ), [nodeTaskDialogChromeHeight, nodeTaskDialogHeight, taskEditorSize?.height])
+  const nodeTaskDialogSize = useMemo<CanvasTaskEditorSize | undefined>(() => {
+    if (activeNodeContextCategory !== 'task') return undefined
+    return {
+      width: taskEditorSize?.width ?? 760,
+      height: nodeTaskDialogChromeHeight + nodeTaskEditorContentHeight,
+    }
+  }, [activeNodeContextCategory, nodeTaskDialogChromeHeight, nodeTaskEditorContentHeight, taskEditorSize?.width])
   const nodeContextSurfaceLayout = useMemo(() => {
     const node = activeNode
     if (!node || typeof window === 'undefined') return undefined
@@ -10277,14 +10489,19 @@ export function VisualCanvasWorkspace({
       },
       stage,
       dialogHeight: nodeContextDialogHeight,
+      dialogSize: nodeTaskDialogSize,
+      dialogOffset: activeNodeContextCategory === 'task' ? taskEditorOffset : undefined,
     })
   }, [
     activeNode,
+    activeNodeContextCategory,
     canvasStageBounds,
     canvasPan.x,
     canvasPan.y,
     canvasZoom,
     nodeContextDialogHeight,
+    nodeTaskDialogSize,
+    taskEditorOffset,
   ])
 
   useEffect(() => {
@@ -10298,6 +10515,8 @@ export function VisualCanvasWorkspace({
       nodeId: activeNode.id,
       category: activeNodeContextCategory,
       dialogHeight: nodeContextDialogHeight,
+      dialogSize: nodeContextSurfaceLayout.dialog,
+      dialogOffset: activeNodeContextCategory === 'task' ? taskEditorOffset : undefined,
       stage: canvasStageBounds,
       canvasZoom,
     })
@@ -10318,7 +10537,7 @@ export function VisualCanvasWorkspace({
       })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [activeNode, activeNodeContextCategory, canvasStageBounds, canvasZoom, edges, nodeContextDialogHeight, nodeContextSurfaceLayout, nodes])
+  }, [activeNode, activeNodeContextCategory, canvasStageBounds, canvasZoom, edges, nodeContextDialogHeight, nodeContextSurfaceLayout, nodes, taskEditorOffset])
 
   const nodeDialogStyle = useMemo<CSSProperties | undefined>(() => {
     if (!editingNode || editingNode.id !== activeNode?.id || !nodeContextSurfaceLayout) return undefined
@@ -10329,6 +10548,147 @@ export function VisualCanvasWorkspace({
       width: nodeContextSurfaceLayout.dialog.width,
     }
   }, [activeNode?.id, editingNode, nodeContextSurfaceLayout])
+
+  const handleTaskEditorResizeStart = useCallback((
+    event: React.PointerEvent<HTMLButtonElement>,
+    handle: CanvasTaskEditorResizeHandle,
+  ) => {
+    if (
+      event.button !== 0
+      || !event.isPrimary
+      || isPanning
+      || !editingNode
+      || !nodeTaskDialogSize
+      || !nodeContextSurfaceLayout
+      || taskEditorResizeRef.current
+      || nodeDragRef.current
+      || nodeResizeRef.current
+      || connectionDragRef.current
+    ) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Window pointer listeners still handle the resize if capture is unavailable.
+    }
+    const startSize = {
+      width: nodeContextSurfaceLayout.dialog.width,
+      height: Math.max(0, nodeContextSurfaceLayout.dialog.height - nodeTaskDialogChromeHeight),
+    }
+    const startOuterSize = {
+      width: nodeContextSurfaceLayout.dialog.width,
+      height: nodeContextSurfaceLayout.dialog.height,
+    }
+    const startOffset = {
+      x: nodeContextSurfaceLayout.dialog.left - nodeContextSurfaceLayout.baseDialog.left,
+      y: nodeContextSurfaceLayout.dialog.top - nodeContextSurfaceLayout.baseDialog.top,
+    }
+    taskEditorResizeRef.current = {
+      nodeId: editingNode.id,
+      pointerId: event.pointerId,
+      handle,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startSize,
+      startOuterSize,
+      startOffset,
+      latestSize: startSize,
+      latestOffset: startOffset,
+    }
+  }, [editingNode, isPanning, nodeContextSurfaceLayout, nodeTaskDialogChromeHeight, nodeTaskDialogSize])
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const resize = taskEditorResizeRef.current
+      if (resize?.pointerId !== event.pointerId) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      const stageWidth = Math.max(1, (canvasStageBounds?.right ?? window.innerWidth) - (canvasStageBounds?.left ?? 0))
+      const stageHeight = Math.max(1, (canvasStageBounds?.bottom ?? window.innerHeight) - (canvasStageBounds?.top ?? 0))
+      const maxWidth = Math.max(1, stageWidth - 32)
+      const maxHeight = Math.max(1, stageHeight - 32 - nodeTaskDialogChromeHeight)
+      const nextRect = resizeEditorRect({
+        rect: { x: 0, y: 0, ...resize.startOuterSize },
+        handle: resize.handle,
+        deltaX: event.clientX - resize.startClientX,
+        deltaY: event.clientY - resize.startClientY,
+        bounds: {
+          minWidth: Math.min(320, maxWidth),
+          minHeight: Math.min(nodeTaskDialogChromeHeight + 96, maxHeight),
+          maxWidth,
+          maxHeight,
+        },
+      })
+      const nextSize = {
+        width: nextRect.width,
+        height: Math.max(0, nextRect.height - nodeTaskDialogChromeHeight),
+      }
+      const nextOffset = getEditorResizeOffset({
+        handle: resize.handle,
+        offset: resize.startOffset,
+        startSize: resize.startOuterSize,
+        nextSize: nextRect,
+      })
+      resize.latestSize = nextSize
+      resize.latestOffset = nextOffset
+      setTaskEditorSize(nextSize)
+      setTaskEditorOffset(nextOffset)
+    }
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const resize = taskEditorResizeRef.current
+      if (resize?.pointerId !== event.pointerId) return
+
+      taskEditorResizeRef.current = null
+      event.preventDefault()
+      event.stopPropagation()
+      const node = latestNodesRef.current.find((item) => item.id === resize.nodeId)
+      if (!node) return
+      skipNextAutosaveRef.current = true
+      handleNodePatch(resize.nodeId, {
+        metadataJson: {
+          ...metadataRecord(node.metadataJson),
+          taskEditorSize: resize.latestSize,
+          taskEditorOffset: resize.latestOffset,
+        },
+      })
+      flushLocalSnapshot()
+      scheduleCanvasSave(0, { snapshot: 'already-flushed' })
+    }
+
+    const handlePointerCancel = (event: PointerEvent) => {
+      const resize = taskEditorResizeRef.current
+      if (resize?.pointerId !== event.pointerId) return
+      taskEditorResizeRef.current = null
+      setTaskEditorSize(resize.startSize)
+      setTaskEditorOffset(resize.startOffset)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      const resize = taskEditorResizeRef.current
+      if (!resize) return
+      taskEditorResizeRef.current = null
+      setTaskEditorSize(resize.startSize)
+      setTaskEditorOffset(resize.startOffset)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerCancel)
+    window.addEventListener('lostpointercapture', handlePointerCancel, true)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
+      window.removeEventListener('lostpointercapture', handlePointerCancel, true)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [canvasStageBounds, flushLocalSnapshot, handleNodePatch, nodeTaskDialogChromeHeight, scheduleCanvasSave])
 
   const toolbarFixedStyle = useMemo<CSSProperties | undefined>(() => {
     if (!nodeContextSurfaceLayout) return undefined
@@ -12416,6 +12776,7 @@ export function VisualCanvasWorkspace({
             }}
             onClose={() => closeCanvasPanel()}
             panelPortalTarget={panelPortalTarget}
+            onEditorResizeStart={handleTaskEditorResizeStart}
           />
           <div
             ref={nodeTaskDialogFixedBottomRef}

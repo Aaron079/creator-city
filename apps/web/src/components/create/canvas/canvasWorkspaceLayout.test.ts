@@ -18,6 +18,7 @@ import {
 const testDirectory = dirname(fileURLToPath(import.meta.url))
 const visualCanvasWorkspaceSource = readFileSync(resolve(testDirectory, '../VisualCanvasWorkspace.tsx'), 'utf8')
 const canvasModuleSource = readFileSync(resolve(testDirectory, '../canvas.module.css'), 'utf8')
+const canvasPromptBoxSource = readFileSync(resolve(testDirectory, '../CanvasPromptBox.tsx'), 'utf8')
 const canvasWorkspaceLayoutSource = readFileSync(resolve(testDirectory, 'canvasWorkspaceLayout.ts'), 'utf8')
 const renderedTaskDialogTestSource = readFileSync(
   resolve(testDirectory, 'canvasTaskDialog.rendered-layout.test.tsx'),
@@ -67,6 +68,17 @@ test('uses a requested dialog size while preserving the shared node centerline',
 
   assert.deepEqual(layout.dialog, { left: 130, top: 322, width: 920, height: 388 })
   assert.equal(layout.dialog.left + layout.dialog.width / 2, 590)
+})
+
+test('offsets a resized task dialog so an opposite edge can remain pinned', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 120, width: 380, height: 194 },
+    stage: { left: 0, top: 64, right: 1440, bottom: 900 },
+    dialogSize: { width: 920, height: 388 },
+    dialogOffset: { x: -20, y: 10 },
+  })
+
+  assert.deepEqual(layout.dialog, { left: 110, top: 332, width: 920, height: 388 })
 })
 
 test('clamps a requested dialog width without resizing navigation', () => {
@@ -270,6 +282,25 @@ test('keys node context pan by vertical stage bounds and zoom, never canvas pan'
   assert.notEqual(
     getCanvasNodeContextPanAdjustmentKey({ ...geometry, canvasZoom: 0.8 }),
     initialKey,
+  )
+})
+
+test('keys task context pan by the resolved dialog width as well as height', () => {
+  const geometry = {
+    nodeId: 'image-node',
+    category: 'task',
+    dialogHeight: 292,
+    dialogSize: { width: 760, height: 292 },
+    stage: { left: 0, top: 0, right: 1440, bottom: 900 },
+    canvasZoom: 1,
+  }
+
+  assert.notEqual(
+    getCanvasNodeContextPanAdjustmentKey({
+      ...geometry,
+      dialogSize: { width: 920, height: 292 },
+    }),
+    getCanvasNodeContextPanAdjustmentKey(geometry),
   )
 })
 
@@ -618,6 +649,28 @@ test('uses the taller fixed-surface height only for the task category', () => {
   assert.notEqual(start, -1)
   assert.match(layoutSource, /activeNodeContextCategory === 'task' \? nodeTaskDialogHeight : 210/)
   assert.match(layoutSource, /dialogHeight: nodeContextDialogHeight/)
+})
+
+test('resizes the task editor with eight handles while retaining fixed dialog rails', () => {
+  const resizeStart = visualCanvasWorkspaceSource.indexOf('const handleTaskEditorResizeStart')
+  const resizeEnd = visualCanvasWorkspaceSource.indexOf('const toolbarFixedStyle', resizeStart)
+  const resizeSource = visualCanvasWorkspaceSource.slice(resizeStart, resizeEnd)
+
+  assert.notEqual(resizeStart, -1, 'missing task editor resize handler')
+  assert.match(visualCanvasWorkspaceSource, /metadataJson: \{[\s\S]*?taskEditorSize/)
+  assert.match(visualCanvasWorkspaceSource, /metadataJson: \{[\s\S]*?taskEditorOffset/)
+  assert.match(visualCanvasWorkspaceSource, /resizeEditorRect\(\{/)
+  assert.match(visualCanvasWorkspaceSource, /getEditorResizeOffset\(\{/)
+  assert.match(visualCanvasWorkspaceSource, /dialogSize: nodeTaskDialogSize/)
+  assert.match(visualCanvasWorkspaceSource, /dialogOffset: activeNodeContextCategory === 'task' \? taskEditorOffset : undefined/)
+  assert.match(resizeSource, /const startOuterSize = \{[\s\S]*?width: nodeContextSurfaceLayout\.dialog\.width/)
+  assert.match(resizeSource, /const startOffset = \{[\s\S]*?nodeContextSurfaceLayout\.dialog\.left - nodeContextSurfaceLayout\.baseDialog\.left/)
+  assert.match(visualCanvasWorkspaceSource, /nodeTaskEditorContentHeight/)
+  assert.match(canvasPromptBoxSource, /data-canvas-task-editor-resize-handle=\{handle\}/)
+  assert.match(canvasPromptBoxSource, /\['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'\]/)
+  assert.match(resizeSource, /flushLocalSnapshot\(\)/)
+  assert.match(resizeSource, /scheduleCanvasSave\(0, \{ snapshot: 'already-flushed' \}\)/)
+  assert.match(canvasModuleSource, /canvas-task-editor-resize-handle/)
 })
 
 test('keeps node task shell static and assigns scrolling only to prompt content', () => {

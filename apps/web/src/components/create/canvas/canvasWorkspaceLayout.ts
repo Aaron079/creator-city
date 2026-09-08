@@ -1,11 +1,13 @@
 import type { VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
 
 type CanvasSize = { width: number; height: number }
+export type CanvasOffset = { x: number; y: number }
 
 export type CanvasStageRect = { left: number; top: number; right: number; bottom: number }
 export type CanvasNodeScreenRect = { left: number; top: number; width: number; height: number }
 export type CanvasContextSurfaceLayout = {
   navigation: CanvasSize & { left: number; top: number }
+  baseDialog: CanvasSize & { left: number; top: number }
   dialog: CanvasSize & { left: number; top: number }
   panDeltaY: number
   minimumStageHeight: number
@@ -35,12 +37,16 @@ export function getCanvasNodeContextPanAdjustmentKey({
   nodeId,
   category,
   dialogHeight,
+  dialogSize,
+  dialogOffset,
   stage,
   canvasZoom,
 }: {
   nodeId: string
   category: string
   dialogHeight: number
+  dialogSize?: CanvasSize
+  dialogOffset?: CanvasOffset
   stage: Pick<CanvasStageRect, 'top' | 'bottom'>
   canvasZoom: number
 }) {
@@ -48,6 +54,10 @@ export function getCanvasNodeContextPanAdjustmentKey({
     nodeId,
     category,
     dialogHeight,
+    dialogSize?.width ?? null,
+    dialogSize?.height ?? null,
+    dialogOffset?.x ?? null,
+    dialogOffset?.y ?? null,
     stage.top,
     stage.bottom,
     canvasZoom,
@@ -284,11 +294,13 @@ export function getCanvasNodeContextSurfaceLayout({
   stage,
   dialogHeight = CONTEXT_DIALOG.height,
   dialogSize,
+  dialogOffset,
 }: {
   node: CanvasNodeScreenRect
   stage: CanvasStageRect
   dialogHeight?: number
   dialogSize?: CanvasSize
+  dialogOffset?: CanvasOffset
 }): CanvasContextSurfaceLayout {
   const stageWidth = Math.max(0, stage.right - stage.left)
   const stageHeight = Math.max(0, stage.bottom - stage.top)
@@ -312,7 +324,8 @@ export function getCanvasNodeContextSurfaceLayout({
   const navigationTop = stageHeight < CONTEXT_STAGE_MARGIN * 2
     ? Math.max(stage.top + verticalStageMargin, rawNavigationTop)
     : rawNavigationTop
-  const dialogTop = node.top + node.height + CONTEXT_DIALOG.gap
+  const baseDialogTop = node.top + node.height + CONTEXT_DIALOG.gap
+  const dialogTop = baseDialogTop + (dialogOffset?.y ?? 0)
   const minimumStageHeight = verticalStageMargin * 2
     + CONTEXT_NAVIGATION.height
     + CONTEXT_NAVIGATION.gap
@@ -341,6 +354,14 @@ export function getCanvasNodeContextSurfaceLayout({
     }
   }
 
+  const baseDialogLeft = clampCanvasDialogLeftToStage(
+    nodeCenter - dialogWidth / 2,
+    dialogWidth,
+    stage.left,
+    stage.right,
+    horizontalStageMargin,
+  )
+
   return {
     navigation: {
       left: clampCanvasDialogLeftToStage(
@@ -354,9 +375,15 @@ export function getCanvasNodeContextSurfaceLayout({
       width: navigationWidth,
       height: CONTEXT_NAVIGATION.height,
     },
+    baseDialog: {
+      left: baseDialogLeft,
+      top: baseDialogTop,
+      width: dialogWidth,
+      height: resolvedDialogHeight,
+    },
     dialog: {
       left: clampCanvasDialogLeftToStage(
-        nodeCenter - dialogWidth / 2,
+        baseDialogLeft + (dialogOffset?.x ?? 0),
         dialogWidth,
         stage.left,
         stage.right,

@@ -97,6 +97,7 @@ test('wires active node corner handles to proportional resizing without replacin
   assert.match(nodeLayerSource, /onResizeStart=\{\(event, handle\) => latestCardProps\(\)\.onResizeStart\(event, handle\)\}/)
   assert.match(workspaceSource, /import \{[\s\S]*?resizeNodeRect,[\s\S]*?type CanvasResizeHandle,[\s\S]*?\} from '@\/components\/create\/canvas\/canvasResizeGeometry'/)
   assert.match(workspaceSource, /const handleNodeResizeStart = useCallback/)
+  assert.match(workspaceSource, /!event\.isPrimary[\s\S]*?nodeDragRef\.current[\s\S]*?nodeResizeRef\.current[\s\S]*?connectionDragRef\.current/)
   assert.match(workspaceSource, /resizeNodeRect\(\{[\s\S]*?handle: resize\.handle/)
 
   const pointerUpStart = workspaceSource.indexOf('const handlePointerUp = (event: PointerEvent) => {')
@@ -104,4 +105,28 @@ test('wires active node corner handles to proportional resizing without replacin
   assert.notEqual(pointerUpStart, -1, 'missing Canvas pointer release handler')
   assert.match(pointerUpSource, /nodeResizeRef\.current = null/)
   assert.match(pointerUpSource, /flushLocalSnapshot\(\)[\s\S]*?scheduleCanvasSave\(0\)/)
+
+  const pointerCancelStart = workspaceSource.indexOf('const handlePointerCancel = (event: PointerEvent) => {')
+  const pointerCancelSource = workspaceSource.slice(pointerCancelStart, pointerCancelStart + 1_000)
+  assert.notEqual(pointerCancelStart, -1, 'missing Canvas pointer cancellation handler')
+  assert.match(pointerCancelSource, /discardNodeResizePreview\(resize\.nodeId, resize\.startRect\)/)
+  assert.doesNotMatch(pointerCancelSource, /scheduleCanvasSave\(0\)/)
+  assert.match(workspaceSource, /window\.addEventListener\('lostpointercapture', handlePointerCancel, true\)/)
+  assert.match(workspaceSource, /event\.key !== 'Escape'[\s\S]*?discardNodeResizePreview\(resize\.nodeId, resize\.startRect\)/)
+})
+
+test('keeps canvas pan mutually exclusive with node, connection, and editor resize gestures', () => {
+  for (const handlerName of [
+    'handleNodeDragStart',
+    'handleNodeResizeStart',
+    'startConnectionDrag',
+    'handleCanvasPointerDown',
+    'handleTaskEditorResizeStart',
+  ]) {
+    const handlerStart = workspaceSource.indexOf(`const ${handlerName} = useCallback`)
+    const handlerSource = workspaceSource.slice(handlerStart, handlerStart + 1_100)
+
+    assert.notEqual(handlerStart, -1, `missing ${handlerName}`)
+    assert.match(handlerSource, /!event\.isPrimary[\s\S]*?\|\| isPanning/)
+  }
 })

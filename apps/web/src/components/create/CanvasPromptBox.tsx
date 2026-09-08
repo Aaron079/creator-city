@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefCallback } from 'react'
 import { createPortal } from 'react-dom'
+import type { CanvasResizeHandle } from '@/components/create/canvas/canvasResizeGeometry'
 
 export interface CanvasPromptFooterOption {
   value: string
@@ -60,7 +61,10 @@ interface CanvasPromptBoxProps {
   inputRef?: RefCallback<HTMLTextAreaElement | HTMLInputElement>
   onClose?: () => void
   panelPortalTarget?: Element | null
+  onEditorResizeStart?: (event: React.PointerEvent<HTMLButtonElement>, handle: CanvasResizeHandle) => void
 }
+
+const editorResizeHandles: CanvasResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
 const MODEL_DURATIONS = ['1~3 min', '1.5 min', '2 min', '30~90s', '2 min', '5~10 min', '2~5 min', '1 min']
 
@@ -118,6 +122,7 @@ export function CanvasPromptBox({
   inputRef,
   onClose,
   panelPortalTarget,
+  onEditorResizeStart,
 }: CanvasPromptBoxProps) {
   const [openFooterId, setOpenFooterId] = useState<string | null>(null)
   const [popoverStyle, setPopoverStyle] = useState<CSSProperties | undefined>(undefined)
@@ -617,6 +622,21 @@ export function CanvasPromptBox({
       </div>
 
       <div className="canvas-node-dialog-scroll-content">
+        {onEditorResizeStart ? editorResizeHandles.map((handle) => (
+          <button
+            key={handle}
+            type="button"
+            tabIndex={-1}
+            className={`canvas-task-editor-resize-handle is-${handle}`}
+            data-canvas-task-editor-resize-handle={handle}
+            aria-label={`调整内容编辑区尺寸：${handle}`}
+            onPointerDown={(event) => onEditorResizeStart(event, handle)}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+          />
+        )) : null}
         <div className="canvas-prompt-input-wrap">
           {promptInput}
           {resultSummary ? (
