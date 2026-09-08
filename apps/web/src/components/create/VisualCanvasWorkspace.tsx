@@ -10372,19 +10372,51 @@ export function VisualCanvasWorkspace({
     setIsAddMenuOpen(false)
   }, [canStartCanvasPan, getViewportWorldPoint])
 
-  const handleCanvasSecondaryClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (!canStartCanvasPan(event.target)) return
-    event.preventDefault()
-    event.stopPropagation()
-
-    const position = clampMenuPosition(event.clientX, event.clientY, CONTEXT_MENU_WIDTH, CANVAS_CONTEXT_MENU_HEIGHT)
-    const worldPoint = getViewportWorldPoint(event.clientX, event.clientY)
+  const openCanvasContextMenu = useCallback((clientX: number, clientY: number) => {
+    const position = clampMenuPosition(clientX, clientY, CONTEXT_MENU_WIDTH, CANVAS_CONTEXT_MENU_HEIGHT)
+    const worldPoint = getViewportWorldPoint(clientX, clientY)
     setCanvasContextMenu({ ...position, worldX: worldPoint.x, worldY: worldPoint.y })
     setContextMenu(null)
     setNodeAddMenu(null)
     setNodeCreateMenu(null)
     setIsAddMenuOpen(false)
-  }, [canStartCanvasPan, getViewportWorldPoint])
+  }, [getViewportWorldPoint])
+
+  const handleCanvasSecondaryClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!canStartCanvasPan(event.target)) return
+    event.preventDefault()
+    event.stopPropagation()
+    openCanvasContextMenu(event.clientX, event.clientY)
+  }, [canStartCanvasPan, openCanvasContextMenu])
+
+  const handleNativeCanvasContextMenu = useCallback((event: MouseEvent) => {
+    const target = event.target instanceof HTMLElement
+      ? event.target
+      : event.target instanceof Node
+        ? event.target.parentElement
+        : null
+    const nodeRoot = target?.closest<HTMLElement>('[data-node-drag-root][data-node-id]')
+    const nodeId = nodeRoot?.dataset.nodeId
+
+    if (nodeId) {
+      event.preventDefault()
+      event.stopPropagation()
+      openNodeContextMenu(nodeId, event.clientX, event.clientY)
+      return
+    }
+
+    if (!canStartCanvasPan(target)) return
+    event.preventDefault()
+    event.stopPropagation()
+    openCanvasContextMenu(event.clientX, event.clientY)
+  }, [canStartCanvasPan, openCanvasContextMenu, openNodeContextMenu])
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    viewport.addEventListener('contextmenu', handleNativeCanvasContextMenu, { capture: true })
+    return () => viewport.removeEventListener('contextmenu', handleNativeCanvasContextMenu, { capture: true })
+  }, [handleNativeCanvasContextMenu])
 
   const handleShareCanvasLink = useCallback(async () => {
     flushLocalSnapshot()

@@ -66,17 +66,23 @@ test('treats a delayed or differently targeted right-click as a new first click'
 
 test('routes one right-click to the matching node or Canvas context menu', () => {
   const nodeHandlerStart = workspaceSource.indexOf('const handleNodeSecondaryClick = useCallback')
-  const nodeHandlerEnd = workspaceSource.indexOf('const startConnectionDrag', nodeHandlerStart)
+  const nodeHandlerEnd = workspaceSource.indexOf('const copyNodeToClipboard', nodeHandlerStart)
   const nodeHandlerSource = workspaceSource.slice(nodeHandlerStart, nodeHandlerEnd)
+  const canvasMenuStart = workspaceSource.indexOf('const openCanvasContextMenu = useCallback')
   const canvasHandlerStart = workspaceSource.indexOf('const handleCanvasSecondaryClick = useCallback')
   const canvasHandlerEnd = workspaceSource.indexOf('const handleShareCanvasLink', canvasHandlerStart)
+  const canvasMenuSource = workspaceSource.slice(canvasMenuStart, canvasHandlerStart)
   const canvasHandlerSource = workspaceSource.slice(canvasHandlerStart, canvasHandlerEnd)
 
   assert.match(workspaceSource, /onContextMenu=\{handleCanvasSecondaryClick\}/)
+  assert.match(workspaceSource, /addEventListener\('contextmenu', handleNativeCanvasContextMenu, \{ capture: true \}\)/)
+  assert.match(workspaceSource, /removeEventListener\('contextmenu', handleNativeCanvasContextMenu, \{ capture: true \}\)/)
+  assert.match(workspaceSource, /closest<HTMLElement>\('\[data-node-drag-root\]\[data-node-id\]'\)/)
   assert.match(workspaceSource, /onSecondaryClick: \(event\) => handleNodeSecondaryClick\(node\.id, event\)/)
   assert.match(nodeHandlerSource, /openNodeContextMenu\(nodeId, event\.clientX, event\.clientY\)/)
   assert.doesNotMatch(nodeHandlerSource, /registerSecondaryClick/)
-  assert.match(canvasHandlerSource, /setCanvasContextMenu\(/)
+  assert.match(canvasMenuSource, /setCanvasContextMenu\(/)
+  assert.match(canvasHandlerSource, /openCanvasContextMenu\(event\.clientX, event\.clientY\)/)
   assert.doesNotMatch(canvasHandlerSource, /registerSecondaryClick/)
   assert.match(workspaceSource, /className="canvas-canvas-context-menu"/)
   assert.match(workspaceSource, />\s*上传素材\s*</)
@@ -87,6 +93,7 @@ test('routes one right-click to the matching node or Canvas context menu', () =>
   assert.doesNotMatch(workspaceSource, /markNodeSaved/)
 
   assert.match(nodeCardSource, /onContextMenu=\{\(event\) => \{[\s\S]*?onSecondaryClick\(event\)/)
+  assert.match(nodeCardSource, /data-node-drag-root="true"[\s\S]*?data-node-id=\{node\.id\}/)
   assert.match(nodeCardSource, /onClick=\{\(event\) => \{[\s\S]*?onOpenContextMenu\(event\)[\s\S]*?className="canvas-node-more"/)
   assert.match(nodeLayerSource, /onSecondaryClick=\{\(event\) => latestCardProps\(\)\.onSecondaryClick\(event\)\}/)
 })

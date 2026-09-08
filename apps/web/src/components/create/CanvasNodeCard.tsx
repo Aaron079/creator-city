@@ -3121,6 +3121,7 @@ export function CanvasNodeCard({
       role="button"
       tabIndex={0}
       data-node-drag-root="true"
+      data-node-id={node.id}
       layout
       initial={{ opacity: 0, y: 18, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
