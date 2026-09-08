@@ -12,6 +12,9 @@ import type { GenerationHealthResponse } from '@/lib/generation/health-types'
 import { getReframeStyle, type ReframeMode } from '@/components/create/AssetAgentToolbar'
 import { getDerivedToolVisual } from '@/lib/canvas/derivedToolVisualConfig'
 import { readAnnotationMetadata } from '@/lib/canvas/annotationMetadata'
+import type { CanvasResizeHandle } from '@/components/create/canvas/canvasResizeGeometry'
+
+type CanvasNodeResizeHandle = Extract<CanvasResizeHandle, 'nw' | 'ne' | 'se' | 'sw'>
 
 export type VisualCanvasNodeKind = 'text' | 'image' | 'video' | 'audio' | 'asset' | 'template' | 'delivery' | 'world' | 'upload'
 export type VisualCanvasNodeStatus = 'idle' | 'queued' | 'running' | 'generating' | 'pending' | 'processing' | 'done' | 'error' | 'failed' | 'cancelled'
@@ -64,6 +67,7 @@ export interface CanvasNodeCardProps {
   onAddPrev: (event: React.PointerEvent<HTMLButtonElement>) => void
   onAddNext: (event: React.PointerEvent<HTMLButtonElement>) => void
   onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
+  onResizeStart: (event: React.PointerEvent<HTMLButtonElement>, handle: CanvasNodeResizeHandle) => void
   onSecondaryClick: (event: React.MouseEvent<HTMLElement>) => void
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
   onEdit: () => void
@@ -89,6 +93,13 @@ export interface CanvasNodeCardProps {
   sourceNodeMissing?: boolean
   onOpenGenerationDialog?: () => void
 }
+
+const nodeResizeHandles: Array<{ handle: CanvasNodeResizeHandle; label: string }> = [
+  { handle: 'nw', label: 'Resize from top left' },
+  { handle: 'ne', label: 'Resize from top right' },
+  { handle: 'se', label: 'Resize from bottom right' },
+  { handle: 'sw', label: 'Resize from bottom left' },
+]
 
 const NODE_META: Record<VisualCanvasNodeKind, { icon: string; label: string; empty: string }> = {
   text: {
@@ -1453,6 +1464,7 @@ export function CanvasNodeCard({
   onAddPrev,
   onAddNext,
   onDragStart,
+  onResizeStart,
   onSecondaryClick,
   onOpenContextMenu,
   onEdit,
@@ -3209,6 +3221,33 @@ export function CanvasNodeCard({
       }}
     >
       <div className="canvas-node-topline" />
+      {active ? nodeResizeHandles.map(({ handle, label }) => (
+        <button
+          key={handle}
+          type="button"
+          tabIndex={-1}
+          className={`canvas-node-resize-handle is-${handle}`}
+          data-canvas-node-resize-handle={handle}
+          aria-label={label}
+          onPointerDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onResizeStart(event, handle)
+          }}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          onKeyDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+        />
+      )) : null}
       {charRefDragOver && (node.kind === 'image' || node.kind === 'video') ? (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-cyan-300/70 bg-cyan-300/10">
           <div className="rounded-xl border border-cyan-200/40 bg-black/70 px-3 py-2 text-xs font-semibold text-cyan-100 backdrop-blur-sm">

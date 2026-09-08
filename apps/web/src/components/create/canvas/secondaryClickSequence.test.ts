@@ -87,3 +87,21 @@ test('opens the Canvas task picker on double-click instead of immediately creati
   assert.doesNotMatch(handlerSource, /createNode\('video'/)
   assert.doesNotMatch(handlerSource, /focusPromptForNode\(/)
 })
+
+test('wires active node corner handles to proportional resizing without replacing existing Canvas interactions', () => {
+  assert.match(nodeCardSource, /data-canvas-node-resize-handle=\{handle\}/)
+  assert.match(nodeCardSource, /onResizeStart: \(event: React\.PointerEvent<HTMLButtonElement>, handle: CanvasNodeResizeHandle\) => void/)
+  for (const handle of ['nw', 'ne', 'se', 'sw']) {
+    assert.match(nodeCardSource, new RegExp(`handle: '${handle}'`))
+  }
+  assert.match(nodeLayerSource, /onResizeStart=\{\(event, handle\) => latestCardProps\(\)\.onResizeStart\(event, handle\)\}/)
+  assert.match(workspaceSource, /import \{[\s\S]*?resizeNodeRect,[\s\S]*?type CanvasResizeHandle,[\s\S]*?\} from '@\/components\/create\/canvas\/canvasResizeGeometry'/)
+  assert.match(workspaceSource, /const handleNodeResizeStart = useCallback/)
+  assert.match(workspaceSource, /resizeNodeRect\(\{[\s\S]*?handle: resize\.handle/)
+
+  const pointerUpStart = workspaceSource.indexOf('const handlePointerUp = (event: PointerEvent) => {')
+  const pointerUpSource = workspaceSource.slice(pointerUpStart, pointerUpStart + 1_800)
+  assert.notEqual(pointerUpStart, -1, 'missing Canvas pointer release handler')
+  assert.match(pointerUpSource, /nodeResizeRef\.current = null/)
+  assert.match(pointerUpSource, /flushLocalSnapshot\(\)[\s\S]*?scheduleCanvasSave\(0\)/)
+})

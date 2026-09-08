@@ -21,6 +21,10 @@ import {
   type CanvasStageRect,
 } from '@/components/create/canvas/canvasWorkspaceLayout'
 import {
+  resizeNodeRect,
+  type CanvasResizeHandle,
+} from '@/components/create/canvas/canvasResizeGeometry'
+import {
   registerSecondaryClick,
   type SecondaryClickSequence,
 } from '@/components/create/canvas/secondaryClickSequence'
@@ -468,6 +472,8 @@ function devPerf(label: string, mode: 'mark' | 'start' | 'end' = 'mark') {
   performance.mark(name)
   console.debug(`[perf] ${name}`)
 }
+
+type CanvasNodeResizeHandle = Extract<CanvasResizeHandle, 'nw' | 'ne' | 'se' | 'sw'>
 
 type VisualCanvasNode = CanvasNodeCardNode & {
   assetId?: string
@@ -2892,6 +2898,15 @@ export function VisualCanvasWorkspace({
     startY: number
     latestX: number
     latestY: number
+  } | null>(null)
+  const nodeResizeRef = useRef<{
+    nodeId: string
+    pointerId: number
+    handle: CanvasNodeResizeHandle
+    startClientX: number
+    startClientY: number
+    startRect: Pick<VisualCanvasNode, 'x' | 'y' | 'width' | 'height'>
+    latestRect: Pick<VisualCanvasNode, 'x' | 'y' | 'width' | 'height'>
   } | null>(null)
   const connectionDragRef = useRef<{
     nodeId: string
@@ -7546,12 +7561,65 @@ export function VisualCanvasWorkspace({
     setContextMenu(null)
     setNodeAddMenu(null)
   }, [activePreviewNodeId, closeActivePreview, nodes])
+
+  const handleNodeResizeStart = useCallback((
+    nodeId: string,
+    event: React.PointerEvent<HTMLButtonElement>,
+    handle: CanvasNodeResizeHandle,
+  ) => {
+    if (event.button !== 0) return
+    const node = nodes.find((item) => item.id === nodeId)
+    if (!node) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Window pointer listeners still handle the resize if capture is unavailable.
+    }
+    const startRect = {
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height,
+    }
+    nodeResizeRef.current = {
+      nodeId,
+      pointerId: event.pointerId,
+      handle,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startRect,
+      latestRect: startRect,
+    }
+    setActiveNodeId(nodeId)
+    setActiveEdgeId(null)
+    setContextMenu(null)
+    setNodeAddMenu(null)
+  }, [nodes])
+
   const pendingCommentCount = useMemo(() => comments.filter(isPendingCanvasComment).length, [comments])
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
+      const resize = nodeResizeRef.current
+      if (resize?.pointerId === event.pointerId) {
+        event.preventDefault()
+        event.stopPropagation()
+        const nextRect = resizeNodeRect({
+          rect: resize.startRect,
+          handle: resize.handle,
+          deltaX: (event.clientX - resize.startClientX) / canvasZoom,
+          deltaY: (event.clientY - resize.startClientY) / canvasZoom,
+        })
+        resize.latestRect = nextRect
+        handleNodePatch(resize.nodeId, nextRect)
+        return
+      }
+
       const drag = nodeDragRef.current
-      if (!drag) return
+      if (!drag || drag.pointerId !== event.pointerId) return
       event.preventDefault()
       event.stopPropagation()
       const nextX = drag.startX + (event.clientX - drag.startClientX) / canvasZoom
@@ -7565,7 +7633,19 @@ export function VisualCanvasWorkspace({
     }
 
     const handlePointerUp = (event: PointerEvent) => {
+      const resize = nodeResizeRef.current
+      if (resize?.pointerId === event.pointerId) {
+        nodeResizeRef.current = null
+        event.preventDefault()
+        event.stopPropagation()
+        handleNodePatch(resize.nodeId, resize.latestRect)
+        flushLocalSnapshot()
+        scheduleCanvasSave(0)
+        return
+      }
+
       const drag = nodeDragRef.current
+      if (drag?.pointerId !== event.pointerId) return
       nodeDragRef.current = null
       setDraggingNodeId('')
       if (!drag) return
@@ -10397,6 +10477,7 @@ export function VisualCanvasWorkspace({
       onAddPrev: (event) => startConnectionDrag(node.id, 'in', event),
       onAddNext: (event) => startConnectionDrag(node.id, 'out', event),
       onDragStart: (event) => handleNodeDragStart(node.id, event),
+      onResizeStart: (event, handle) => handleNodeResizeStart(node.id, event, handle),
       onSecondaryClick: (event) => handleNodeSecondaryClick(node.id, event),
       onOpenContextMenu: (event) => openNodeContextMenu(node.id, event.clientX, event.clientY),
       onEdit: () => focusPromptForNode(node),

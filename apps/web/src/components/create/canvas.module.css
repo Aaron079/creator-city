@@ -633,6 +633,34 @@
     0 0 34px rgba(124, 255, 234, 0.1);
 }
 
+.scope :global(.canvas-node-resize-handle) {
+  position: absolute;
+  z-index: 24;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(191, 237, 255, 0.92);
+  border-radius: 2px;
+  background: rgba(24, 34, 48, 0.94);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  touch-action: none;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.scope :global(.canvas-node-card:hover .canvas-node-resize-handle),
+.scope :global(.canvas-node-card.is-active .canvas-node-resize-handle),
+.scope :global(.canvas-node-resize-handle:hover) {
+  opacity: 1;
+}
+
+.scope :global(.canvas-node-resize-handle:hover) { background: rgba(124, 255, 234, 0.96); }
+.scope :global(.canvas-node-resize-handle.is-nw) { top: -6px; left: -6px; cursor: nwse-resize; }
+.scope :global(.canvas-node-resize-handle.is-ne) { top: -6px; right: -6px; cursor: nesw-resize; }
+.scope :global(.canvas-node-resize-handle.is-se) { right: -6px; bottom: -6px; cursor: nwse-resize; }
+.scope :global(.canvas-node-resize-handle.is-sw) { bottom: -6px; left: -6px; cursor: nesw-resize; }
+
 .scope :global(.canvas-node-card.is-generating)::before {
   content: '';
   position: absolute;
