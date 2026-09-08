@@ -172,7 +172,7 @@ describe('canvas resize geometry', () => {
     })
   })
 
-  test('rounds editor results to one decimal place', () => {
+  test('preserves fractional editor geometry without rounding', () => {
     assert.deepEqual(resizeEditorRect({
       rect: editorRect,
       handle: 'se',
@@ -181,8 +181,88 @@ describe('canvas resize geometry', () => {
     }), {
       x: 100,
       y: 200,
-      width: 400.1,
-      height: 200.5,
+      width: 400.123,
+      height: 200.456,
     })
+  })
+
+  test('preserves fractional supplied editor width bounds', () => {
+    const maxWidthBounds = { minWidth: 320, minHeight: 96, maxWidth: 400.06, maxHeight: 720 }
+    const maxWidthResult = resizeEditorRect({
+      rect: editorRect,
+      handle: 'e',
+      deltaX: 100,
+      deltaY: 0,
+      bounds: maxWidthBounds,
+    })
+    assert.equal(maxWidthResult.width, maxWidthBounds.maxWidth)
+    assert.ok(maxWidthResult.width <= maxWidthBounds.maxWidth)
+
+    const minWidthBounds = { minWidth: 400.04, minHeight: 96, maxWidth: 1120, maxHeight: 720 }
+    const minWidthResult = resizeEditorRect({
+      rect: editorRect,
+      handle: 'w',
+      deltaX: 100,
+      deltaY: 0,
+      bounds: minWidthBounds,
+    })
+    assert.equal(minWidthResult.width, minWidthBounds.minWidth)
+    assert.ok(minWidthResult.width >= minWidthBounds.minWidth)
+    assert.equal(minWidthResult.x + minWidthResult.width, editorRect.x + editorRect.width)
+  })
+
+  test('rejects zero, negative, and non-finite rect dimensions', () => {
+    assert.throws(() => resizeEditorRect({
+      rect: { ...editorRect, width: 0 },
+      handle: 'e',
+      deltaX: 0,
+      deltaY: 0,
+    }), RangeError)
+    assert.throws(() => resizeNodeRect({
+      rect: { ...nodeRect, height: -1 },
+      handle: 'se',
+      deltaX: 0,
+      deltaY: 0,
+    }), RangeError)
+    assert.throws(() => resizeEditorRect({
+      rect: { ...editorRect, width: Number.POSITIVE_INFINITY },
+      handle: 'e',
+      deltaX: 0,
+      deltaY: 0,
+    }), RangeError)
+  })
+
+  test('rejects non-positive, non-finite, and inverted bounds', () => {
+    assert.throws(() => resizeEditorRect({
+      rect: editorRect,
+      handle: 'e',
+      deltaX: 0,
+      deltaY: 0,
+      bounds: { minWidth: 0, minHeight: 96, maxWidth: 1120, maxHeight: 720 },
+    }), RangeError)
+    assert.throws(() => resizeEditorRect({
+      rect: editorRect,
+      handle: 'e',
+      deltaX: 0,
+      deltaY: 0,
+      bounds: { minWidth: 320, minHeight: 96, maxWidth: Number.POSITIVE_INFINITY, maxHeight: 720 },
+    }), RangeError)
+    assert.throws(() => resizeEditorRect({
+      rect: editorRect,
+      handle: 'e',
+      deltaX: 0,
+      deltaY: 0,
+      bounds: { minWidth: 500, minHeight: 96, maxWidth: 400, maxHeight: 720 },
+    }), RangeError)
+  })
+
+  test('rejects node bounds incompatible with the original aspect ratio', () => {
+    assert.throws(() => resizeNodeRect({
+      rect: nodeRect,
+      handle: 'se',
+      deltaX: 0,
+      deltaY: 0,
+      bounds: { minWidth: 500, minHeight: 1, maxWidth: 1000, maxHeight: 200 },
+    }), RangeError)
   })
 })

@@ -42,17 +42,25 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum)
 }
 
-function round(value: number) {
-  const rounded = Number(value.toFixed(1))
-  return Object.is(rounded, -0) ? 0 : rounded
+function validatePositiveFinite(value: number, name: string) {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new RangeError(`${name} must be finite and greater than zero`)
+  }
 }
 
-function roundedRect(rect: CanvasResizeRect): CanvasResizeRect {
-  return {
-    x: round(rect.x),
-    y: round(rect.y),
-    width: round(rect.width),
-    height: round(rect.height),
+function validateRect(rect: CanvasResizeRect) {
+  validatePositiveFinite(rect.width, 'rect.width')
+  validatePositiveFinite(rect.height, 'rect.height')
+}
+
+function validateBounds(bounds: CanvasResizeBounds) {
+  validatePositiveFinite(bounds.minWidth, 'bounds.minWidth')
+  validatePositiveFinite(bounds.minHeight, 'bounds.minHeight')
+  validatePositiveFinite(bounds.maxWidth, 'bounds.maxWidth')
+  validatePositiveFinite(bounds.maxHeight, 'bounds.maxHeight')
+
+  if (bounds.minWidth > bounds.maxWidth || bounds.minHeight > bounds.maxHeight) {
+    throw new RangeError('bounds minimums must not exceed their maximums')
   }
 }
 
@@ -63,25 +71,33 @@ export function resizeNodeRect({
   deltaY,
   bounds = nodeBounds,
 }: ResizeArgs<CanvasResizeCorner>): CanvasResizeRect {
+  validateRect(rect)
+  validateBounds(bounds)
+
   const resizeFromWest = handle === 'nw' || handle === 'sw'
   const resizeFromNorth = handle === 'nw' || handle === 'ne'
   const horizontalMotionDominates = Math.abs(deltaX) >= Math.abs(deltaY)
   const aspectRatio = rect.width / rect.height
-  const requestedWidth = horizontalMotionDominates
-    ? rect.width + (resizeFromWest ? -deltaX : deltaX)
-    : (rect.height + (resizeFromNorth ? -deltaY : deltaY)) * aspectRatio
   const minimumScale = Math.max(bounds.minWidth / rect.width, bounds.minHeight / rect.height)
   const maximumScale = Math.min(bounds.maxWidth / rect.width, bounds.maxHeight / rect.height)
-  const scale = clamp(requestedWidth / rect.width, minimumScale, maximumScale)
-  const width = rect.width * scale
-  const height = rect.height * scale
+  if (minimumScale > maximumScale) {
+    throw new RangeError('bounds cannot satisfy the node aspect ratio')
+  }
+  const requestedHeight = rect.height + (resizeFromNorth ? -deltaY : deltaY)
+  const requestedWidth = horizontalMotionDominates
+    ? rect.width + (resizeFromWest ? -deltaX : deltaX)
+    : requestedHeight * aspectRatio
+  const minimumWidth = Math.max(bounds.minWidth, bounds.minHeight * aspectRatio)
+  const maximumWidth = Math.min(bounds.maxWidth, bounds.maxHeight * aspectRatio)
+  const width = clamp(requestedWidth, minimumWidth, maximumWidth)
+  const height = width / aspectRatio
 
-  return roundedRect({
+  return {
     x: resizeFromWest ? rect.x + rect.width - width : rect.x,
     y: resizeFromNorth ? rect.y + rect.height - height : rect.y,
     width,
     height,
-  })
+  }
 }
 
 export function resizeEditorRect({
@@ -91,6 +107,9 @@ export function resizeEditorRect({
   deltaY,
   bounds = editorBounds,
 }: ResizeArgs<CanvasResizeHandle>): CanvasResizeRect {
+  validateRect(rect)
+  validateBounds(bounds)
+
   const resizeFromWest = handle === 'nw' || handle === 'w' || handle === 'sw'
   const resizeFromEast = handle === 'ne' || handle === 'e' || handle === 'se'
   const resizeFromNorth = handle === 'nw' || handle === 'n' || handle === 'ne'
@@ -106,10 +125,10 @@ export function resizeEditorRect({
     bounds.maxHeight,
   )
 
-  return roundedRect({
+  return {
     x: resizeFromWest ? rect.x + rect.width - width : rect.x,
     y: resizeFromNorth ? rect.y + rect.height - height : rect.y,
     width,
     height,
-  })
+  }
 }
