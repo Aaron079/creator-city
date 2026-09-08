@@ -156,6 +156,25 @@ test('falls back zero requested dimensions independently from valid dimensions',
   )
 })
 
+test('preserves the legacy default dialog height when dialogSize is omitted', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 60, width: 380, height: 194 },
+    stage: { left: 0, top: 0, right: 640, bottom: 300 },
+  })
+
+  assert.deepEqual(layout.dialog, { left: 16, top: 262, width: 608, height: 292 })
+})
+
+test('preserves a zero legacy dialogHeight when dialogSize is omitted', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 120, width: 380, height: 194 },
+    stage: { left: 0, top: 64, right: 1440, bottom: 900 },
+    dialogHeight: 0,
+  })
+
+  assert.equal(layout.dialog.height, 0)
+})
+
 test('clamps oversized requested dialog dimensions to the available stage axes', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
     node: { left: 400, top: 60, width: 380, height: 194 },

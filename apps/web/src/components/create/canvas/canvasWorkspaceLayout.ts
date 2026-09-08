@@ -269,8 +269,14 @@ export function clampCanvasDialogTopToStage(
   return Math.max(minimumTop, Math.min(top, maximumTop))
 }
 
-function getValidContextSurfaceDimension(value: number | undefined, fallback: number) {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+function isValidContextSurfaceDimension(value: number | undefined): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+function getLegacyContextSurfaceHeight(value: number | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : CONTEXT_DIALOG.height
 }
 
 export function getCanvasNodeContextSurfaceLayout({
@@ -292,17 +298,15 @@ export function getCanvasNodeContextSurfaceLayout({
   const maxSurfaceHeight = Math.max(0, stageHeight - verticalStageMargin * 2)
   const navigationWidth = Math.min(CONTEXT_NAVIGATION.width, maxSurfaceWidth)
   const dialogWidth = Math.min(
-    getValidContextSurfaceDimension(dialogSize?.width, CONTEXT_DIALOG.width),
+    isValidContextSurfaceDimension(dialogSize?.width)
+      ? dialogSize.width
+      : CONTEXT_DIALOG.width,
     maxSurfaceWidth,
   )
-  const defaultDialogHeight = getValidContextSurfaceDimension(
-    dialogHeight,
-    CONTEXT_DIALOG.height,
-  )
-  const resolvedDialogHeight = Math.min(
-    getValidContextSurfaceDimension(dialogSize?.height, defaultDialogHeight),
-    maxSurfaceHeight,
-  )
+  const legacyDialogHeight = getLegacyContextSurfaceHeight(dialogHeight)
+  const resolvedDialogHeight = isValidContextSurfaceDimension(dialogSize?.height)
+    ? Math.min(dialogSize.height, maxSurfaceHeight)
+    : legacyDialogHeight
   const nodeCenter = node.left + node.width / 2
   const rawNavigationTop = node.top - CONTEXT_NAVIGATION.height - CONTEXT_NAVIGATION.gap
   const navigationTop = stageHeight < CONTEXT_STAGE_MARGIN * 2
