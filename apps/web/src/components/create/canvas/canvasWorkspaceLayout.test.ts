@@ -530,6 +530,22 @@ test('keeps node task shell static and assigns scrolling only to prompt content'
   assert.match(finalRules, /\.canvas-node-dialog\.is-compact-fixed-controls/)
 })
 
+test('keeps compact task controls in one vertical column', () => {
+  const marker = '/* Node task dialog fixed surfaces */'
+  const finalRules = canvasModuleSource.slice(canvasModuleSource.lastIndexOf(marker))
+
+  assert.match(
+    finalRules,
+    /\.canvas-node-dialog\.is-compact-fixed-controls\) \{[\s\S]*?display: flex;[\s\S]*?flex-direction: column;/,
+  )
+  assert.doesNotMatch(finalRules, /\.canvas-node-dialog\.is-compact-fixed-controls\) \{[\s\S]*?display: grid;/)
+  assert.doesNotMatch(finalRules, /\.canvas-node-dialog\.is-compact-fixed-controls[\s\S]*?grid-column: 2;/)
+  assert.match(
+    canvasWorkspaceLayoutSource,
+    /const fixedHeight = measurements\.fixedTopHeight\s*\+ measurements\.fixedBottomHeight\s*\+ measurements\.promptChromeHeight/,
+  )
+})
+
 test('keeps reference and billing controls in fixed regions outside the prompt box', () => {
   const topControlsStart = visualCanvasWorkspaceSource.indexOf('canvas-node-dialog-fixed-controls is-top')
   const promptStart = visualCanvasWorkspaceSource.indexOf('<CanvasPromptBox', topControlsStart)
