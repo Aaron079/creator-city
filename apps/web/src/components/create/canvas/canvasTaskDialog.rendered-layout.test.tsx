@@ -544,6 +544,7 @@ test('renders the approved creative-workbench stack with compact one-line rails'
   const navigation = await page.locator('#node-navigation').boundingBox()
   const footerRow1 = await page.locator('.canvas-node-dialog-fixed-footer .canvas-prompt-footer-row1').boundingBox()
   const footerRow2 = await page.locator('.canvas-node-dialog-fixed-footer .canvas-prompt-footer-row2').boundingBox()
+  const fixedFooter = await page.locator('.canvas-node-dialog-fixed-footer').boundingBox()
   const promptHeader = await page.locator('.canvas-node-dialog-fixed-header').boundingBox()
   const bottomRail = await page.locator('#fixed-bottom').boundingBox()
   const billingDetails = await page.locator('.canvas-node-dialog-billing-details').boundingBox()
@@ -551,10 +552,22 @@ test('renders the approved creative-workbench stack with compact one-line rails'
   const modelControl = await page.locator('.canvas-footer-button.is-primary-pill').boundingBox()
   const parameterControl = await page.locator('.canvas-footer-button.is-reference-pill').boundingBox()
   const generateControl = await page.locator('.canvas-generate-button').boundingBox()
+  const generateLabelMetrics = await page.locator('.canvas-generate-button .canvas-credit-pill').evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }))
   const footerLayout = await page.locator('.canvas-node-dialog-fixed-footer .canvas-prompt-footer-nav').evaluate((element) => ({
     display: getComputedStyle(element).display,
     direction: getComputedStyle(element).flexDirection,
   }))
+  const controlTypography = await page.locator('.canvas-node-dialog-fixed-footer').evaluate((element) => {
+    const modelLabel = element.querySelector<HTMLElement>('.canvas-footer-button-value')
+    const generateLabel = element.querySelector<HTMLElement>('.canvas-credit-pill')
+    return {
+      modelFontSize: modelLabel ? Number.parseFloat(getComputedStyle(modelLabel).fontSize) : null,
+      generateFontSize: generateLabel ? Number.parseFloat(getComputedStyle(generateLabel).fontSize) : null,
+    }
+  })
   const scrollOwnership = await page.locator('#task-dialog .canvas-node-dialog-scroll-content').evaluate((element) => {
     const input = element.querySelector<HTMLElement>('.canvas-prompt-input')
     return {
@@ -568,6 +581,7 @@ test('renders the approved creative-workbench stack with compact one-line rails'
   assert.ok(navigation)
   assert.ok(footerRow1)
   assert.ok(footerRow2)
+  assert.ok(fixedFooter)
   assert.ok(promptHeader)
   assert.ok(bottomRail)
   assert.ok(billingDetails)
@@ -589,13 +603,25 @@ test('renders the approved creative-workbench stack with compact one-line rails'
   )
   assert.ok(modelControl.x + modelControl.width <= parameterControl.x)
   assert.ok(parameterControl.x + parameterControl.width <= generateControl.x)
-  assert.equal(Math.round(topRail.height), 44, `desktop top rail was ${topRail.height}px tall`)
+  assert.ok(generateControl.width >= 80, `generate control was only ${generateControl.width}px wide`)
+  assert.equal(
+    generateLabelMetrics.scrollWidth,
+    generateLabelMetrics.clientWidth,
+    `generate label was clipped (${generateLabelMetrics.scrollWidth}px > ${generateLabelMetrics.clientWidth}px)`,
+  )
+  assert.equal(Math.round(topRail.height), 34, `desktop top rail was ${topRail.height}px tall`)
   assert.equal(Math.round(bottomRail.height), 38, `desktop billing rail was ${bottomRail.height}px tall`)
-  assert.ok(Math.round(footerRow1.height) <= 48, `fixed control rail was ${footerRow1.height}px tall`)
+  assert.equal(Math.round(fixedFooter.height), 40, `fixed control rail was ${fixedFooter.height}px tall`)
+  assert.ok(Math.round(footerRow1.height) <= 34, `model control was ${footerRow1.height}px tall`)
+  assert.equal(controlTypography.modelFontSize, 14, `model label used ${controlTypography.modelFontSize}px`)
+  assert.equal(controlTypography.generateFontSize, 14, `generate label used ${controlTypography.generateFontSize}px`)
   assert.equal(scrollOwnership.content, 'hidden')
   assert.equal(scrollOwnership.input, 'auto')
   assert.ok(promptHeader.height <= 1, `desktop header consumed ${promptHeader.height}px above the prompt`)
-  assert.ok(closeButton.y >= topRail.y && closeButton.y + closeButton.height <= topRail.y + topRail.height)
+  assert.ok(
+    closeButton.y >= topRail.y && closeButton.y + closeButton.height <= topRail.y + topRail.height,
+    `close button ${closeButton.y}-${closeButton.y + closeButton.height}px escaped the top rail ${topRail.y}-${topRail.y + topRail.height}px`,
+  )
   if (process.env.CANVAS_TASK_DIALOG_SCREENSHOT) {
     await page.screenshot({ path: process.env.CANVAS_TASK_DIALOG_SCREENSHOT })
   }
@@ -671,6 +697,29 @@ test('keeps the real image-to-video mode header visible at 390x300', async (t) =
     `video compact geometry: fixedTop=${geometry.fixedTopHeight}px, fixedBottom=${geometry.fixedBottomHeight}px, `
       + `header=${geometry.promptHeaderHeight}px, body=${geometry.promptBodyHeight}px, footer=${geometry.promptFooterHeight}px`,
   )
+  await page.close()
+})
+
+test('keeps compact generation controls on one non-overlapping rail', async () => {
+  const page = await renderScenario('image-done')
+  const controls = await Promise.all([
+    page.locator('.canvas-footer-button.is-primary-pill').boundingBox(),
+    page.locator('.canvas-footer-button.is-reference-pill').boundingBox(),
+    page.locator('.canvas-footer-chip-pill').boundingBox(),
+    page.locator('.canvas-generate-button').boundingBox(),
+  ])
+  const [model, parameters, credits, generate] = controls
+
+  assert.ok(model)
+  assert.ok(parameters)
+  assert.ok(credits)
+  assert.ok(generate)
+  assert.ok(model.y <= parameters.y + parameters.height && parameters.y <= model.y + model.height, 'model and parameters must share the compact rail')
+  assert.ok(parameters.y <= credits.y + credits.height && credits.y <= parameters.y + parameters.height, 'parameters and cost must share the compact rail')
+  assert.ok(credits.y <= generate.y + generate.height && generate.y <= credits.y + credits.height, 'cost and generation must share the compact rail')
+  assert.ok(model.x + model.width <= parameters.x, `model ${model.x}-${model.x + model.width}px overlapped parameters ${parameters.x}-${parameters.x + parameters.width}px`)
+  assert.ok(parameters.x + parameters.width <= credits.x, `parameters ${parameters.x}-${parameters.x + parameters.width}px overlapped cost ${credits.x}-${credits.x + credits.width}px`)
+  assert.ok(credits.x + credits.width <= generate.x, `cost ${credits.x}-${credits.x + credits.width}px overlapped generation ${generate.x}-${generate.x + generate.width}px`)
   await page.close()
 })
 

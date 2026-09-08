@@ -9148,6 +9148,125 @@
   padding: 12px 14px;
 }
 
+/* Compact the fixed task controls without changing the prompt or billing rails. */
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-controls.is-top),
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-controls.is-top.is-compact-fixed-controls) {
+  flex-basis: 34px;
+  height: 34px;
+  min-height: 34px;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top > [data-no-node-drag='true']) {
+  height: 34px;
+  padding: 3px 38px 3px 8px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top .canvas-task-reference-header) {
+  min-height: 28px;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top .canvas-task-reference-label) {
+  font-size: 12px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-controls.is-top .canvas-task-reference-upload) {
+  min-height: 26px !important;
+  padding: 3px 8px !important;
+  font-size: 12px !important;
+}
+
+.scope :global(.canvas-node-dialog-fixed-header .canvas-node-dialog-expand) {
+  top: -34px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer) {
+  box-sizing: border-box;
+  height: 40px;
+  min-height: 40px;
+  padding: 3px 10px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-prompt-footer-nav) {
+  height: 32px;
+  gap: 6px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-footer-button.is-primary-pill),
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-footer-button.is-reference-pill) {
+  height: 28px;
+  padding: 0 8px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-footer-button-value),
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-credit-pill) {
+  font-size: 14px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-footer-param-chip),
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-footer-chip-pill) {
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-generate-button) {
+  width: auto;
+  min-width: 80px;
+  height: 32px;
+  min-height: 32px;
+  gap: 6px;
+  padding: 2px 3px 2px 9px;
+}
+
+.scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-send-icon) {
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+}
+
+/* A narrow canvas keeps the same fixed rail without allowing its controls to overlap. */
+@media (max-width: 640px) {
+  .scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-prompt-footer-row1) {
+    flex: 0 0 96px;
+    min-width: 0;
+  }
+
+  .scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-prompt-footer-row2) {
+    flex: 0 0 104px;
+    min-width: 0;
+  }
+
+  .scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-footer-button.is-primary-pill) {
+    width: 96px;
+    min-width: 0;
+    padding: 0 6px;
+  }
+
+  .scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-footer-button-value) {
+    max-width: 64px;
+  }
+
+  .scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-footer-button.is-reference-pill) {
+    width: 104px;
+    min-width: 0;
+    padding: 0 6px;
+    overflow: hidden;
+  }
+
+  .scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-footer-chip-pill) {
+    max-width: 46px;
+    overflow: hidden;
+    padding: 2px 5px;
+    font-size: 9px;
+    text-overflow: ellipsis;
+  }
+
+  .scope :global(.canvas-node-dialog .canvas-node-dialog-fixed-footer .canvas-generate-button) {
+    min-width: 70px;
+    padding-left: 7px;
+    gap: 4px;
+  }
+}
+
 .scope :global(.canvas-node-dialog-fixed-controls.is-top > [data-no-node-drag='true']) {
   flex: 0 0 auto;
   width: auto;
