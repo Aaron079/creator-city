@@ -269,6 +269,10 @@ export function clampCanvasDialogTopToStage(
   return Math.max(minimumTop, Math.min(top, maximumTop))
 }
 
+function getValidContextSurfaceDimension(value: number | undefined, fallback: number) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
 export function getCanvasNodeContextSurfaceLayout({
   node,
   stage,
@@ -281,20 +285,36 @@ export function getCanvasNodeContextSurfaceLayout({
   dialogSize?: CanvasSize
 }): CanvasContextSurfaceLayout {
   const stageWidth = Math.max(0, stage.right - stage.left)
-  const maxSurfaceWidth = Math.max(0, stageWidth - CONTEXT_STAGE_MARGIN * 2)
+  const stageHeight = Math.max(0, stage.bottom - stage.top)
+  const horizontalStageMargin = Math.min(CONTEXT_STAGE_MARGIN, stageWidth / 2)
+  const verticalStageMargin = Math.min(CONTEXT_STAGE_MARGIN, stageHeight / 2)
+  const maxSurfaceWidth = Math.max(0, stageWidth - horizontalStageMargin * 2)
+  const maxSurfaceHeight = Math.max(0, stageHeight - verticalStageMargin * 2)
   const navigationWidth = Math.min(CONTEXT_NAVIGATION.width, maxSurfaceWidth)
-  const dialogWidth = Math.min(dialogSize?.width ?? CONTEXT_DIALOG.width, maxSurfaceWidth)
-  const resolvedDialogHeight = dialogSize?.height ?? dialogHeight
+  const dialogWidth = Math.min(
+    getValidContextSurfaceDimension(dialogSize?.width, CONTEXT_DIALOG.width),
+    maxSurfaceWidth,
+  )
+  const defaultDialogHeight = getValidContextSurfaceDimension(
+    dialogHeight,
+    CONTEXT_DIALOG.height,
+  )
+  const resolvedDialogHeight = Math.min(
+    getValidContextSurfaceDimension(dialogSize?.height, defaultDialogHeight),
+    maxSurfaceHeight,
+  )
   const nodeCenter = node.left + node.width / 2
-  const navigationTop = node.top - CONTEXT_NAVIGATION.height - CONTEXT_NAVIGATION.gap
+  const rawNavigationTop = node.top - CONTEXT_NAVIGATION.height - CONTEXT_NAVIGATION.gap
+  const navigationTop = stageHeight < CONTEXT_STAGE_MARGIN * 2
+    ? Math.max(stage.top + verticalStageMargin, rawNavigationTop)
+    : rawNavigationTop
   const dialogTop = node.top + node.height + CONTEXT_DIALOG.gap
-  const minimumStageHeight = CONTEXT_STAGE_MARGIN * 2
+  const minimumStageHeight = verticalStageMargin * 2
     + CONTEXT_NAVIGATION.height
     + CONTEXT_NAVIGATION.gap
     + node.height
     + CONTEXT_DIALOG.gap
     + resolvedDialogHeight
-  const stageHeight = Math.max(0, stage.bottom - stage.top)
   const isVerticallyConstrained = stageHeight < minimumStageHeight
   let panDeltaY = 0
 
@@ -304,12 +324,12 @@ export function getCanvasNodeContextSurfaceLayout({
       resolvedDialogHeight,
       stage.top,
       stage.bottom,
-      CONTEXT_STAGE_MARGIN,
+      verticalStageMargin,
     )
     panDeltaY = constrainedDialogTop - dialogTop
   } else {
-    const minimumStackTop = stage.top + CONTEXT_STAGE_MARGIN
-    const maximumStackBottom = stage.bottom - CONTEXT_STAGE_MARGIN
+    const minimumStackTop = stage.top + verticalStageMargin
+    const maximumStackBottom = stage.bottom - verticalStageMargin
     if (navigationTop < minimumStackTop) {
       panDeltaY = minimumStackTop - navigationTop
     } else if (dialogTop + resolvedDialogHeight > maximumStackBottom) {
@@ -324,7 +344,7 @@ export function getCanvasNodeContextSurfaceLayout({
         navigationWidth,
         stage.left,
         stage.right,
-        CONTEXT_STAGE_MARGIN,
+        horizontalStageMargin,
       ),
       top: navigationTop,
       width: navigationWidth,
@@ -336,7 +356,7 @@ export function getCanvasNodeContextSurfaceLayout({
         dialogWidth,
         stage.left,
         stage.right,
-        CONTEXT_STAGE_MARGIN,
+        horizontalStageMargin,
       ),
       top: dialogTop,
       width: dialogWidth,

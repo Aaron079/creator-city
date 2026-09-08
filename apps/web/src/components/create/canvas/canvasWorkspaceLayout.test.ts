@@ -91,6 +91,57 @@ test('prefers dialogSize height over the legacy dialogHeight argument', () => {
   assert.equal(layout.dialog.height, 388)
 })
 
+test('keeps context surface geometry finite and nonnegative in zero and tiny stages', () => {
+  for (const stage of [
+    { left: 0, top: 0, right: 0, bottom: 0 },
+    { left: 0, top: 0, right: 12, bottom: 20 },
+  ]) {
+    const layout = getCanvasNodeContextSurfaceLayout({
+      node: { left: 0, top: 0, width: 380, height: 194 },
+      stage,
+      dialogSize: { width: 920, height: 388 },
+    })
+
+    for (const surface of [layout.navigation, layout.dialog]) {
+      for (const value of Object.values(surface)) {
+        assert.ok(Number.isFinite(value))
+        assert.ok(value >= 0)
+      }
+    }
+  }
+})
+
+test('falls back to default dimensions for invalid requested dialog sizes', () => {
+  const node = { left: 400, top: 120, width: 380, height: 194 }
+  const stage = { left: 0, top: 64, right: 1440, bottom: 900 }
+
+  for (const dialogSize of [
+    { width: -1, height: -1 },
+    { width: Number.NaN, height: Number.NaN },
+    { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY },
+  ]) {
+    const layout = getCanvasNodeContextSurfaceLayout({
+      node,
+      stage,
+      dialogHeight: 282,
+      dialogSize,
+    })
+
+    assert.deepEqual(layout.dialog, { left: 210, top: 322, width: 760, height: 282 })
+  }
+})
+
+test('clamps oversized requested dialog dimensions to the available stage axes', () => {
+  const layout = getCanvasNodeContextSurfaceLayout({
+    node: { left: 400, top: 60, width: 380, height: 194 },
+    stage: { left: 0, top: 0, right: 640, bottom: 300 },
+    dialogSize: { width: 920, height: 388 },
+  })
+
+  assert.deepEqual(layout.dialog, { left: 16, top: 262, width: 608, height: 268 })
+  assert.equal(layout.minimumStageHeight, 538)
+})
+
 test('supports a taller task dialog without moving its node navigation', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
     node: { left: 400, top: 120, width: 248, height: 220 },
