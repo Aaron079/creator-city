@@ -270,7 +270,7 @@ export function clampCanvasDialogTopToStage(
 }
 
 function getValidContextSurfaceDimension(value: number | undefined, fallback: number) {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
 export function getCanvasNodeContextSurfaceLayout({

@@ -116,6 +116,7 @@ test('falls back to default dimensions for invalid requested dialog sizes', () =
   const stage = { left: 0, top: 64, right: 1440, bottom: 900 }
 
   for (const dialogSize of [
+    { width: 0, height: 0 },
     { width: -1, height: -1 },
     { width: Number.NaN, height: Number.NaN },
     { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY },
@@ -129,6 +130,30 @@ test('falls back to default dimensions for invalid requested dialog sizes', () =
 
     assert.deepEqual(layout.dialog, { left: 210, top: 322, width: 760, height: 282 })
   }
+})
+
+test('falls back zero requested dimensions independently from valid dimensions', () => {
+  const node = { left: 400, top: 120, width: 380, height: 194 }
+  const stage = { left: 0, top: 64, right: 1440, bottom: 900 }
+
+  assert.deepEqual(
+    getCanvasNodeContextSurfaceLayout({
+      node,
+      stage,
+      dialogHeight: 282,
+      dialogSize: { width: 0, height: 388 },
+    }).dialog,
+    { left: 210, top: 322, width: 760, height: 388 },
+  )
+  assert.deepEqual(
+    getCanvasNodeContextSurfaceLayout({
+      node,
+      stage,
+      dialogHeight: 282,
+      dialogSize: { width: 920, height: 0 },
+    }).dialog,
+    { left: 130, top: 322, width: 920, height: 282 },
+  )
 })
 
 test('clamps oversized requested dialog dimensions to the available stage axes', () => {
