@@ -20,6 +20,10 @@ import {
   type CanvasTaskDialogMeasurements,
   type CanvasStageRect,
 } from '@/components/create/canvas/canvasWorkspaceLayout'
+import {
+  registerSecondaryClick,
+  type SecondaryClickSequence,
+} from '@/components/create/canvas/secondaryClickSequence'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
 import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
@@ -645,6 +649,7 @@ const NODE_MENU_WIDTH = 214
 const NODE_MENU_HEIGHT = 252
 const NODE_ADD_MENU_WIDTH = 214
 const NODE_ADD_MENU_HEIGHT = 440
+const NODE_CREATE_MENU_HEIGHT = 320
 const REVIEW_WINDOW_GAP = 18
 const REVIEW_WINDOW_TOP_GUARD = 104
 const REVIEW_WINDOW_MIN_WIDTH = 320
@@ -2620,6 +2625,7 @@ export function VisualCanvasWorkspace({
   const nodeTaskDialogFixedTopRef = useRef<HTMLDivElement | null>(null)
   const nodeTaskDialogFixedBottomRef = useRef<HTMLDivElement | null>(null)
   const nodeTaskDialogNoncompactMeasurementsRef = useRef<CanvasTaskDialogMeasurements | null>(null)
+  const secondaryClickSequenceRef = useRef<SecondaryClickSequence | null>(null)
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [isLexiconOpen, setIsLexiconOpen] = useState(false)
   const [isVariantPlannerOpen, setIsVariantPlannerOpen] = useState(false)
@@ -9451,6 +9457,17 @@ export function VisualCanvasWorkspace({
     openNodeAddMenuAt(nodeId, direction, position.x, position.y, resolved.x, resolved.y)
   }, [canvasPan.x, canvasPan.y, canvasZoom, nodes, openNodeAddMenuAt])
 
+  const handleNodeSecondaryClick = useCallback((nodeId: string, _event: React.MouseEvent<HTMLElement>) => {
+    const sequence = registerSecondaryClick(secondaryClickSequenceRef.current, {
+      target: `node:${nodeId}`,
+      occurredAt: Date.now(),
+    })
+    secondaryClickSequenceRef.current = sequence.next
+    if (!sequence.shouldOpenPicker) return
+
+    openNodeAddMenu(nodeId, 'out')
+  }, [openNodeAddMenu])
+
   const startConnectionDrag = useCallback((nodeId: string, direction: 'in' | 'out', event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return
     const sourceNode = nodes.find((node) => node.id === nodeId)
@@ -9993,6 +10010,7 @@ export function VisualCanvasWorkspace({
   }, [createNode, imageProviderStatusMap, nodeCreateMenu, openCanvasPanel, syncPromptPreset, videoProviderStatusMap])
 
   const handleCanvasDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
     const element = event.target as HTMLElement | null
     if (element?.closest('button, input, textarea')) return
     if (!canStartCanvasPan(event.target)) return
@@ -10024,6 +10042,26 @@ export function VisualCanvasWorkspace({
     setNodeCreateMenu(null)
     setIsAddMenuOpen(false)
   }, [canStartCanvasPan, closeActivePreview, createNode, focusPromptForNode, getViewportWorldPoint, syncPromptPreset])
+
+  const handleCanvasSecondaryClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!canStartCanvasPan(event.target)) return
+    event.preventDefault()
+    event.stopPropagation()
+
+    const sequence = registerSecondaryClick(secondaryClickSequenceRef.current, {
+      target: 'canvas',
+      occurredAt: Date.now(),
+    })
+    secondaryClickSequenceRef.current = sequence.next
+    if (!sequence.shouldOpenPicker) return
+
+    const position = clampMenuPosition(event.clientX, event.clientY, NODE_MENU_WIDTH, NODE_CREATE_MENU_HEIGHT)
+    const worldPoint = getViewportWorldPoint(event.clientX, event.clientY)
+    setNodeCreateMenu({ ...position, worldX: worldPoint.x, worldY: worldPoint.y })
+    setContextMenu(null)
+    setNodeAddMenu(null)
+    setIsAddMenuOpen(false)
+  }, [canStartCanvasPan, getViewportWorldPoint])
 
   const handleShareCanvasLink = useCallback(async () => {
     flushLocalSnapshot()
@@ -10380,6 +10418,7 @@ export function VisualCanvasWorkspace({
       onAddPrev: (event) => startConnectionDrag(node.id, 'in', event),
       onAddNext: (event) => startConnectionDrag(node.id, 'out', event),
       onDragStart: (event) => handleNodeDragStart(node.id, event),
+      onSecondaryClick: (event) => handleNodeSecondaryClick(node.id, event),
       onOpenContextMenu: (event) => openNodeContextMenu(node.id, event.clientX, event.clientY),
       onEdit: () => focusPromptForNode(node),
       onOpenPreview: (type) => openNodePreview(node, type),
@@ -11712,6 +11751,7 @@ export function VisualCanvasWorkspace({
         onPointerCancel={handleCanvasPointerUp}
         onDoubleClick={handleCanvasDoubleClick}
         onClick={handleCanvasClick}
+        onContextMenu={handleCanvasSecondaryClick}
         onDragOver={(e) => {
           if (Array.from(e.dataTransfer.types).includes('Files')) {
             e.preventDefault()

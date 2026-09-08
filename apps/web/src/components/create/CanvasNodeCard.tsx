@@ -64,6 +64,7 @@ export interface CanvasNodeCardProps {
   onAddPrev: (event: React.PointerEvent<HTMLButtonElement>) => void
   onAddNext: (event: React.PointerEvent<HTMLButtonElement>) => void
   onDragStart: (event: React.PointerEvent<HTMLDivElement>) => void
+  onSecondaryClick: (event: React.MouseEvent<HTMLElement>) => void
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void
   onEdit: () => void
   onOpenPreview: (type: CanvasNodePreviewType) => void
@@ -1452,6 +1453,7 @@ export function CanvasNodeCard({
   onAddPrev,
   onAddNext,
   onDragStart,
+  onSecondaryClick,
   onOpenContextMenu,
   onEdit,
   onOpenPreview,
@@ -3144,6 +3146,7 @@ export function CanvasNodeCard({
         onEdit()
       }}
       onDoubleClick={(event) => {
+        if (event.button !== 0) return
         event.preventDefault()
         event.stopPropagation()
         if (isInteractiveTarget(event.target)) return
@@ -3169,7 +3172,7 @@ export function CanvasNodeCard({
       onContextMenu={(event) => {
         event.preventDefault()
         event.stopPropagation()
-        onOpenContextMenu(event)
+        onSecondaryClick(event)
       }}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes(CHAR_REF_DRAG_MIME)) return

@@ -44,6 +44,7 @@ function CanvasNodeLayerComponent(props: CanvasNodeLayerProps) {
       onAddPrev={(event) => latestCardProps().onAddPrev(event)}
       onAddNext={(event) => latestCardProps().onAddNext(event)}
       onDragStart={(event) => latestCardProps().onDragStart(event)}
+      onSecondaryClick={(event) => latestCardProps().onSecondaryClick(event)}
       onOpenContextMenu={(event) => latestCardProps().onOpenContextMenu(event)}
       onEdit={() => latestCardProps().onEdit()}
       onOpenPreview={(type) => latestCardProps().onOpenPreview(type)}
