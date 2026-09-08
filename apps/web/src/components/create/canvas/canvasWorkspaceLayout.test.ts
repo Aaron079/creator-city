@@ -45,14 +45,16 @@ test('uses readable compact canvas node dimensions at 100% zoom', () => {
   assert.deepEqual(getCanvasNodeSize('video'), { width: 248, height: 220 })
 })
 
-test('anchors compact navigation above the selected display node and its dialog below', () => {
+test('anchors same-width navigation above the selected display node and its dialog below', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
     node: { left: 400, top: 120, width: 248, height: 220 },
     stage: { left: 0, top: 64, right: 1440, bottom: 720 },
   })
 
   assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
-  assert.deepEqual(layout.dialog, { left: 174, top: 348, width: 700, height: 210 })
+  assert.deepEqual(layout.dialog, { left: 349, top: 348, width: 350, height: 210 })
+  assert.equal(layout.dialog.left, layout.navigation.left)
+  assert.equal(layout.dialog.width, layout.navigation.width)
   assert.equal(layout.panDeltaY, 0)
 })
 
@@ -64,7 +66,7 @@ test('supports a taller task dialog without moving its node navigation', () => {
   })
 
   assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
-  assert.deepEqual(layout.dialog, { left: 174, top: 348, width: 700, height: 282 })
+  assert.deepEqual(layout.dialog, { left: 349, top: 348, width: 350, height: 282 })
   assert.equal(layout.panDeltaY, 0)
 })
 
@@ -289,7 +291,7 @@ test('keeps prompt chrome reachable with one local reference and billing control
 
   assert.deepEqual(
     { width: settledLayout.dialog.width, height: settledLayout.dialog.height },
-    { width: 358, height: 232 },
+    { width: 350, height: 232 },
   )
   assert.equal(
     node.top + firstLayout.panDeltaY,
@@ -561,6 +563,13 @@ test('keeps reference and billing controls in fixed regions outside the prompt b
   assert.match(topControlsSource, /nodeTaskDialogCompactControls \? ' is-compact-fixed-controls' : ''/)
   assert.match(bottomControlsSource, /SHOW_GENERATION_CONTEXT_CHIPS/)
   assert.match(bottomControlsSource, /API 费用来源/)
+})
+
+test('uses a concise actionable status when the selected BYOK provider has no account', () => {
+  assert.match(
+    visualCanvasWorkspaceSource,
+    /未配置匹配 API 账户。[\s\S]{0,240}前往添加/,
+  )
 })
 
 test('renders the real CanvasPromptBox and image-to-video mode in the Chromium matrix', () => {

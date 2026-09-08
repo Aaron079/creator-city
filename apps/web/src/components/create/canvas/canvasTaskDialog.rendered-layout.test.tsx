@@ -29,6 +29,7 @@ function harnessSource() {
     const isText = scenario === 'text-script'
     const isVideo = scenario === 'video-mode'
     const isByokMissingEndpoint = scenario === 'image-byok-missing-endpoint'
+    const isByokEmpty = scenario === 'image-byok-empty'
     const refStatus = scenario === 'image-uploading' ? 'uploading' : 'done'
     const upstreamNode = {
       id: 'source-image', type: 'image', kind: 'image', title: 'Upstream portrait',
@@ -59,11 +60,31 @@ function harnessSource() {
     const sizingHistory = []
 
     function billingDetails() {
-      if (!isByokMissingEndpoint) {
+      if (!isByokMissingEndpoint && !isByokEmpty) {
         return React.createElement(
           'div',
           { className: 'canvas-node-dialog-billing-details' },
           React.createElement('p', { className: 'canvas-node-dialog-billing-note' }, 'Billing detail remains available'),
+        )
+      }
+
+      if (isByokEmpty) {
+        return React.createElement(
+          'div',
+          { className: 'canvas-node-dialog-billing-details' },
+          React.createElement(
+            'p',
+            { className: 'canvas-node-dialog-billing-empty' },
+            '未配置匹配 API 账户。',
+            React.createElement(
+              'a',
+              {
+                className: 'canvas-node-dialog-billing-warning-link',
+                href: '/account/providers', target: '_blank', rel: 'noopener noreferrer',
+              },
+              '前往添加',
+            ),
+          ),
         )
       }
 
@@ -376,9 +397,13 @@ type TaskDialogHarness = HarnessCounters & {
   }
 }
 
-async function renderScenario(scenario: string, viewportHeight = 300) {
+async function renderScenario(
+  scenario: string,
+  viewportHeight = 300,
+  viewportWidth = 390,
+) {
   assert.ok(browser)
-  const page = await browser.newPage({ viewport: { width: 390, height: viewportHeight } })
+  const page = await browser.newPage({ viewport: { width: viewportWidth, height: viewportHeight } })
   page.setDefaultTimeout(5_000)
   await page.route('http://creator-city.test/**', (route) => route.fulfill({
     contentType: 'text/html',
@@ -461,19 +486,18 @@ async function assertConstrainedSurface(page: Page) {
   assert.ok(headerBox)
   assert.ok(bodyBox)
   assert.ok(footerBox)
-  assert.equal(sizingHistory[0]?.wasCompact, false, 'first pass must measure expanded controls')
-  assert.equal(sizingHistory[0]?.compactFixedControls, true, 'expanded controls must trigger compact mode')
+  assert.equal(sizingHistory[0]?.wasCompact, false, 'first pass must begin from the regular sizing state')
   assert.ok(
-    sizingHistory.slice(1).every((entry) => entry.compactFixedControls),
-    'compact remeasurement must not return to expanded mode',
+    sizingHistory.slice(1).every((entry) => entry.compactFixedControls === sizingHistory.at(-1)?.compactFixedControls),
+    'fixed-rail remeasurement must settle without toggling layout modes',
   )
   assert.equal(sizingHistory.at(-1)?.height, sizingHistory.at(-2)?.height)
-  assert.equal(await page.locator('#task-dialog').evaluate((element) => (
-    element.classList.contains('is-compact-fixed-controls')
-  )), true)
-  assert.ok(topBox.height <= 72, `compact fixed top was ${topBox.height}px tall`)
-  assert.ok(bottomBox.height <= 72, `compact fixed bottom was ${bottomBox.height}px tall`)
-  assert.ok(bodyBox.height >= 32, `prompt body was only ${bodyBox.height}px tall`)
+  assert.ok(topBox.height <= 56, `fixed top rail was ${topBox.height}px tall`)
+  assert.ok(bottomBox.height <= 56, `fixed bottom rail was ${bottomBox.height}px tall`)
+  assert.ok(
+    bodyBox.height >= 32,
+    `prompt body was only ${bodyBox.height}px tall (dialog=${dialogBox.height}px, top=${topBox.height}px, header=${headerBox.height}px, footer=${footerBox.height}px, bottom=${bottomBox.height}px)`,
+  )
   assert.ok(
     scrollMetrics.scrollHeight > scrollMetrics.clientHeight,
     `prompt body did not scroll (${scrollMetrics.scrollHeight}px <= ${scrollMetrics.clientHeight}px)`,
@@ -513,6 +537,52 @@ test('keeps the complete navigation-node-dialog stack inside a supported stage',
   await page.close()
 })
 
+test('keeps the desktop task dialog aligned with navigation and its fixed rails compact', async () => {
+  const page = await renderScenario('image-done', 900, 1440)
+  const dialog = await page.locator('#task-dialog').boundingBox()
+  const topRail = await page.locator('#fixed-top').boundingBox()
+  const navigation = await page.locator('#node-navigation').boundingBox()
+  const footerRow1 = await page.locator('.canvas-node-dialog-fixed-footer .canvas-prompt-footer-row1').boundingBox()
+  const footerRow2 = await page.locator('.canvas-node-dialog-fixed-footer .canvas-prompt-footer-row2').boundingBox()
+  const promptHeader = await page.locator('.canvas-node-dialog-fixed-header').boundingBox()
+  const bottomRail = await page.locator('#fixed-bottom').boundingBox()
+  const billingDetails = await page.locator('.canvas-node-dialog-billing-details').boundingBox()
+  const closeButton = await page.getByRole('button', { name: '关闭节点面板' }).boundingBox()
+  const footerLayout = await page.locator('.canvas-node-dialog-fixed-footer .canvas-prompt-footer-nav').evaluate((element) => ({
+    display: getComputedStyle(element).display,
+    direction: getComputedStyle(element).flexDirection,
+  }))
+
+  assert.ok(dialog)
+  assert.ok(topRail)
+  assert.ok(navigation)
+  assert.ok(footerRow1)
+  assert.ok(footerRow2)
+  assert.ok(promptHeader)
+  assert.ok(bottomRail)
+  assert.ok(billingDetails)
+  assert.ok(closeButton)
+  assert.equal(await page.locator('#task-dialog').evaluate((element) => (
+    element.classList.contains('is-compact-fixed-controls')
+  )), false)
+  assert.ok(Math.abs(dialog.width - navigation.width) <= 2)
+  assert.ok(Math.abs(dialog.x - navigation.x) <= 2)
+  assert.ok(Math.abs(topRail.width - dialog.width) <= 2)
+  assert.deepEqual(footerLayout, { display: 'flex', direction: 'column' })
+  assert.ok(
+    footerRow1.y + footerRow1.height <= footerRow2.y + 2,
+    `model controls must precede parameter controls (${footerRow1.y}px and ${footerRow2.y}px)`,
+  )
+  assert.ok(topRail.height <= 56, `desktop top rail was ${topRail.height}px tall`)
+  assert.ok(bottomRail.height <= 56, `desktop billing rail was ${bottomRail.height}px tall`)
+  assert.ok(promptHeader.height <= 1, `desktop header consumed ${promptHeader.height}px above the prompt`)
+  assert.ok(closeButton.y >= topRail.y && closeButton.y + closeButton.height <= topRail.y + topRail.height)
+  if (process.env.CANVAS_TASK_DIALOG_SCREENSHOT) {
+    await page.screenshot({ path: process.env.CANVAS_TASK_DIALOG_SCREENSHOT })
+  }
+  await page.close()
+})
+
 test('keeps an uploading image reference and upload action reachable at 390x300', async () => {
   const page = await renderScenario('image-uploading')
   await assertConstrainedSurface(page)
@@ -530,12 +600,23 @@ test('keeps an uploading image reference and upload action reachable at 390x300'
   await page.close()
 })
 
-test('keeps a completed image reference and remove action reachable at 390x300', async () => {
+test('keeps a completed image reference and remove action reachable at 390x300', async (t) => {
   const page = await renderScenario('image-done')
   await assertConstrainedSurface(page)
   assert.equal(await page.getByText('已上传').isVisible(), true)
   const removeButton = page.locator('.canvas-task-reference-card button[aria-label="移除"]')
   await removeButton.scrollIntoViewIfNeeded()
+  const [removeBox, closeBox] = await Promise.all([
+    removeButton.boundingBox(),
+    page.getByRole('button', { name: '关闭节点面板' }).boundingBox(),
+  ])
+  assert.ok(removeBox)
+  assert.ok(closeBox)
+  assert.ok(
+    removeBox.x + removeBox.width <= closeBox.x || closeBox.x + closeBox.width <= removeBox.x,
+    `reference remove and close actions overlap (${removeBox.x}-${removeBox.x + removeBox.width} vs ${closeBox.x}-${closeBox.x + closeBox.width})`,
+  )
+  t.diagnostic(`reference actions: remove=${removeBox.x},${removeBox.y},${removeBox.width}x${removeBox.height}; close=${closeBox.x},${closeBox.y},${closeBox.width}x${closeBox.height}`)
   await removeButton.click()
   assert.equal(await harnessCount(page, 'removeCount'), 1)
   await page.close()
@@ -588,7 +669,35 @@ test('keeps selected image BYOK account and missing-endpoint warning reachable a
   await warningLink.evaluate((element) => {
     element.addEventListener('click', (event) => event.preventDefault(), { once: true })
   })
+  if (process.env.CANVAS_TASK_DIALOG_BYOK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.CANVAS_TASK_DIALOG_BYOK_SCREENSHOT })
+  }
   await warningLink.click()
+  await page.close()
+})
+
+test('keeps the empty BYOK account state readable in the fixed bottom rail', async () => {
+  const page = await renderScenario('image-byok-empty')
+  await assertConstrainedSurface(page)
+  const bottomRail = await page.locator('#fixed-bottom').boundingBox()
+  const billingDetails = await page.locator('.canvas-node-dialog-billing-details').boundingBox()
+  const status = page.getByText(/未配置匹配 API 账户/)
+  const link = page.getByText('前往添加', { exact: true })
+  const statusBox = await status.boundingBox()
+  const linkBox = await link.boundingBox()
+
+  assert.ok(bottomRail)
+  assert.ok(billingDetails)
+  assert.ok(statusBox)
+  assert.ok(linkBox)
+  assert.ok(statusBox.y >= bottomRail.y && statusBox.y + statusBox.height <= bottomRail.y + bottomRail.height)
+  assert.ok(
+    linkBox.x + linkBox.width <= bottomRail.x + bottomRail.width,
+    `BYOK link escaped the rail: link right ${linkBox.x + linkBox.width}px, rail right ${bottomRail.x + bottomRail.width}px; details ${billingDetails.x}-${billingDetails.x + billingDetails.width}px`,
+  )
+  if (process.env.CANVAS_TASK_DIALOG_EMPTY_BYOK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.CANVAS_TASK_DIALOG_EMPTY_BYOK_SCREENSHOT })
+  }
   await page.close()
 })
 

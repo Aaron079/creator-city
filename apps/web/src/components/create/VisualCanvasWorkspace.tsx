@@ -12429,9 +12429,7 @@ export function VisualCanvasWorkspace({
                         if (matchingAccounts.length === 0) {
                           return (
                             <p className="canvas-node-dialog-billing-empty text-[11px] text-amber-400/70">
-                              {editingNode.kind === 'image'
-                                ? '没有可用的 Volcengine / Seedream 账户（需要 API Key + Endpoint ID）。'
-                                : `没有与 ${normalizedPromptModel} 匹配的可用账户。`}
+                              未配置匹配 API 账户。
                               <a href="/account/providers" target="_blank" rel="noopener noreferrer" className="ml-1 underline hover:text-amber-300">前往添加</a>
                             </p>
                           )

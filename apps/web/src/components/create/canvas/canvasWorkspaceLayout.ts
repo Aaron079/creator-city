@@ -13,7 +13,7 @@ export type CanvasContextSurfaceLayout = {
 }
 
 const CONTEXT_NAVIGATION = { width: 350, height: 28, gap: 8 }
-const CONTEXT_DIALOG = { width: 700, height: 210, gap: 8 }
+const CONTEXT_DIALOG = { width: CONTEXT_NAVIGATION.width, height: 210, gap: 8 }
 const CONTEXT_STAGE_MARGIN = 16
 const TASK_DIALOG_BASE_HEIGHT = 282
 const TASK_DIALOG_PROMPT_BODY_HEIGHT = 58
