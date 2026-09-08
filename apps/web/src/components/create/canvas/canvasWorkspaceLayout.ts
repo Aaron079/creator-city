@@ -12,10 +12,10 @@ export type CanvasContextSurfaceLayout = {
   isVerticallyConstrained: boolean
 }
 
-const CONTEXT_NAVIGATION = { width: 350, height: 28, gap: 8 }
-const CONTEXT_DIALOG = { width: CONTEXT_NAVIGATION.width, height: 210, gap: 8 }
+const CONTEXT_NAVIGATION = { width: 380, height: 28, gap: 8 }
+const CONTEXT_DIALOG = { width: 760, height: 292, gap: 8 }
 const CONTEXT_STAGE_MARGIN = 16
-const TASK_DIALOG_BASE_HEIGHT = 282
+const TASK_DIALOG_BASE_HEIGHT = 292
 const TASK_DIALOG_PROMPT_BODY_HEIGHT = 58
 
 export type CanvasTaskDialogSizing = {
@@ -182,15 +182,21 @@ export function stabilizeCanvasTaskDialogSizing({
 }
 
 const COMPACT_NODE_SIZES: Record<VisualCanvasNodeKind, CanvasSize> = {
-  text: { width: 236, height: 208 },
-  image: { width: 248, height: 220 },
-  video: { width: 248, height: 220 },
+  text: { width: 380, height: 194 },
+  image: { width: 380, height: 194 },
+  video: { width: 380, height: 194 },
   audio: { width: 236, height: 190 },
   asset: { width: 236, height: 200 },
   template: { width: 236, height: 200 },
   delivery: { width: 236, height: 200 },
   world: { width: 248, height: 220 },
   upload: { width: 236, height: 200 },
+}
+
+const PREVIOUS_COMPACT_DISPLAY_NODE_SIZES: Partial<Record<VisualCanvasNodeKind, CanvasSize>> = {
+  text: { width: 236, height: 208 },
+  image: { width: 248, height: 220 },
+  video: { width: 248, height: 220 },
 }
 
 const LEGACY_NODE_SIZES: Record<VisualCanvasNodeKind, CanvasSize> = {
@@ -213,7 +219,12 @@ export function normalizeLegacyCanvasNodeSize<
   T extends { kind: VisualCanvasNodeKind; width: number; height: number },
 >(node: T): T {
   const legacySize = LEGACY_NODE_SIZES[node.kind]
-  if (node.width !== legacySize.width || node.height !== legacySize.height) return node
+  const previousCompactSize = PREVIOUS_COMPACT_DISPLAY_NODE_SIZES[node.kind]
+  const isLegacySize = node.width === legacySize.width && node.height === legacySize.height
+  const isPreviousCompactDisplaySize = previousCompactSize
+    && node.width === previousCompactSize.width
+    && node.height === previousCompactSize.height
+  if (!isLegacySize && !isPreviousCompactDisplaySize) return node
 
   return {
     ...node,

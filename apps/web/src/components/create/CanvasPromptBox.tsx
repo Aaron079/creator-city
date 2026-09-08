@@ -648,18 +648,6 @@ export function CanvasPromptBox({
                 <span className="canvas-footer-button-value">{modelLabel}</span>
               </button>
             ) : null}
-            {onGenerate ? (
-              <button
-                type="button"
-                onClick={onGenerate}
-                disabled={generateDisabled}
-                className="create-iridescent-button canvas-generate-button"
-                aria-label={generateLabel}
-              >
-                <span className="canvas-credit-pill">{generateLabel === '生成' && estimatedCredits != null ? `◉ ${estimatedCredits}` : generateLabel}</span>
-                <span className="canvas-send-icon">↑</span>
-              </button>
-            ) : null}
           </div>
 
           <div className="canvas-prompt-footer-row2">
@@ -680,6 +668,19 @@ export function CanvasPromptBox({
               <span className="canvas-footer-chip-pill">{estimatedCredits} credits</span>
             )}
           </div>
+
+          {onGenerate ? (
+            <button
+              type="button"
+              onClick={onGenerate}
+              disabled={generateDisabled}
+              className="create-iridescent-button canvas-generate-button"
+              aria-label={generateLabel}
+            >
+              <span className="canvas-credit-pill">{generateLabel === '生成' && estimatedCredits != null ? `◉ ${estimatedCredits}` : generateLabel}</span>
+              <span className="canvas-send-icon">↑</span>
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

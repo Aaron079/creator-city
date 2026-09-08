@@ -55,7 +55,7 @@ function harnessSource() {
     let uploadCount = 0
     let compactFixedControls = false
     let noncompactMeasurements = null
-    let nodeRect = { left: 71, top: 64, width: 248, height: 220 }
+    let nodeRect = { left: 530, top: 64, width: 380, height: 194 }
     let latestStackLayout = null
     const sizingHistory = []
 
@@ -172,7 +172,7 @@ function harnessSource() {
             {
               id: 'representative-node',
               style: {
-                position: 'absolute', left: 71, top: 64, width: 248, height: 220,
+                position: 'absolute', left: 530, top: 64, width: 380, height: 194,
                 boxSizing: 'border-box',
                 background: '#20242b', border: '1px solid rgba(255,255,255,0.12)',
               },
@@ -471,7 +471,7 @@ async function assertConstrainedSurface(page: Page) {
   const headerBox = await promptBox.locator('.canvas-node-dialog-fixed-header').boundingBox()
   const bodyBox = await promptBox.locator('.canvas-node-dialog-scroll-content').boundingBox()
   const footerBox = await promptBox.locator('.canvas-node-dialog-fixed-footer').boundingBox()
-  const scrollMetrics = await promptBox.locator('.canvas-node-dialog-scroll-content').evaluate((element) => ({
+  const scrollMetrics = await promptBox.locator('.canvas-prompt-input').evaluate((element) => ({
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
   }))
@@ -502,7 +502,7 @@ async function assertConstrainedSurface(page: Page) {
     scrollMetrics.scrollHeight > scrollMetrics.clientHeight,
     `prompt body did not scroll (${scrollMetrics.scrollHeight}px <= ${scrollMetrics.clientHeight}px)`,
   )
-  const scrollTop = await promptBox.locator('.canvas-node-dialog-scroll-content').evaluate((element) => {
+  const scrollTop = await promptBox.locator('.canvas-prompt-input').evaluate((element) => {
     element.scrollTop = element.scrollHeight
     return element.scrollTop
   })
@@ -537,7 +537,7 @@ test('keeps the complete navigation-node-dialog stack inside a supported stage',
   await page.close()
 })
 
-test('keeps the desktop task dialog aligned with navigation and its fixed rails compact', async () => {
+test('renders the approved creative-workbench stack with compact one-line rails', async () => {
   const page = await renderScenario('image-done', 900, 1440)
   const dialog = await page.locator('#task-dialog').boundingBox()
   const topRail = await page.locator('#fixed-top').boundingBox()
@@ -548,10 +548,20 @@ test('keeps the desktop task dialog aligned with navigation and its fixed rails 
   const bottomRail = await page.locator('#fixed-bottom').boundingBox()
   const billingDetails = await page.locator('.canvas-node-dialog-billing-details').boundingBox()
   const closeButton = await page.getByRole('button', { name: '关闭节点面板' }).boundingBox()
+  const modelControl = await page.locator('.canvas-footer-button.is-primary-pill').boundingBox()
+  const parameterControl = await page.locator('.canvas-footer-button.is-reference-pill').boundingBox()
+  const generateControl = await page.locator('.canvas-generate-button').boundingBox()
   const footerLayout = await page.locator('.canvas-node-dialog-fixed-footer .canvas-prompt-footer-nav').evaluate((element) => ({
     display: getComputedStyle(element).display,
     direction: getComputedStyle(element).flexDirection,
   }))
+  const scrollOwnership = await page.locator('#task-dialog .canvas-node-dialog-scroll-content').evaluate((element) => {
+    const input = element.querySelector<HTMLElement>('.canvas-prompt-input')
+    return {
+      content: getComputedStyle(element).overflowY,
+      input: input ? getComputedStyle(input).overflowY : null,
+    }
+  })
 
   assert.ok(dialog)
   assert.ok(topRail)
@@ -562,19 +572,28 @@ test('keeps the desktop task dialog aligned with navigation and its fixed rails 
   assert.ok(bottomRail)
   assert.ok(billingDetails)
   assert.ok(closeButton)
+  assert.ok(modelControl)
+  assert.ok(parameterControl)
+  assert.ok(generateControl)
   assert.equal(await page.locator('#task-dialog').evaluate((element) => (
     element.classList.contains('is-compact-fixed-controls')
   )), false)
-  assert.ok(Math.abs(dialog.width - navigation.width) <= 2)
-  assert.ok(Math.abs(dialog.x - navigation.x) <= 2)
+  assert.equal(Math.round(navigation.width), 380)
+  assert.equal(Math.round(dialog.width), 760)
+  assert.ok(Math.abs((dialog.x + dialog.width / 2) - (navigation.x + navigation.width / 2)) <= 2)
   assert.ok(Math.abs(topRail.width - dialog.width) <= 2)
-  assert.deepEqual(footerLayout, { display: 'flex', direction: 'column' })
+  assert.deepEqual(footerLayout, { display: 'flex', direction: 'row' })
   assert.ok(
-    footerRow1.y + footerRow1.height <= footerRow2.y + 2,
-    `model controls must precede parameter controls (${footerRow1.y}px and ${footerRow2.y}px)`,
+    Math.abs(footerRow1.y - footerRow2.y) <= 2,
+    `model and parameter controls must share one rail (${footerRow1.y}px and ${footerRow2.y}px)`,
   )
-  assert.ok(topRail.height <= 56, `desktop top rail was ${topRail.height}px tall`)
-  assert.ok(bottomRail.height <= 56, `desktop billing rail was ${bottomRail.height}px tall`)
+  assert.ok(modelControl.x + modelControl.width <= parameterControl.x)
+  assert.ok(parameterControl.x + parameterControl.width <= generateControl.x)
+  assert.equal(Math.round(topRail.height), 44, `desktop top rail was ${topRail.height}px tall`)
+  assert.equal(Math.round(bottomRail.height), 38, `desktop billing rail was ${bottomRail.height}px tall`)
+  assert.ok(Math.round(footerRow1.height) <= 48, `fixed control rail was ${footerRow1.height}px tall`)
+  assert.equal(scrollOwnership.content, 'hidden')
+  assert.equal(scrollOwnership.input, 'auto')
   assert.ok(promptHeader.height <= 1, `desktop header consumed ${promptHeader.height}px above the prompt`)
   assert.ok(closeButton.y >= topRail.y && closeButton.y + closeButton.height <= topRail.y + topRail.height)
   if (process.env.CANVAS_TASK_DIALOG_SCREENSHOT) {

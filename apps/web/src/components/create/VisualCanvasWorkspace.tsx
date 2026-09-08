@@ -2614,7 +2614,7 @@ export function VisualCanvasWorkspace({
   const [reframeMode, setReframeMode] = useState<ReframeMode>('original')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [activeNodeContextCategory, setActiveNodeContextCategory] = useState<NodeContextCategory | null>(null)
-  const [nodeTaskDialogHeight, setNodeTaskDialogHeight] = useState(282)
+  const [nodeTaskDialogHeight, setNodeTaskDialogHeight] = useState(292)
   const [nodeTaskDialogCompactControls, setNodeTaskDialogCompactControls] = useState(false)
   const nodeContextPanAdjustmentKeyRef = useRef<string | null>(null)
   const nodeTaskDialogFixedTopRef = useRef<HTMLDivElement | null>(null)

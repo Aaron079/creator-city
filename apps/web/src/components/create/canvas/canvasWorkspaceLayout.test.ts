@@ -39,22 +39,22 @@ function settleCanvasStack({
   return { node: settledNode, layout: settled }
 }
 
-test('uses readable compact canvas node dimensions at 100% zoom', () => {
-  assert.deepEqual(getCanvasNodeSize('text'), { width: 236, height: 208 })
-  assert.deepEqual(getCanvasNodeSize('image'), { width: 248, height: 220 })
-  assert.deepEqual(getCanvasNodeSize('video'), { width: 248, height: 220 })
+test('uses the approved creative-workbench node dimensions at 100% zoom', () => {
+  assert.deepEqual(getCanvasNodeSize('text'), { width: 380, height: 194 })
+  assert.deepEqual(getCanvasNodeSize('image'), { width: 380, height: 194 })
+  assert.deepEqual(getCanvasNodeSize('video'), { width: 380, height: 194 })
 })
 
-test('anchors same-width navigation above the selected display node and its dialog below', () => {
+test('anchors a 1:2 node-to-dialog creative-workbench stack on one centerline', () => {
   const layout = getCanvasNodeContextSurfaceLayout({
-    node: { left: 400, top: 120, width: 248, height: 220 },
+    node: { left: 400, top: 120, width: 380, height: 194 },
     stage: { left: 0, top: 64, right: 1440, bottom: 720 },
   })
 
-  assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
-  assert.deepEqual(layout.dialog, { left: 349, top: 348, width: 350, height: 210 })
-  assert.equal(layout.dialog.left, layout.navigation.left)
-  assert.equal(layout.dialog.width, layout.navigation.width)
+  assert.deepEqual(layout.navigation, { left: 400, top: 84, width: 380, height: 28 })
+  assert.deepEqual(layout.dialog, { left: 210, top: 322, width: 760, height: 292 })
+  assert.equal(layout.navigation.left + layout.navigation.width / 2, layout.dialog.left + layout.dialog.width / 2)
+  assert.equal(layout.dialog.width, layout.navigation.width * 2)
   assert.equal(layout.panDeltaY, 0)
 })
 
@@ -65,8 +65,8 @@ test('supports a taller task dialog without moving its node navigation', () => {
     dialogHeight: 282,
   })
 
-  assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
-  assert.deepEqual(layout.dialog, { left: 349, top: 348, width: 350, height: 282 })
+  assert.deepEqual(layout.navigation, { left: 334, top: 84, width: 380, height: 28 })
+  assert.deepEqual(layout.dialog, { left: 144, top: 348, width: 760, height: 282 })
   assert.equal(layout.panDeltaY, 0)
 })
 
@@ -77,7 +77,7 @@ test('uses a taller task dialog height to calculate stage overflow', () => {
     dialogHeight: 282,
   })
 
-  assert.deepEqual(layout.navigation, { left: 349, top: 84, width: 350, height: 28 })
+  assert.deepEqual(layout.navigation, { left: 334, top: 84, width: 380, height: 28 })
   assert.equal(layout.dialog.top, 348)
   assert.equal(layout.panDeltaY, -46)
 })
@@ -192,7 +192,7 @@ test('exposes pure task dialog sizing as a layout behavior boundary', () => {
   assert.match(canvasWorkspaceLayoutSource, /export function getCanvasTaskDialogSizing\(/)
 })
 
-test('keeps the 282px task height when fixed controls and prompt allowance fit', () => {
+test('keeps the 292px task height when fixed controls and prompt allowance fit', () => {
   assert.deepEqual(
     getCanvasTaskDialogSizing({
       stageHeight: 800,
@@ -201,10 +201,10 @@ test('keeps the 282px task height when fixed controls and prompt allowance fit',
       promptChromeHeight: 100,
     }),
     {
-      height: 282,
+      height: 292,
       maxHeight: 732,
       compactFixedControls: false,
-      promptBodyHeight: 132,
+      promptBodyHeight: 142,
     },
   )
 })
@@ -291,7 +291,7 @@ test('keeps prompt chrome reachable with one local reference and billing control
 
   assert.deepEqual(
     { width: settledLayout.dialog.width, height: settledLayout.dialog.height },
-    { width: 350, height: 232 },
+    { width: 358, height: 232 },
   )
   assert.equal(
     node.top + firstLayout.panDeltaY,
@@ -350,7 +350,7 @@ test('retains compact task sizing across compact remeasurement until noncompact 
   })
 
   assert.equal(compactRemeasurement.compactFixedControls, true)
-  assert.equal(compactRemeasurement.height, 282)
+  assert.equal(compactRemeasurement.height, 292)
   assert.deepEqual(compactRemeasurement.noncompactMeasurements, expandedMeasurements)
 
   const largerStage = stabilizeCanvasTaskDialogSizing({
@@ -376,7 +376,7 @@ test('requests an upward Canvas pan for a below-node dialog without moving navig
 
   assert.equal(layout.navigation.top, 424)
   assert.equal(layout.dialog.top, 688)
-  assert.equal(layout.panDeltaY, -194)
+  assert.equal(layout.panDeltaY, -276)
 })
 
 test('uses a compact desktop task dialog without reducing its controls below usable size', () => {
@@ -600,7 +600,7 @@ test('renders navigation, node, and task dialog as a complete Chromium stack', (
 test('expands only the task surface from its measured fixed-control stack', () => {
   assert.match(
     visualCanvasWorkspaceSource,
-    /const \[nodeTaskDialogHeight, setNodeTaskDialogHeight\] = useState\(282\)/,
+    /const \[nodeTaskDialogHeight, setNodeTaskDialogHeight\] = useState\(292\)/,
   )
   assert.match(
     visualCanvasWorkspaceSource,
@@ -631,10 +631,17 @@ test('suppresses persistence for the automatic lower-viewport pan', () => {
   assert.doesNotMatch(autoPanSource, /scheduleCanvasSave\(/)
 })
 
-test('migrates legacy default node dimensions to the compact canvas scale', () => {
+test('migrates legacy default node dimensions to the creative-workbench scale', () => {
   assert.deepEqual(
     normalizeLegacyCanvasNodeSize({ id: 'video-1', kind: 'video', width: 380, height: 320 }),
-    { id: 'video-1', kind: 'video', width: 248, height: 220 },
+    { id: 'video-1', kind: 'video', width: 380, height: 194 },
+  )
+})
+
+test('migrates prior compact display node dimensions to the approved workbench scale', () => {
+  assert.deepEqual(
+    normalizeLegacyCanvasNodeSize({ id: 'text-1', kind: 'text', width: 236, height: 208 }),
+    { id: 'text-1', kind: 'text', width: 380, height: 194 },
   )
 })
 
