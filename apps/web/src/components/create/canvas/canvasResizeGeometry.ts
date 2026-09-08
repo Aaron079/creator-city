@@ -123,7 +123,6 @@ export function resizeNodeRect({
   if (positionBounds) validatePositionBounds(positionBounds)
 
   const resizeFromWest = handle === 'nw' || handle === 'w' || handle === 'sw'
-  const resizeFromEast = handle === 'ne' || handle === 'e' || handle === 'se'
   const resizeFromNorth = handle === 'nw' || handle === 'n' || handle === 'ne'
   const resizeFromSouth = handle === 'sw' || handle === 's' || handle === 'se'
   const isHorizontalEdge = handle === 'w' || handle === 'e'
