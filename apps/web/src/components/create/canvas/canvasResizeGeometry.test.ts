@@ -1,3 +1,6 @@
+/**
+ * Run: pnpm --filter web exec tsx --test src/components/create/canvas/canvasResizeGeometry.test.ts
+ */
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
