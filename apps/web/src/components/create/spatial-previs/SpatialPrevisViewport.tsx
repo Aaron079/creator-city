@@ -52,6 +52,7 @@ type WorldAnchor = {
 type SpatialPrevisViewportProps = {
   state: SpatialPrevisState
   currentTimeSec: number
+  disabled?: boolean
   onChange: (next: SpatialPrevisState) => void
 }
 
@@ -404,6 +405,7 @@ function WorldCanvas(props: {
   selection: TransformSelection
   selectedActorTrack: ActorTrack | undefined
   manipulationEnabled: boolean
+  interactionDisabled: boolean
   onObjectChange: (position: Vec3) => void
 }) {
   return (
@@ -416,7 +418,7 @@ function WorldCanvas(props: {
       style={{ position: 'absolute', inset: 0 }}
     >
       <WorldGeometry {...props} />
-      <OrbitControls makeDefault enableDamping target={WORLD_CAMERA_TARGET} maxPolarAngle={Math.PI * 0.48} />
+      <OrbitControls enabled={!props.interactionDisabled} makeDefault enableDamping target={WORLD_CAMERA_TARGET} maxPolarAngle={Math.PI * 0.48} />
     </Canvas>
   )
 }
@@ -449,7 +451,7 @@ function LivePreviewCanvas({ state, currentTimeSec, sampledCamera }: {
   )
 }
 
-export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: SpatialPrevisViewportProps) {
+export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false, onChange }: SpatialPrevisViewportProps) {
   const [mounted, setMounted] = useState(false)
   const [selection, setSelection] = useState<TransformSelection>(state.masterTake.actorTracks.length > 0 ? 'actor' : 'camera')
   const [selectedActorTrackId, setSelectedActorTrackId] = useState(state.masterTake.actorTracks[0]?.id ?? '')
@@ -460,8 +462,10 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
   const exactCamera = exactKeyframe(state.masterTake.cameraTrack.keyframes, currentTimeSec)
   const exactActor = selectedActorTrack ? exactKeyframe(selectedActorTrack.keyframes, currentTimeSec) : null
   const selectionHasKeyframe = selection === 'actor' ? Boolean(exactActor) : Boolean(exactCamera)
-  const manipulationEnabled = selectionHasKeyframe
-  const disabledReason = selectionHasKeyframe ? undefined : '当前时间没有可编辑的关键帧'
+  const manipulationEnabled = !disabled && selectionHasKeyframe
+  const disabledReason = disabled
+    ? '正在保存预演，编辑已锁定'
+    : selectionHasKeyframe ? undefined : '当前时间没有可编辑的关键帧'
 
   useEffect(() => {
     setMounted(true)
@@ -474,6 +478,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
   }, [selectedActorTrack, selection, state.masterTake.actorTracks])
 
   const handleObjectChange = useCallback((position: Vec3) => {
+    if (disabled) return
     if (selection === 'actor') {
       const next = updateSpatialActorPosition(state, selectedActorTrackId, currentTimeSec, position)
       if (next !== state) onChange(next)
@@ -482,7 +487,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
 
     if (!exactCamera) return
     onChange(replaceCameraKeyframe(state, exactCamera, selection === 'camera' ? { position } : { target: position }))
-  }, [currentTimeSec, exactCamera, onChange, selectedActorTrackId, selection, state])
+  }, [currentTimeSec, disabled, exactCamera, onChange, selectedActorTrackId, selection, state])
 
   return (
     <section data-spatial-previs-viewport="true" className="flex min-h-[470px] w-full flex-col overflow-hidden rounded-lg border border-white/12 bg-[#0b1014] text-white shadow-xl">
@@ -494,6 +499,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
             <select
               aria-label="选择演员轨道"
               value={selectedActorTrackId}
+              disabled={disabled}
               onChange={(event) => setSelectedActorTrackId(event.target.value)}
               className="max-w-40 rounded-md border border-white/12 bg-[#10171d] px-2 py-1 text-[11px] text-white/70 outline-none focus:border-cyan-200/55"
             >
@@ -506,7 +512,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="inline-flex overflow-hidden rounded-md border border-white/12" role="group" aria-label="直接操控对象">
             {(['actor', 'camera', 'target'] as const).map((item) => {
-              const isDisabled = item === 'actor' && !selectedActorTrack
+              const isDisabled = disabled || (item === 'actor' && !selectedActorTrack)
               return (
                 <button
                   key={item}
@@ -526,7 +532,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
             currentTimeSec={currentTimeSec}
             selection={selection}
             actorTrackId={selectedActorTrackId}
-            disabled={!manipulationEnabled}
+            disabled={disabled || !manipulationEnabled}
             onChange={onChange}
           />
         </div>
@@ -541,6 +547,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
             selection={selection}
             selectedActorTrack={selectedActorTrack}
             manipulationEnabled={manipulationEnabled}
+            interactionDisabled={disabled}
             onObjectChange={handleObjectChange}
           />
         ) : <div className="h-full w-full" aria-hidden="true" />}
@@ -568,6 +575,8 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
         state={state}
         currentTimeSec={currentTimeSec}
         actorTrackId={selectedActorTrackId}
+        disabled={disabled}
+        disabledReason={disabled ? '正在保存预演，编辑已锁定' : undefined}
         onChange={onChange}
       />
     </section>

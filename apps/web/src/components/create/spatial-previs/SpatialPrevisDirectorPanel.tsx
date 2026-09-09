@@ -11,11 +11,12 @@ import { SpatialPrevisViewport } from './SpatialPrevisViewport'
 
 export type SpatialPrevisDirectorPanelProps = {
   initialState: SpatialPrevisState
-  onSave: (state: SpatialPrevisState) => void | 'success' | 'failed' | Promise<void | 'success' | 'failed'>
+  onSave: (state: SpatialPrevisState) => void | 'success' | 'failed' | 'conflict' | Promise<void | 'success' | 'failed' | 'conflict'>
+  onReload?: () => void | 'success' | 'failed' | Promise<void | 'success' | 'failed'>
   onClose: () => void
 }
 
-type SpatialPrevisSaveResult = 'success' | 'failed' | 'pending'
+type SpatialPrevisSaveResult = 'success' | 'failed' | 'conflict' | 'pending'
 
 type SpatialPrevisSaveCallback = SpatialPrevisDirectorPanelProps['onSave']
 
@@ -28,7 +29,8 @@ export function createSpatialPrevisSaveGuard() {
       if (pending) return 'pending'
       pending = true
       try {
-        return await onSave(state) === 'failed' ? 'failed' : 'success'
+        const result = await onSave(state)
+        return result === 'failed' || result === 'conflict' ? result : 'success'
       } catch {
         return 'failed'
       } finally {
@@ -36,6 +38,10 @@ export function createSpatialPrevisSaveGuard() {
       }
     },
   }
+}
+
+export function canMutateSpatialPrevisEditor(isBusy: boolean) {
+  return !isBusy
 }
 
 export function selectSpatialPrevisEditorMode(state: SpatialPrevisState, editorMode: SpatialPrevisMode): SpatialPrevisState {
@@ -57,13 +63,15 @@ export function applySpatialPrevisBeatPatch(state: SpatialPrevisState, beatId: s
   }
 }
 
-export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: SpatialPrevisDirectorPanelProps) {
+export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onClose }: SpatialPrevisDirectorPanelProps) {
   const [state, setState] = useState(initialState)
   const [currentTimeSec, setCurrentTimeSec] = useState(() => clampSpatialPrevisTime(0, initialState.masterTake.durationSec))
   const [beatError, setBeatError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  const [saveConflict, setSaveConflict] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isReloading, setIsReloading] = useState(false)
   const saveGuard = useRef(createSpatialPrevisSaveGuard())
   const tabId = useId()
   const timelinePanelId = `spatial-previs-${tabId}-timeline`
@@ -72,32 +80,38 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
     beats: `spatial-previs-${tabId}-beats-tab`,
   }
   const tabRefs = useRef<Record<SpatialPrevisMode, HTMLButtonElement | null>>({ continuous: null, beats: null })
+  const isBusy = isSaving || isReloading
   const risks = useMemo(() => assessAuthoringRisks(
     state.scene.coverage,
     state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.position),
   ), [state.masterTake.cameraTrack.keyframes, state.scene.coverage])
 
   const handleStateChange = (next: SpatialPrevisState) => {
+    if (!canMutateSpatialPrevisEditor(isBusy)) return
     setState(next)
     setBeatError(null)
   }
 
   const handleCurrentTimeChange = (timeSec: number) => {
+    if (!canMutateSpatialPrevisEditor(isBusy)) return
     setCurrentTimeSec(clampSpatialPrevisTime(timeSec, state.masterTake.durationSec))
   }
 
   const handleBeatPatch = (beatId: string, patch: { position: Vec3; target: Vec3 }) => {
+    if (!canMutateSpatialPrevisEditor(isBusy)) return
     const result = applySpatialPrevisBeatPatch(state, beatId, patch)
     if (result.state !== state) setState(result.state)
     setBeatError(result.error)
   }
 
   const selectEditorMode = (editorMode: SpatialPrevisMode, focus = false) => {
+    if (!canMutateSpatialPrevisEditor(isBusy)) return
     setState((current) => selectSpatialPrevisEditorMode(current, editorMode))
     if (focus) tabRefs.current[editorMode]?.focus()
   }
 
   const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!canMutateSpatialPrevisEditor(isBusy)) return
     const nextMode = nextSpatialPrevisEditorMode(state.editorMode, event.key)
     if (!nextMode) return
     event.preventDefault()
@@ -105,14 +119,30 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
   }
 
   const handleSave = async () => {
-    if (saveGuard.current.isPending()) return
+    if (isBusy || saveGuard.current.isPending()) return
     setIsSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
+    setSaveConflict(false)
     const result = await saveGuard.current.save(state, onSave)
     setIsSaving(false)
     if (result === 'success') setSaveSuccess('预演已保存')
     if (result === 'failed') setSaveError('保存预演失败。')
+    if (result === 'conflict') setSaveConflict(true)
+  }
+
+  const handleReload = async () => {
+    if (!onReload || isBusy) return
+    setIsReloading(true)
+    setSaveError(null)
+    const result = await onReload()
+    setIsReloading(false)
+    if (result === 'success') {
+      setSaveConflict(false)
+      setSaveSuccess(null)
+      return
+    }
+    setSaveError('重新加载预演失败。')
   }
 
   return (
@@ -124,13 +154,14 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
       count={state.masterTake.beats.length}
       summary={`${state.masterTake.id} · ${state.masterTake.durationSec}s`}
       primaryLabel="保存预演"
-      busy={isSaving}
+      busy={isBusy}
+      allowNestedWheel
       onPrimary={() => { void handleSave() }}
       onClose={onClose}
       ariaLabel="三维预演 / SPATIAL PREVIS"
       bodyClassName="min-h-0 flex-1 space-y-3 overflow-y-auto p-4"
     >
-      <section data-master-take-id={state.masterTake.id} className="space-y-3">
+      <section data-master-take-id={state.masterTake.id} aria-busy={isBusy} className="space-y-3">
         <div className="inline-flex overflow-hidden rounded-md border border-white/12" role="tablist" aria-label="预演编辑模式">
           <button
             type="button"
@@ -139,6 +170,7 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
             aria-controls={timelinePanelId}
             aria-selected={state.editorMode === 'continuous'}
             tabIndex={state.editorMode === 'continuous' ? 0 : -1}
+            disabled={isBusy}
             ref={(element) => { tabRefs.current.continuous = element }}
             onClick={() => selectEditorMode('continuous')}
             onKeyDown={handleTabKeyDown}
@@ -153,6 +185,7 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
             aria-controls={timelinePanelId}
             aria-selected={state.editorMode === 'beats'}
             tabIndex={state.editorMode === 'beats' ? 0 : -1}
+            disabled={isBusy}
             ref={(element) => { tabRefs.current.beats = element }}
             onClick={() => selectEditorMode('beats')}
             onKeyDown={handleTabKeyDown}
@@ -162,11 +195,12 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
           </button>
         </div>
 
-        <SpatialPrevisViewport state={state} currentTimeSec={currentTimeSec} onChange={handleStateChange} />
+        <SpatialPrevisViewport state={state} currentTimeSec={currentTimeSec} disabled={isBusy} onChange={handleStateChange} />
         <div role="tabpanel" id={timelinePanelId} aria-labelledby={tabIds[state.editorMode]}>
           <SpatialPrevisTimeline
             state={state}
             currentTimeSec={currentTimeSec}
+            disabled={isBusy}
             onCurrentTimeChange={handleCurrentTimeChange}
             onBeatPatch={handleBeatPatch}
           />
@@ -175,6 +209,20 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
         {beatError ? <p role="alert" className="text-[11px] text-amber-200/80">{beatError}</p> : null}
         {saveError ? <p role="alert" className="text-[11px] text-amber-200/80">{saveError}</p> : null}
         {saveSuccess ? <p role="status" className="text-[11px] text-emerald-200/80">{saveSuccess}</p> : null}
+        {isBusy ? <p role="status" className="text-[11px] text-indigo-100/75">正在保存预演，编辑已锁定。</p> : null}
+        {saveConflict ? (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border border-amber-300/20 bg-amber-300/[0.08] px-2.5 py-2 text-[11px] text-amber-100/85">
+            <span>保存冲突：服务器预演已更新，未覆盖服务器数据。</span>
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => { void handleReload() }}
+              className="rounded-md border border-amber-200/30 px-2 py-1 font-medium text-amber-50 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              {isReloading ? '重新加载中…' : '重新加载预演'}
+            </button>
+          </div>
+        ) : null}
 
         <section aria-label="覆盖风险" className="border-t border-white/[0.08] pt-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">覆盖风险</p>

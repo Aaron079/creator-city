@@ -2684,6 +2684,7 @@ export function VisualCanvasWorkspace({
   const [cloudShotSequence, setCloudShotSequence] = useState<ShotSequenceState | null>(null)
   const [spatialPrevis, setSpatialPrevis] = useState<SpatialPrevisState | null>(null)
   const [isSpatialPrevisOpen, setIsSpatialPrevisOpen] = useState(false)
+  const [spatialPrevisPanelRevision, setSpatialPrevisPanelRevision] = useState(0)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [isCharacterBibleOpen, setIsCharacterBibleOpen] = useState(false)
   const [isSceneBibleOpen, setIsSceneBibleOpen] = useState(false)
@@ -4018,7 +4019,7 @@ export function VisualCanvasWorkspace({
 
   // The persistence path is intentionally not connected to a panel until a later task.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleSaveSpatialPrevis = useCallback(async (next: SpatialPrevisState): Promise<'success' | 'failed'> => {
+  const handleSaveSpatialPrevis = useCallback(async (next: SpatialPrevisState): Promise<'success' | 'failed' | 'conflict'> => {
     if (!projectId || !workflowId) return 'failed'
     const snapshot = getCanvasSnapshot()
     const entityPayload = buildCanvasEntitySavePayload({
@@ -4056,8 +4057,9 @@ export function VisualCanvasWorkspace({
         }),
       })
       const data = await response.json().catch(() => ({})) as CanvasSaveResponseData & { errorCode?: string; skipped?: boolean }
+      if (data.errorCode === 'CANVAS_SAVE_CONFLICT') return 'conflict'
       const responseServerVersion = data.serverUpdatedAt ?? data.details?.serverUpdatedAt
-      if (responseServerVersion && data.errorCode !== 'CANVAS_SAVE_CONFLICT') {
+      if (responseServerVersion) {
         serverSaveVersionRef.current = responseServerVersion
       }
       if (canvasSaveFailure(response.ok, data)) return 'failed'
@@ -4085,6 +4087,29 @@ export function VisualCanvasWorkspace({
       return 'failed'
     }
   }, [flushLocalSnapshot, projectId, workflowId, getCanvasSnapshot])
+
+  const handleReloadSpatialPrevis = useCallback(async (): Promise<'success' | 'failed'> => {
+    if (!projectId) return 'failed'
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+      })
+      const data = await response.json().catch(() => ({})) as CanvasLoadResponse
+      if (!response.ok) return 'failed'
+      const next = parseSpatialPrevisMetadata(data.workflow?.metadataJson) ?? normalizeSpatialPrevis({ projectId })
+      const responseServerVersion = data.serverUpdatedAt ?? data.workflow?.updatedAt
+      if (responseServerVersion) serverSaveVersionRef.current = responseServerVersion
+      setSpatialPrevis(next)
+      setSpatialPrevisPanelRevision((current) => current + 1)
+      setIsSpatialPrevisOpen(true)
+      return 'success'
+    } catch {
+      return 'failed'
+    }
+  }, [projectId])
 
   const createGeneratedAsset = useCallback(async (args: {
     nodeId: string
@@ -11724,17 +11749,19 @@ export function VisualCanvasWorkspace({
       */}
       {isSpatialPrevisOpen && saveStatus !== 'opening' && spatialPrevis ? (
         <div
-          className="fixed inset-0 z-[2601] flex items-end justify-center bg-black/25 sm:items-center"
+          className="fixed inset-0 z-[3000] flex items-end justify-center bg-black/25 sm:items-center"
           role="presentation"
+          data-spatial-previs-overlay="true"
           data-no-node-drag="true"
           onPointerDown={(event) => { event.stopPropagation(); closeCanvasPanel() }}
           onClick={(event) => event.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
-          onWheelCapture={(event) => event.stopPropagation()}
         >
           <SpatialPrevisDirectorPanel
+            key={spatialPrevisPanelRevision}
             initialState={spatialPrevis}
             onSave={handleSaveSpatialPrevis}
+            onReload={handleReloadSpatialPrevis}
             onClose={() => closeCanvasPanel()}
           />
         </div>

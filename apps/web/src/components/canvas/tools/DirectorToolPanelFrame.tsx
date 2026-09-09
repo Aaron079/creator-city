@@ -32,6 +32,7 @@ type DirectorToolPanelFrameProps = {
   children: ReactNode
   ariaLabel?: string
   bodyClassName?: string
+  allowNestedWheel?: boolean
 }
 
 const ACCENT = {
@@ -79,6 +80,7 @@ export function DirectorToolPanelFrame({
   children,
   ariaLabel,
   bodyClassName,
+  allowNestedWheel = false,
 }: DirectorToolPanelFrameProps) {
   const accent = ACCENT[accentColor]
 
@@ -94,7 +96,7 @@ export function DirectorToolPanelFrame({
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      onWheelCapture={(e) => e.stopPropagation()}
+      onWheelCapture={allowNestedWheel ? undefined : (e) => e.stopPropagation()}
     >
       {/* ── Fixed Header ──────────────────────────────────────────── */}
       <header className="flex flex-shrink-0 items-center justify-between gap-3 border-b border-white/10 px-5 py-4">

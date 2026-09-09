@@ -37,3 +37,22 @@ test('keeps spatial previs saves scoped away from pending canvas deletions', () 
   assert.match(spatialSaveSource, /workflowMetadata: spatialPrevisMetadata\(\{\}, next\)/)
   assert.doesNotMatch(spatialSaveSource, /deletedNodeIdsRef|deletedEdgeIdsRef/)
 })
+
+test('keeps an explicit spatial save conflict non-destructive and reloads only from current canvas metadata', () => {
+  const spatialSaveSource = sourceBetween(
+    'const handleSaveSpatialPrevis = useCallback',
+    'const createGeneratedAsset = useCallback',
+  )
+  const reloadSource = sourceBetween(
+    'const handleReloadSpatialPrevis = useCallback',
+    'const createGeneratedAsset = useCallback',
+  )
+
+  assert.match(spatialSaveSource, /if \(data\.errorCode === 'CANVAS_SAVE_CONFLICT'\) return 'conflict'/)
+  assert.match(reloadSource, /\/api\/projects\//)
+  assert.match(reloadSource, /method: 'GET'/)
+  assert.match(reloadSource, /credentials: 'include'/)
+  assert.match(reloadSource, /parseSpatialPrevisMetadata\(data\.workflow\?\.metadataJson\) \?\? normalizeSpatialPrevis\(\{ projectId \}\)/)
+  assert.match(reloadSource, /setSpatialPrevis\(next\)/)
+  assert.match(reloadSource, /setSpatialPrevisPanelRevision\(\(current\) => current \+ 1\)/)
+})

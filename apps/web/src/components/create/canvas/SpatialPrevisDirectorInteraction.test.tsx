@@ -8,6 +8,7 @@ const testDirectory = dirname(fileURLToPath(import.meta.url))
 const workspaceSource = readFileSync(resolve(testDirectory, '..', 'VisualCanvasWorkspace.tsx'), 'utf8')
 const promptBoxSource = readFileSync(resolve(testDirectory, '..', 'CanvasPromptBox.tsx'), 'utf8')
 const panelSource = readFileSync(resolve(testDirectory, '..', 'spatial-previs', 'SpatialPrevisDirectorPanel.tsx'), 'utf8')
+const frameSource = readFileSync(resolve(testDirectory, '..', '..', 'canvas', 'tools', 'DirectorToolPanelFrame.tsx'), 'utf8')
 
 function sourceBetween(source: string, startMarker: string, endMarker: string) {
   const start = source.indexOf(startMarker)
@@ -37,11 +38,15 @@ test('opens spatial previs through the modal coordinator with a non-persisted fi
   const mountSource = sourceBetween(workspaceSource, "{isSpatialPrevisOpen && saveStatus !== 'opening'", '{isContinuityCheckerOpen')
   assert.match(
     mountSource,
-    /className="fixed inset-0 z-\[2601\] flex items-end justify-center bg-black\/25 sm:items-center"/,
+    /className="fixed inset-0 z-\[3000\] flex items-end justify-center bg-black\/25 sm:items-center"/,
   )
+  assert.match(mountSource, /data-spatial-previs-overlay="true"/)
   assert.match(mountSource, /data-no-node-drag="true"/)
+  assert.match(mountSource, /onWheel=\{\(event\) => event\.stopPropagation\(\)\}/)
+  assert.doesNotMatch(mountSource, /onWheelCapture/)
   assert.match(mountSource, /initialState=\{spatialPrevis\}/)
   assert.match(mountSource, /onSave=\{handleSaveSpatialPrevis\}/)
+  assert.match(mountSource, /onReload=\{handleReloadSpatialPrevis\}/)
   assert.match(mountSource, /onClose=\{\(\) => closeCanvasPanel\(\)\}/)
 })
 
@@ -57,4 +62,20 @@ test('only reports spatial previs save feedback after a successful save', () => 
   assert.match(handleSaveSource, /if \(result === 'success'\) setSaveSuccess\('预演已保存'\)/)
   assert.match(handleSaveSource, /if \(result === 'failed'\) setSaveError\('保存预演失败。'\)/)
   assert.match(panelSource, /\{saveSuccess \? <p role="status"[^>]*>\{saveSuccess\}<\/p> : null\}/)
+})
+
+test('lets the spatial R3F canvas receive wheel events while preserving non-spatial frame isolation', () => {
+  assert.match(frameSource, /allowNestedWheel\?: boolean/)
+  assert.match(frameSource, /allowNestedWheel = false/)
+  assert.match(frameSource, /onWheelCapture=\{allowNestedWheel \? undefined : \(e\) => e\.stopPropagation\(\)\}/)
+  assert.match(panelSource, /<DirectorToolPanelFrame[\s\S]*?allowNestedWheel/)
+})
+
+test('locks spatial editor mutations during pending save and exposes explicit conflict recovery', () => {
+  assert.match(panelSource, /const isBusy = isSaving \|\| isReloading/)
+  assert.match(panelSource, /aria-busy=\{isBusy\}/)
+  assert.match(panelSource, /if \(!canMutateSpatialPrevisEditor\(isBusy\)\) return/)
+  assert.match(panelSource, /disabled=\{isBusy\}/)
+  assert.match(panelSource, /保存冲突/)
+  assert.match(panelSource, /重新加载预演/)
 })

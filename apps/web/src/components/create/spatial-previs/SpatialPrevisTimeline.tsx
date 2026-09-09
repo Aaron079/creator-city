@@ -7,6 +7,7 @@ import type { CameraKeyframe, SpatialPrevisBeat, SpatialPrevisState, Vec3 } from
 type SpatialPrevisTimelineProps = {
   state: SpatialPrevisState
   currentTimeSec: number
+  disabled?: boolean
   onCurrentTimeChange: (timeSec: number) => void
   onBeatPatch: (beatId: string, patch: { position: Vec3; target: Vec3 }) => void
 }
@@ -44,11 +45,13 @@ function TimelineTrack({
   label,
   keyframes,
   durationSec,
+  disabled = false,
   onSelectTime,
 }: {
   label: string
   keyframes: Array<{ id: string; timeSec: number }>
   durationSec: number
+  disabled?: boolean
   onSelectTime: (timeSec: number) => void
 }) {
   return (
@@ -60,6 +63,7 @@ function TimelineTrack({
             key={keyframe.id}
             type="button"
             aria-label={`${label} ${formatTime(keyframe.timeSec)}`}
+            disabled={disabled}
             onClick={() => onSelectTime(keyframe.timeSec)}
             className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-cyan-100/60 bg-cyan-200/35 transition hover:bg-cyan-100/75 focus:outline-none focus:ring-1 focus:ring-cyan-100"
             style={{ left: `${timelinePosition(keyframe.timeSec, durationSec)}%` }}
@@ -73,10 +77,12 @@ function TimelineTrack({
 function VectorInputs({
   label,
   value,
+  disabled = false,
   onChange,
 }: {
   label: string
   value: Vec3
+  disabled?: boolean
   onChange: (next: Vec3) => void
 }) {
   const [drafts, setDrafts] = React.useState(() => ({
@@ -90,6 +96,7 @@ function VectorInputs({
   }, [value.x, value.y, value.z])
 
   const commitDraft = (axis: keyof Vec3) => {
+    if (disabled) return
     const nextValue = commitSpatialNumericDraft(drafts[axis], value[axis])
     setDrafts((current) => ({ ...current, [axis]: String(nextValue) }))
     if (nextValue !== value[axis]) onChange({ ...value, [axis]: nextValue })
@@ -107,7 +114,10 @@ function VectorInputs({
               inputMode="decimal"
               aria-label={`${label} ${axis.toUpperCase()}`}
               value={drafts[axis]}
-              onChange={(event) => setDrafts((current) => ({ ...current, [axis]: event.target.value }))}
+              readOnly={disabled}
+              onChange={(event) => {
+                if (!disabled) setDrafts((current) => ({ ...current, [axis]: event.target.value }))
+              }}
               onBlur={() => commitDraft(axis)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
@@ -127,6 +137,7 @@ function VectorInputs({
 function ContinuousTimeline({
   state,
   currentTimeSec,
+  disabled = false,
   onCurrentTimeChange,
 }: Omit<SpatialPrevisTimelineProps, 'onBeatPatch'>) {
   const { masterTake } = state
@@ -156,6 +167,7 @@ function ContinuousTimeline({
           max={durationSec}
           step="0.1"
           value={currentTimeSec}
+          disabled={disabled}
           onChange={(event) => onCurrentTimeChange(Number(event.target.value))}
           className="h-1.5 w-full accent-cyan-200"
         />
@@ -171,6 +183,7 @@ function ContinuousTimeline({
           label="相机"
           keyframes={masterTake.cameraTrack.keyframes}
           durationSec={durationSec}
+          disabled={disabled}
           onSelectTime={onCurrentTimeChange}
         />
         {masterTake.actorTracks.map((track, index) => (
@@ -179,6 +192,7 @@ function ContinuousTimeline({
             label={`演员 ${index + 1}`}
             keyframes={track.keyframes}
             durationSec={durationSec}
+            disabled={disabled}
             onSelectTime={onCurrentTimeChange}
           />
         ))}
@@ -187,7 +201,7 @@ function ContinuousTimeline({
   )
 }
 
-function BeatTimeline({ state, onBeatPatch }: Pick<SpatialPrevisTimelineProps, 'state' | 'onBeatPatch'>) {
+function BeatTimeline({ state, disabled = false, onBeatPatch }: Pick<SpatialPrevisTimelineProps, 'state' | 'disabled' | 'onBeatPatch'>) {
   return (
     <section aria-label="剧情节拍时间线" className="space-y-2.5">
       <div>
@@ -213,8 +227,8 @@ function BeatTimeline({ state, onBeatPatch }: Pick<SpatialPrevisTimelineProps, '
                 </span>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                <VectorInputs label="相机位置" value={position} onChange={patchPosition} />
-                <VectorInputs label="相机目标" value={target} onChange={patchTarget} />
+                <VectorInputs label="相机位置" value={position} disabled={disabled} onChange={patchPosition} />
+                <VectorInputs label="相机目标" value={target} disabled={disabled} onChange={patchTarget} />
               </div>
             </article>
           )
@@ -227,18 +241,21 @@ function BeatTimeline({ state, onBeatPatch }: Pick<SpatialPrevisTimelineProps, '
 export function SpatialPrevisTimeline({
   state,
   currentTimeSec,
+  disabled = false,
   onCurrentTimeChange,
   onBeatPatch,
 }: SpatialPrevisTimelineProps) {
   const safeCurrentTimeSec = clampSpatialPrevisTime(currentTimeSec, state.masterTake.durationSec)
-  const selectTime = (timeSec: number) => onCurrentTimeChange(clampSpatialPrevisTime(timeSec, state.masterTake.durationSec))
+  const selectTime = (timeSec: number) => {
+    if (!disabled) onCurrentTimeChange(clampSpatialPrevisTime(timeSec, state.masterTake.durationSec))
+  }
 
   return (
     <section data-spatial-previs-timeline="true" data-master-take-id={state.masterTake.id} className="rounded-lg border border-white/12 bg-[#0b1014] p-3 text-white">
       {state.editorMode === 'continuous' ? (
-        <ContinuousTimeline state={state} currentTimeSec={safeCurrentTimeSec} onCurrentTimeChange={selectTime} />
+        <ContinuousTimeline state={state} currentTimeSec={safeCurrentTimeSec} disabled={disabled} onCurrentTimeChange={selectTime} />
       ) : (
-        <BeatTimeline state={state} onBeatPatch={onBeatPatch} />
+        <BeatTimeline state={state} disabled={disabled} onBeatPatch={onBeatPatch} />
       )}
     </section>
   )

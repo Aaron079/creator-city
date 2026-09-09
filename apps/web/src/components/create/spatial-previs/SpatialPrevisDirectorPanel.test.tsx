@@ -10,6 +10,7 @@ import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { applyBeatPatch } from '@/lib/spatial-previs/normalize'
 import {
   applySpatialPrevisBeatPatch,
+  canMutateSpatialPrevisEditor,
   createSpatialPrevisSaveGuard,
   nextSpatialPrevisEditorMode,
   selectSpatialPrevisEditorMode,
@@ -136,7 +137,24 @@ test('reports save success, failure, and a pending guard without concurrent call
   assert.equal(await first, 'success')
   assert.equal(guard.isPending(), false)
   assert.equal(await guard.save(state, () => 'failed'), 'failed')
+  assert.equal(await guard.save(state, () => 'conflict'), 'conflict')
   assert.equal(await guard.save(state, () => Promise.reject(new Error('save failed'))), 'failed')
+})
+
+test('blocks all editor mutations while the accepted save snapshot is pending', async () => {
+  const guard = createSpatialPrevisSaveGuard()
+  let resolveSave: ((value: 'success') => void) | undefined
+  let acceptedSnapshot: SpatialPrevisState | null = null
+  const pendingSave = guard.save(state, (next) => {
+    acceptedSnapshot = next
+    return new Promise<'success'>((resolve) => { resolveSave = resolve })
+  })
+
+  assert.equal(canMutateSpatialPrevisEditor(guard.isPending()), false)
+  assert.equal(acceptedSnapshot, state)
+  resolveSave?.('success')
+  assert.equal(await pendingSave, 'success')
+  assert.equal(canMutateSpatialPrevisEditor(guard.isPending()), true)
 })
 
 test('keeps a failed beat patch state intact and provides an inline error message', () => {
