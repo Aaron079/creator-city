@@ -89,6 +89,13 @@ describe('SpatialPrevisViewport', () => {
     assert.match(viewportSource, /data-spatial-camera-preview="true"/)
   })
 
+  test('declares named world anchors for the real spatial scene', () => {
+    assert.match(viewportSource, /场景原点/)
+    assert.match(viewportSource, /相机覆盖参考/)
+    assert.match(viewportSource, /label: track\.anchorId/)
+    assert.match(viewportSource, /WorldAnchorMarker/)
+  })
+
   test('renders a compact selector for every actor track', () => {
     const markup = renderToStaticMarkup(
       createElement(SpatialPrevisViewport, { state: stateWithTwoActors(), currentTimeSec: 6, onChange: () => undefined }),
@@ -186,7 +193,7 @@ describe('SpatialPrevisViewport', () => {
   })
 
   test('updates only the selected actor track at an existing exact keyframe', async () => {
-    const module = await import('./SpatialPrevisViewport') as {
+    const spatialViewportModule = await import('./SpatialPrevisViewport') as {
       updateSpatialActorPosition?: (
         state: SpatialPrevisState,
         actorTrackId: string,
@@ -194,21 +201,21 @@ describe('SpatialPrevisViewport', () => {
         position: Vec3,
       ) => SpatialPrevisState
     }
-    assert.equal(typeof module.updateSpatialActorPosition, 'function')
+    assert.equal(typeof spatialViewportModule.updateSpatialActorPosition, 'function')
 
     const source = stateWithTwoActors()
-    const next = module.updateSpatialActorPosition!(source, 'actor-track-support', 6, { x: 4, y: 0, z: -1 })
+    const next = spatialViewportModule.updateSpatialActorPosition!(source, 'actor-track-support', 6, { x: 4, y: 0, z: -1 })
 
     assert.notEqual(next, source)
     assert.deepEqual(next.masterTake.actorTracks[0], source.masterTake.actorTracks[0])
     assert.deepEqual(next.masterTake.actorTracks[1]?.keyframes[0], source.masterTake.actorTracks[1]?.keyframes[0])
     assert.deepEqual(next.masterTake.actorTracks[1]?.keyframes[2], source.masterTake.actorTracks[1]?.keyframes[2])
     assert.deepEqual(next.masterTake.actorTracks[1]?.keyframes[1]?.position, { x: 4, y: 0, z: -1 })
-    assert.equal(module.updateSpatialActorPosition!(source, 'actor-track-support', 5, { x: 4, y: 0, z: -1 }), source)
+    assert.equal(spatialViewportModule.updateSpatialActorPosition!(source, 'actor-track-support', 5, { x: 4, y: 0, z: -1 }), source)
   })
 
   test('dispatches a local camera action through the strip handler only when a keyframe exists', async () => {
-    const module = await import('./SpatialCameraControlStrip') as {
+    const spatialControlModule = await import('./SpatialCameraControlStrip') as {
       dispatchSpatialCameraAction?: (input: {
         state: SpatialPrevisState
         currentTimeSec: number
@@ -216,10 +223,10 @@ describe('SpatialPrevisViewport', () => {
         onChange: (next: SpatialPrevisState) => void
       }) => void
     }
-    assert.equal(typeof module.dispatchSpatialCameraAction, 'function')
+    assert.equal(typeof spatialControlModule.dispatchSpatialCameraAction, 'function')
 
     let changed: SpatialPrevisState | null = null
-    module.dispatchSpatialCameraAction!({
+    spatialControlModule.dispatchSpatialCameraAction!({
       state,
       currentTimeSec: 6,
       action: '推/拉',
@@ -229,7 +236,7 @@ describe('SpatialPrevisViewport', () => {
     assert.notEqual(changed, state)
 
     changed = null
-    module.dispatchSpatialCameraAction!({
+    spatialControlModule.dispatchSpatialCameraAction!({
       state,
       currentTimeSec: 5,
       action: '推/拉',

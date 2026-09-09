@@ -5,6 +5,7 @@ import { Line } from '@react-three/drei/core/Line'
 import { OrbitControls } from '@react-three/drei/core/OrbitControls'
 import { PerspectiveCamera as DreiPerspectiveCamera } from '@react-three/drei/core/PerspectiveCamera'
 import { TransformControls } from '@react-three/drei/core/TransformControls'
+import { Html } from '@react-three/drei/web/Html'
 import * as React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Group, PerspectiveCamera as ThreePerspectiveCamera } from 'three'
@@ -22,6 +23,13 @@ const WORLD_CAMERA_POSITION: [number, number, number] = [10, 8, 12]
 const WORLD_CAMERA_TARGET: [number, number, number] = [0, 1, 0]
 
 type TransformSelection = 'actor' | 'camera' | 'target'
+
+type WorldAnchor = {
+  id: string
+  label: string
+  position: Vec3
+  color: string
+}
 
 type SpatialPrevisViewportProps = {
   state: SpatialPrevisState
@@ -48,6 +56,28 @@ function exactKeyframe<T extends { timeSec: number }>(keyframes: T[], timeSec: n
 
 function initialActorPosition(track: ActorTrack, currentTimeSec: number) {
   return exactKeyframe(track.keyframes, currentTimeSec)?.position ?? track.keyframes[0]?.position ?? { x: 0, y: 0, z: 0 }
+}
+
+function worldAnchors(state: SpatialPrevisState, currentTimeSec: number): WorldAnchor[] {
+  const coverage = state.scene.coverage
+  const coveragePosition = coverage.mode === 'constrained'
+    ? {
+      x: (coverage.corridor.min.x + coverage.corridor.max.x) / 2,
+      y: coverage.corridor.min.y,
+      z: (coverage.corridor.min.z + coverage.corridor.max.z) / 2,
+    }
+    : { x: 2, y: 0, z: -1 }
+
+  return [
+    { id: 'scene-origin', label: '场景原点', position: { x: 0, y: 0, z: 0 }, color: '#a5f3fc' },
+    { id: 'camera-coverage', label: '相机覆盖参考', position: coveragePosition, color: '#fde68a' },
+    ...state.masterTake.actorTracks.map((track) => ({
+      id: `actor-anchor-${track.id}`,
+      label: track.anchorId,
+      position: initialActorPosition(track, currentTimeSec),
+      color: '#7dd3fc',
+    })),
+  ]
 }
 
 function replaceCameraKeyframe(state: SpatialPrevisState, keyframe: CameraKeyframe, patch: Partial<CameraKeyframe>) {
@@ -133,6 +163,26 @@ function TargetRing({ position, selected }: { position: Vec3; selected: boolean 
   )
 }
 
+function WorldAnchorMarker({ anchor }: { anchor: WorldAnchor }) {
+  return (
+    <group position={tuple(anchor.position)}>
+      <mesh position={[0, -0.56, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.12, 0.18, 16]} />
+        <meshBasicMaterial color={anchor.color} transparent opacity={0.9} side={2} />
+      </mesh>
+      <mesh position={[0, -0.4, 0]}>
+        <octahedronGeometry args={[0.12, 0]} />
+        <meshBasicMaterial color={anchor.color} />
+      </mesh>
+      <Html center sprite distanceFactor={11} pointerEvents="none" position={[0, 0.04, 0]}>
+        <span className="whitespace-nowrap rounded border border-white/15 bg-slate-950/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-100 shadow-sm">
+          {anchor.label}
+        </span>
+      </Html>
+    </group>
+  )
+}
+
 function TransformableProxy({
   selection,
   position,
@@ -186,6 +236,10 @@ function WorldGeometry({
     () => state.masterTake.cameraTrack.keyframes.map((keyframe) => tuple(keyframe.position)),
     [state.masterTake.cameraTrack.keyframes],
   )
+  const anchors = useMemo(
+    () => worldAnchors(state, currentTimeSec),
+    [currentTimeSec, state],
+  )
 
   return (
     <>
@@ -195,6 +249,7 @@ function WorldGeometry({
       <directionalLight castShadow intensity={1.15} position={[7, 10, 6]} color="#dbeafe" />
       <gridHelper args={[24, 24, '#476475', '#1a2a35']} position={[0, -0.72, 0]} />
       <axesHelper args={[2.4]} position={[-10, -0.69, -10]} />
+      {anchors.map((anchor) => <WorldAnchorMarker key={anchor.id} anchor={anchor} />)}
 
       {state.masterTake.actorTracks.map((track) => {
         const isSelected = selection === 'actor' && selectedActorTrack === track
