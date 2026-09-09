@@ -9,7 +9,6 @@ import * as React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Group, PerspectiveCamera as ThreePerspectiveCamera } from 'three'
 import type {
-  ActorKeyframe,
   ActorTrack,
   CameraKeyframe,
   SpatialPrevisState,
@@ -64,12 +63,21 @@ function replaceCameraKeyframe(state: SpatialPrevisState, keyframe: CameraKeyfra
   }
 }
 
-function replaceActorKeyframe(state: SpatialPrevisState, track: ActorTrack, keyframe: ActorKeyframe, position: Vec3) {
+export function updateSpatialActorPosition(
+  state: SpatialPrevisState,
+  actorTrackId: string,
+  currentTimeSec: number,
+  position: Vec3,
+) {
+  const track = state.masterTake.actorTracks.find((item) => item.id === actorTrackId)
+  const keyframe = track ? exactKeyframe(track.keyframes, currentTimeSec) : null
+  if (!track || !keyframe) return state
+
   return {
     ...state,
     masterTake: {
       ...state.masterTake,
-      actorTracks: state.masterTake.actorTracks.map((item) => item !== track ? item : {
+      actorTracks: state.masterTake.actorTracks.map((item) => item.id !== actorTrackId ? item : {
         ...item,
         keyframes: item.keyframes.map((actorKeyframe) => actorKeyframe === keyframe
           ? { ...actorKeyframe, position }
@@ -277,7 +285,8 @@ function LivePreviewCanvas({ state, currentTimeSec, sampledCamera }: {
 export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: SpatialPrevisViewportProps) {
   const [mounted, setMounted] = useState(false)
   const [selection, setSelection] = useState<TransformSelection>(state.masterTake.actorTracks.length > 0 ? 'actor' : 'camera')
-  const selectedActorTrack = state.masterTake.actorTracks[0]
+  const [selectedActorTrackId, setSelectedActorTrackId] = useState(state.masterTake.actorTracks[0]?.id ?? '')
+  const selectedActorTrack = state.masterTake.actorTracks.find((track) => track.id === selectedActorTrackId)
   const sampledCamera = state.masterTake.cameraTrack.keyframes.length > 0
     ? sampleCamera(state.masterTake.cameraTrack.keyframes, currentTimeSec)
     : null
@@ -297,25 +306,40 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
   }, [])
 
   useEffect(() => {
-    if (selection === 'actor' && !selectedActorTrack) setSelection('camera')
-  }, [selectedActorTrack, selection])
+    if (selectedActorTrack) return
+    setSelectedActorTrackId(state.masterTake.actorTracks[0]?.id ?? '')
+    if (selection === 'actor' && state.masterTake.actorTracks.length === 0) setSelection('camera')
+  }, [selectedActorTrack, selection, state.masterTake.actorTracks])
 
   const handleObjectChange = useCallback((position: Vec3) => {
     if (selection === 'actor') {
-      if (selectedActorTrack && exactActor) onChange(replaceActorKeyframe(state, selectedActorTrack, exactActor, position))
+      const next = updateSpatialActorPosition(state, selectedActorTrackId, currentTimeSec, position)
+      if (next !== state) onChange(next)
       return
     }
 
     if (!exactCamera) return
     onChange(replaceCameraKeyframe(state, exactCamera, selection === 'camera' ? { position } : { target: position }))
-  }, [exactActor, exactCamera, onChange, selectedActorTrack, selection, state])
+  }, [currentTimeSec, exactCamera, onChange, selectedActorTrackId, selection, state])
 
   return (
-    <section data-spatial-previs-viewport className="flex min-h-[470px] w-full flex-col overflow-hidden rounded-lg border border-white/12 bg-[#0b1014] text-white shadow-xl">
+    <section data-spatial-previs-viewport="true" className="flex min-h-[470px] w-full flex-col overflow-hidden rounded-lg border border-white/12 bg-[#0b1014] text-white shadow-xl">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-3">
           <span className="text-xs font-semibold text-white/78">空间预演</span>
           <span className="text-[11px] text-white/44">{formatNumber(currentTimeSec)} s</span>
+          {state.masterTake.actorTracks.length > 0 ? (
+            <select
+              aria-label="选择演员轨道"
+              value={selectedActorTrackId}
+              onChange={(event) => setSelectedActorTrackId(event.target.value)}
+              className="max-w-40 rounded-md border border-white/12 bg-[#10171d] px-2 py-1 text-[11px] text-white/70 outline-none focus:border-cyan-200/55"
+            >
+              {state.masterTake.actorTracks.map((track, index) => (
+                <option key={track.id} value={track.id}>演员 {index + 1} · {track.anchorId}</option>
+              ))}
+            </select>
+          ) : null}
         </div>
         <div className="inline-flex overflow-hidden rounded-md border border-white/12" role="group" aria-label="直接操控对象">
           {(['actor', 'camera', 'target'] as const).map((item) => {
@@ -350,7 +374,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
           />
         ) : <div className="h-full w-full" aria-hidden="true" />}
 
-        <aside data-spatial-camera-preview className="absolute bottom-3 right-3 h-36 w-56 overflow-hidden rounded-md border border-white/18 bg-[#080d11] shadow-2xl">
+        <aside data-spatial-camera-preview="true" className="absolute bottom-3 right-3 h-36 w-56 overflow-hidden rounded-md border border-white/18 bg-[#080d11] shadow-2xl">
           {mounted && sampledCamera ? <LivePreviewCanvas state={state} currentTimeSec={currentTimeSec} sampledCamera={sampledCamera} /> : <div className="h-full w-full" aria-hidden="true" />}
           <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between border-b border-white/10 bg-black/45 px-2 py-1 text-[10px] text-white/72">
             <span>LIVE</span>
@@ -361,17 +385,18 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
           </div>
         </aside>
 
-        <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 text-[10px] text-white/48">
+        <div className="pointer-events-none absolute bottom-3 left-3 right-60 flex items-center gap-2 overflow-hidden text-[10px] text-white/48">
           <span className="rounded bg-black/35 px-1.5 py-1">X</span>
           <span className="rounded bg-black/35 px-1.5 py-1">Y</span>
           <span className="rounded bg-black/35 px-1.5 py-1">Z</span>
-          <span>{disabledReason ?? '拖动控制器调整当前关键帧'}</span>
+          <span className="truncate">{disabledReason ?? '拖动控制器调整当前关键帧'}</span>
         </div>
       </div>
 
       <SpatialCameraControlStrip
         state={state}
         currentTimeSec={currentTimeSec}
+        actorTrackId={selectedActorTrackId}
         disabled={cameraUnavailable}
         disabledReason={cameraUnavailable ? '当前空间覆盖不支持相机编辑' : undefined}
         onChange={onChange}
