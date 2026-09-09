@@ -1,6 +1,7 @@
 import type {
   BeatPatch,
   CameraKeyframe,
+  CameraTrack,
   SpatialPrevisInput,
   SpatialPrevisScene,
   SpatialPrevisState,
@@ -25,7 +26,7 @@ function coverageFor(sourceMode: NonNullable<SpatialPrevisInput['sourceMode']>):
   return { mode: 'constrained', cameraFreedom: 'corridor-only' }
 }
 
-function createCameraTrack(durationSec: number): CameraKeyframe[] {
+function createCameraTrack(durationSec: number): CameraTrack {
   const createKeyframe = (id: string, timeSec: number): CameraKeyframe => ({
     id,
     timeSec,
@@ -35,11 +36,14 @@ function createCameraTrack(durationSec: number): CameraKeyframe[] {
     intent: 'static',
   })
 
-  return [
-    createKeyframe('camera-start', 0),
-    createKeyframe('camera-mid', durationSec / 2),
-    createKeyframe('camera-end', durationSec),
-  ]
+  return {
+    id: 'camera-track',
+    keyframes: [
+      createKeyframe('camera-start', 0),
+      createKeyframe('camera-mid', durationSec / 2),
+      createKeyframe('camera-end', durationSec),
+    ],
+  }
 }
 
 export function normalizeSpatialPrevis(input: SpatialPrevisInput): SpatialPrevisState {
@@ -72,7 +76,7 @@ export function applyBeatPatch(state: SpatialPrevisState, beatId: string, patch:
 
   const midpoint = (beat.startSec + beat.endSec) / 2
   let updated = false
-  const cameraTrack = state.masterTake.cameraTrack.map((keyframe) => {
+  const keyframes = state.masterTake.cameraTrack.keyframes.map((keyframe) => {
     if (keyframe.timeSec !== midpoint) return keyframe
     updated = true
     return {
@@ -88,7 +92,10 @@ export function applyBeatPatch(state: SpatialPrevisState, beatId: string, patch:
     ...state,
     masterTake: {
       ...state.masterTake,
-      cameraTrack,
+      cameraTrack: {
+        ...state.masterTake.cameraTrack,
+        keyframes,
+      },
     },
   }
 }

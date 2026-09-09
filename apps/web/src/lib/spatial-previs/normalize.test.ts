@@ -25,13 +25,15 @@ describe('spatial previs normalization', () => {
 
     const patched = applyBeatPatch(state, beat.id, { position, target })
     const midpoint = (beat.startSec + beat.endSec) / 2
-    const keyframe = patched.masterTake.cameraTrack.find((item) => item.timeSec === midpoint)
+    const keyframe = patched.masterTake.cameraTrack.keyframes.find((item) => item.timeSec === midpoint)
 
-    assert.equal(patched.masterTake.cameraTrack.length, 3)
+    assert.equal(patched.masterTake.cameraTrack.id, 'camera-track')
+    assert.equal(patched.masterTake.cameraTrack.id, state.masterTake.cameraTrack.id)
+    assert.equal(patched.masterTake.cameraTrack.keyframes.length, 3)
     assert.notEqual(patched.masterTake.cameraTrack, state.masterTake.cameraTrack)
     assert.deepEqual(keyframe?.position, position)
     assert.deepEqual(keyframe?.target, target)
-    assert.deepEqual(state.masterTake.cameraTrack.find((item) => item.timeSec === midpoint)?.position, { x: 0, y: 1.6, z: 8 })
+    assert.deepEqual(state.masterTake.cameraTrack.keyframes.find((item) => item.timeSec === midpoint)?.position, { x: 0, y: 1.6, z: 8 })
   })
 
   test('maps scene source coverage to its supported camera freedom', () => {

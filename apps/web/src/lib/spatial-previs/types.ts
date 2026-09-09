@@ -23,6 +23,11 @@ export type CameraKeyframe = {
   intent: CameraIntent
 }
 
+export type CameraTrack = {
+  id: string
+  keyframes: CameraKeyframe[]
+}
+
 export type ActorKeyframe = {
   id: string
   timeSec: number
@@ -47,7 +52,7 @@ export type MasterTake = {
   durationSec: number
   aspectRatio: string
   actorTracks: ActorTrack[]
-  cameraTrack: CameraKeyframe[]
+  cameraTrack: CameraTrack
   beats: SpatialPrevisBeat[]
 }
 
