@@ -65,8 +65,9 @@ describe('confirmed experience lock verifier', () => {
     const agents = readFileSync(new URL('../AGENTS.md', import.meta.url), 'utf8')
 
     assert.equal(packageJson.scripts['experience:check'], 'node scripts/verify-confirmed-experience-locks.mjs')
-    assert.match(packageJson.scripts['agent:check'], /node scripts\/agent-loop-check\.mjs/)
-    assert.match(packageJson.scripts['agent:check'], /node scripts\/verify-confirmed-experience-locks\.mjs/)
+    assert.equal(packageJson.scripts['test:experience-locks'], 'node --test scripts/verify-confirmed-experience-locks.test.mjs')
+    assert.equal(packageJson.scripts.test, 'pnpm -r test && pnpm test:experience-locks')
+    assert.equal(packageJson.scripts['agent:check'], 'node scripts/agent-loop-check.mjs && node scripts/verify-confirmed-experience-locks.mjs')
     assert.match(agentLoopCheck, /\{ key: 'CONFIRMED_EXPERIENCE_LOCKS', path: 'docs\/CONFIRMED_EXPERIENCE_LOCKS\.json' \}/)
     assert.match(agentLoopCheck, /canvas work requires `pnpm experience:check` plus lock-listed focused checks before completion\./)
 
