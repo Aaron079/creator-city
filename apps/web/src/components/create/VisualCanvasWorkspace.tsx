@@ -52,6 +52,11 @@ import {
   normalizeShotSequenceItems,
 } from '@/lib/canvas/shot-sequence'
 import type { ShotSequenceState, ShotSequenceItem } from '@/lib/canvas/shot-sequence'
+import {
+  parseSpatialPrevisMetadata,
+  spatialPrevisMetadata,
+} from '@/lib/spatial-previs/persistence'
+import type { SpatialPrevisState } from '@/lib/spatial-previs/types'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { CharacterBiblePanel } from '@/components/create/CharacterBiblePanel'
 import { SceneBiblePanel } from '@/components/create/SceneBiblePanel'
@@ -2675,6 +2680,8 @@ export function VisualCanvasWorkspace({
   const [isShotListBuilderOpen, setIsShotListBuilderOpen] = useState(false)
   const [isShotSequencerOpen, setIsShotSequencerOpen] = useState(false)
   const [cloudShotSequence, setCloudShotSequence] = useState<ShotSequenceState | null>(null)
+  // Confirmed experience impact: none.
+  const [, setSpatialPrevis] = useState<SpatialPrevisState | null>(null)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [isCharacterBibleOpen, setIsCharacterBibleOpen] = useState(false)
   const [isSceneBibleOpen, setIsSceneBibleOpen] = useState(false)
@@ -4002,6 +4009,80 @@ export function VisualCanvasWorkspace({
     }
   }, [flushLocalSnapshot, projectId, workflowId, getCanvasSnapshot])
 
+  // The persistence path is intentionally not connected to a panel until a later task.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleSaveSpatialPrevis = useCallback(async (next: SpatialPrevisState): Promise<'success' | 'failed'> => {
+    if (!projectId || !workflowId) return 'failed'
+    const snapshot = getCanvasSnapshot()
+    const entityPayload = buildCanvasEntitySavePayload({
+      nodes: snapshot.nodes,
+      edges: snapshot.edges,
+      dirtyNodeIds: dirtyNodeIdsRef.current,
+      dirtyEdgeIds: dirtyEdgeIdsRef.current,
+      forceFull: forceFullCanvasSaveRef.current,
+    })
+    const saveMode = entityPayload.saveMode === 'full' && entityPayload.nodes.length === 0
+      ? 'incremental'
+      : entityPayload.saveMode
+    const submittedNodeRevisions = new Map(
+      entityPayload.nodes.map((node) => [node.id, dirtyNodeRevisionRef.current.get(node.id)]),
+    )
+    const submittedEdgeRevisions = new Map(
+      entityPayload.edges.map((edge) => [edge.id, dirtyEdgeRevisionRef.current.get(edge.id)]),
+    )
+    const submittedDeletedNodeIds = [...deletedNodeIdsRef.current]
+    const submittedDeletedEdgeIds = [...deletedEdgeIdsRef.current]
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
+        method: 'PUT',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          workflowId,
+          viewport: snapshot.viewport,
+          saveMode,
+          nodes: entityPayload.nodes,
+          edges: entityPayload.edges,
+          deletedNodeIds: submittedDeletedNodeIds,
+          deletedEdgeIds: submittedDeletedEdgeIds,
+          workflowMetadata: spatialPrevisMetadata({}, next),
+          baseUpdatedAt: serverSaveVersionRef.current,
+        }),
+      })
+      const data = await response.json().catch(() => ({})) as CanvasSaveResponseData & { errorCode?: string; skipped?: boolean }
+      const responseServerVersion = data.serverUpdatedAt ?? data.details?.serverUpdatedAt
+      if (responseServerVersion && data.errorCode !== 'CANVAS_SAVE_CONFLICT') {
+        serverSaveVersionRef.current = responseServerVersion
+      }
+      if (canvasSaveFailure(response.ok, data)) return 'failed'
+      for (const [nodeId, revision] of submittedNodeRevisions) {
+        if (dirtyNodeRevisionRef.current.get(nodeId) === revision) {
+          dirtyNodeIdsRef.current.delete(nodeId)
+          dirtyNodeRevisionRef.current.delete(nodeId)
+        }
+      }
+      for (const [edgeId, revision] of submittedEdgeRevisions) {
+        if (dirtyEdgeRevisionRef.current.get(edgeId) === revision) {
+          dirtyEdgeIdsRef.current.delete(edgeId)
+          dirtyEdgeRevisionRef.current.delete(edgeId)
+        }
+      }
+      deletedNodeIdsRef.current = deletedNodeIdsRef.current.filter((nodeId) => !submittedDeletedNodeIds.includes(nodeId))
+      deletedEdgeIdsRef.current = deletedEdgeIdsRef.current.filter((edgeId) => !submittedDeletedEdgeIds.includes(edgeId))
+      if (saveMode === 'full') forceFullCanvasSaveRef.current = false
+      const savedAt = data.serverUpdatedAt ?? data.savedAt
+      if (savedAt) {
+        serverSaveVersionRef.current = savedAt
+        flushLocalSnapshot(savedAt)
+      }
+      setSpatialPrevis(next)
+      return 'success'
+    } catch {
+      return 'failed'
+    }
+  }, [flushLocalSnapshot, projectId, workflowId, getCanvasSnapshot])
+
   const createGeneratedAsset = useCallback(async (args: {
     nodeId: string
     type: 'text' | 'image' | 'video' | 'audio'
@@ -4151,6 +4232,7 @@ export function VisualCanvasWorkspace({
           setCharacterBible(loadCharacterBible(ensureData.project.id, ensureData.workflow.metadataJson))
           setSceneBible(loadSceneBible(ensureData.project.id, ensureData.workflow.metadataJson))
           setCloudShotSequence(parseShotSequenceFromWorkflowMetadata(ensureData.workflow.metadataJson))
+          setSpatialPrevis(parseSpatialPrevisMetadata(ensureData.workflow.metadataJson))
           try {
             window.localStorage.setItem('creator-city:last-project-id', ensureData.project.id)
             if (ensureData.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', ensureData.workflow.id)
