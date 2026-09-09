@@ -102,4 +102,74 @@ describe('spatial previs persistence', () => {
       assert.equal(parseSpatialPrevisMetadata({ spatialPrevis }), null)
     }
   })
+
+  test('returns null for restored timelines outside persisted duration bounds', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1', durationSec: 30 })
+    const invalidTimelines = [
+      {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          durationSec: 1,
+          cameraTrack: {
+            ...state.masterTake.cameraTrack,
+            keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe) => {
+              if (keyframe.id === 'camera-mid') return { ...keyframe, timeSec: 0.5 }
+              if (keyframe.id === 'camera-end') return { ...keyframe, timeSec: 1 }
+              return keyframe
+            }),
+          },
+          beats: state.masterTake.beats.map((beat) => ({ ...beat, endSec: 1 })),
+        },
+      },
+      {
+        ...state,
+        masterTake: { ...state.masterTake, durationSec: 181 },
+      },
+      {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          cameraTrack: {
+            ...state.masterTake.cameraTrack,
+            keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.id === 'camera-start'
+              ? { ...keyframe, timeSec: -1 }
+              : keyframe.id === 'camera-end'
+                ? { ...keyframe, timeSec: 31 }
+                : keyframe),
+          },
+        },
+      },
+      {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          cameraTrack: {
+            ...state.masterTake.cameraTrack,
+            keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.id === 'camera-mid'
+              ? { ...keyframe, timeSec: 14.5 }
+              : keyframe),
+          },
+          beats: state.masterTake.beats.map((beat) => ({ ...beat, startSec: -1 })),
+        },
+      },
+      {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          cameraTrack: {
+            ...state.masterTake.cameraTrack,
+            keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.id === 'camera-mid'
+              ? { ...keyframe, timeSec: 15.5 }
+              : keyframe),
+          },
+          beats: state.masterTake.beats.map((beat) => ({ ...beat, endSec: 31 })),
+        },
+      },
+    ]
+
+    for (const spatialPrevis of invalidTimelines) {
+      assert.equal(parseSpatialPrevisMetadata({ spatialPrevis }), null)
+    }
+  })
 })

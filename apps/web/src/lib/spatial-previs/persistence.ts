@@ -16,6 +16,8 @@ const ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1'])
 const EDITOR_MODES = new Set(['continuous', 'beats'])
 const CAMERA_INTENTS = new Set(['push', 'pull', 'pan-tilt', 'dolly', 'follow', 'crane', 'static'])
 const MIDPOINT_EPSILON = 1e-6
+const MIN_DURATION_SEC = 5
+const MAX_DURATION_SEC = 180
 
 function record(value: unknown): MetadataRecord | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -127,9 +129,20 @@ function beats(value: unknown): SpatialPrevisBeat[] | null {
   return items
 }
 
-function timelineIsExecutable(cameraTrack: CameraTrack, beats: SpatialPrevisBeat[]) {
-  if (cameraTrack.keyframes.length === 0) return false
+function timelineIsExecutable(cameraTrack: CameraTrack, beats: SpatialPrevisBeat[], durationSec: number) {
+  if (
+    durationSec < MIN_DURATION_SEC
+    || durationSec > MAX_DURATION_SEC
+    || cameraTrack.keyframes.length === 0
+    || cameraTrack.keyframes.some((keyframe) => keyframe.timeSec < 0 || keyframe.timeSec > durationSec)
+  ) {
+    return false
+  }
+
   return beats.every((beat) => {
+    if (beat.startSec < 0 || beat.startSec > durationSec || beat.endSec < 0 || beat.endSec > durationSec) {
+      return false
+    }
     const midpoint = (beat.startSec + beat.endSec) / 2
     return cameraTrack.keyframes.filter(
       (keyframe) => Math.abs(keyframe.timeSec - midpoint) <= MIDPOINT_EPSILON,
@@ -177,7 +190,7 @@ function state(value: unknown): SpatialPrevisState | null {
     || !parsedActorTracks
     || !parsedCameraTrack
     || !parsedBeats
-    || !timelineIsExecutable(parsedCameraTrack, parsedBeats)
+    || !timelineIsExecutable(parsedCameraTrack, parsedBeats, durationSec)
   ) {
     return null
   }
