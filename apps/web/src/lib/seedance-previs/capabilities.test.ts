@@ -20,6 +20,14 @@ test('exposes 180 seconds only for an entitled Seedance 2.5 long-take profile', 
   )
   assert.equal(
     resolveSeedanceCapability({
+      model: 'dreamina-seedance-2-5-260628',
+      entryPoint: 'ark',
+      entitlement: 'long-take-beta',
+    }).maxContinuousDurationSec,
+    180,
+  )
+  assert.equal(
+    resolveSeedanceCapability({
       model: 'seedance-2.0',
       entryPoint: 'ark',
       entitlement: 'long-take-beta',

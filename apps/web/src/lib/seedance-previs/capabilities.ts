@@ -20,12 +20,17 @@ export type SeedanceCapability = {
   }
 }
 
+function isSeedance25Model(model: string) {
+  const normalized = model.trim().toLowerCase().replace(/_/g, '-')
+  return normalized === 'seedance-2.5' || /^dreamina-seedance-2-5(?:-|$)/.test(normalized)
+}
+
 export function resolveSeedanceCapability(input: {
   model: string
   entryPoint: 'ark'
   entitlement: SeedanceEntitlement
 }): SeedanceCapability {
-  const longTakeEnabled = input.model.trim().toLowerCase() === 'seedance-2.5'
+  const longTakeEnabled = isSeedance25Model(input.model)
     && input.entitlement === 'long-take-beta'
 
   return {
