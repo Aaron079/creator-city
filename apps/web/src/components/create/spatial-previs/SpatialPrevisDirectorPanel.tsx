@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { DirectorToolPanelFrame } from '@/components/canvas/tools/DirectorToolPanelFrame'
 import { resolveSeedanceCapability, type SeedanceCapability } from '@/lib/seedance-previs/capabilities'
 import { buildSeedanceTakePackage } from '@/lib/seedance-previs/package'
+import type { SeedanceDeliveryReceipt } from '@/lib/seedance-previs/receipts'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { applyBeatPatch } from '@/lib/spatial-previs/normalize'
 import type { BeatPatch, SpatialPrevisMode, SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
@@ -14,17 +15,28 @@ import {
   SeedanceDeliveryPanel,
   type SeedanceDeliveryPayload,
 } from './SeedanceDeliveryPanel'
+import {
+  SeedanceChainReviewPanel,
+  type SeedanceChainRetryRequest,
+} from './SeedanceChainReviewPanel'
 
 export type SeedancePrevisDeliveryRequest = SeedanceDeliveryPayload & {
   model: string
   previs: SpatialPrevisState
 }
 
+export type SeedancePrevisDeliveryResult = {
+  success: boolean
+  message: string
+}
+
 export type SpatialPrevisDirectorPanelProps = {
   initialState: SpatialPrevisState
   onSave: (state: SpatialPrevisState) => void | 'success' | 'failed' | 'conflict' | Promise<void | 'success' | 'failed' | 'conflict'>
   onReload?: () => void | 'success' | 'failed' | Promise<void | 'success' | 'failed'>
-  onDeliverToSeedance?: (input: SeedancePrevisDeliveryRequest) => Promise<{ success: boolean; message: string }>
+  onDeliverToSeedance?: (input: SeedancePrevisDeliveryRequest) => Promise<SeedancePrevisDeliveryResult>
+  seedanceReceipts?: readonly SeedanceDeliveryReceipt[]
+  onRetrySeedanceSegment?: (input: SeedanceChainRetryRequest) => Promise<SeedancePrevisDeliveryResult>
   onClose: () => void
 }
 
@@ -97,7 +109,15 @@ function receivedCapability(value: unknown): SeedanceCapability | null {
     : null
 }
 
-export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onDeliverToSeedance, onClose }: SpatialPrevisDirectorPanelProps) {
+export function SpatialPrevisDirectorPanel({
+  initialState,
+  onSave,
+  onReload,
+  onDeliverToSeedance,
+  seedanceReceipts = [],
+  onRetrySeedanceSegment,
+  onClose,
+}: SpatialPrevisDirectorPanelProps) {
   const [state, setState] = useState(initialState)
   const [currentTimeSec, setCurrentTimeSec] = useState(() => clampSpatialPrevisTime(0, initialState.masterTake.durationSec))
   const [beatError, setBeatError] = useState<string | null>(null)
@@ -107,6 +127,8 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onD
   const [isSaving, setIsSaving] = useState(false)
   const [isReloading, setIsReloading] = useState(false)
   const [isDeliveryOpen, setIsDeliveryOpen] = useState(false)
+  const [isReviewOpen, setIsReviewOpen] = useState(false)
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(seedanceReceipts.at(-1)?.deliveryId ?? null)
   const [deliveryStatus, setDeliveryStatus] = useState<string | null>(null)
   const [capability, setCapability] = useState<SeedanceCapability>(standardSeedanceCapability)
   const saveGuard = useRef(createSpatialPrevisSaveGuard())
@@ -140,6 +162,11 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onD
       .catch(() => {})
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    if (selectedDeliveryId && seedanceReceipts.some((receipt) => receipt.deliveryId === selectedDeliveryId)) return
+    setSelectedDeliveryId(seedanceReceipts.at(-1)?.deliveryId ?? null)
+  }, [seedanceReceipts, selectedDeliveryId])
 
   const handleStateChange = (next: SpatialPrevisState) => {
     if (!canMutateSpatialPrevisEditor(isBusy)) return
@@ -210,6 +237,7 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onD
       setDeliveryStatus('Seedance 提交失败。')
     }
   }
+  const selectedReceipt = seedanceReceipts.find((receipt) => receipt.deliveryId === selectedDeliveryId) ?? null
 
   return (
     <DirectorToolPanelFrame
@@ -310,14 +338,26 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onD
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">Seedance 交付</p>
               </div>
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={() => setIsDeliveryOpen((current) => !current)}
-                className="rounded-md border border-indigo-200/30 bg-indigo-300/[0.1] px-2.5 py-1.5 text-[11px] font-medium text-indigo-50 disabled:cursor-not-allowed disabled:opacity-35"
-              >
-                生成到 Seedance
-              </button>
+              <div className="flex items-center gap-1.5">
+                {onRetrySeedanceSegment && seedanceReceipts.length > 0 ? (
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => setIsReviewOpen((current) => !current)}
+                    className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] font-medium text-white/72 disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    生成复核
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => setIsDeliveryOpen((current) => !current)}
+                  className="rounded-md border border-indigo-200/30 bg-indigo-300/[0.1] px-2.5 py-1.5 text-[11px] font-medium text-indigo-50 disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  生成到 Seedance
+                </button>
+              </div>
             </div>
             {isDeliveryOpen ? (
               <div className="mt-2">
@@ -326,6 +366,25 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onD
                   package={deliveryPackage}
                   onSubmit={(payload) => { void handleSeedanceDelivery(payload) }}
                 />
+              </div>
+            ) : null}
+            {isReviewOpen && selectedReceipt && onRetrySeedanceSegment ? (
+              <div className="mt-2 space-y-2">
+                {seedanceReceipts.length > 1 ? (
+                  <select
+                    aria-label="选择 Seedance 交付记录"
+                    value={selectedReceipt.deliveryId}
+                    onChange={(event) => setSelectedDeliveryId(event.currentTarget.value)}
+                    className="w-full border border-white/10 bg-black/20 px-2 py-1.5 text-[11px] text-white/72"
+                  >
+                    {seedanceReceipts.map((receipt) => (
+                      <option key={receipt.deliveryId} value={receipt.deliveryId}>
+                        {receipt.masterTakeId} · {receipt.deliveryId}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <SeedanceChainReviewPanel receipt={selectedReceipt} onRetry={onRetrySeedanceSegment} />
               </div>
             ) : null}
             {deliveryStatus ? <p role="status" className="mt-2 text-[11px] text-indigo-100/75">{deliveryStatus}</p> : null}

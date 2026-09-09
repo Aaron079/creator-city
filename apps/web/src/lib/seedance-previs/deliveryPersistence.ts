@@ -237,3 +237,37 @@ export function updateSeedancePrevisDeliverySegmentResults(
     },
   }
 }
+
+export function replaceSeedancePrevisDeliveryMetadata(
+  existingMetadata: unknown,
+  replacement: SeedancePrevisDelivery,
+): Record<string, JsonValue> {
+  if (!isJsonRecord(existingMetadata)) {
+    throw new TypeError('INVALID_SEEDANCE_PREVIS_DELIVERY_METADATA')
+  }
+  const existingDeliveries = parseSeedancePrevisDeliveries(existingMetadata)
+  const nextDelivery = deliveryInput({
+    deliveryId: replacement.deliveryId,
+    masterTakeId: replacement.masterTakeId,
+    ...(replacement.package === null ? {} : { package: replacement.package }),
+    ...(replacement.capabilitySnapshot === null ? {} : { capabilitySnapshot: replacement.capabilitySnapshot }),
+    acknowledgements: replacement.acknowledgements,
+    segmentResults: replacement.segmentResults,
+  })
+  if (!existingDeliveries || !nextDelivery) throw new TypeError('INVALID_SEEDANCE_PREVIS_DELIVERY')
+  const current = existingDeliveries.items.find((item) => item.deliveryId === nextDelivery.deliveryId)
+  if (!current) throw new TypeError('SEEDANCE_PREVIS_DELIVERY_NOT_FOUND')
+  if (current.masterTakeId !== nextDelivery.masterTakeId) {
+    throw new TypeError('SEEDANCE_PREVIS_DELIVERY_MASTER_TAKE_MISMATCH')
+  }
+
+  return {
+    ...existingMetadata,
+    [DELIVERY_METADATA_KEY]: {
+      version: SEEDANCE_PREVIS_DELIVERIES_VERSION,
+      items: existingDeliveries.items.map((item) => (
+        item.deliveryId === nextDelivery.deliveryId ? nextDelivery : item
+      )),
+    },
+  }
+}

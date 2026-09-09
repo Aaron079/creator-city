@@ -59,10 +59,13 @@ import {
 } from '@/lib/spatial-previs/persistence'
 import { normalizeSpatialPrevis } from '@/lib/spatial-previs/normalize'
 import type { SpatialPrevisState } from '@/lib/spatial-previs/types'
+import { parseSeedancePrevisDeliveries } from '@/lib/seedance-previs/deliveryPersistence'
+import { receiptFromDelivery, type SeedanceDeliveryReceipt } from '@/lib/seedance-previs/receipts'
 import {
   SpatialPrevisDirectorPanel,
   type SeedancePrevisDeliveryRequest,
 } from '@/components/create/spatial-previs/SpatialPrevisDirectorPanel'
+import type { SeedanceChainRetryRequest } from '@/components/create/spatial-previs/SeedanceChainReviewPanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { CharacterBiblePanel } from '@/components/create/CharacterBiblePanel'
 import { SceneBiblePanel } from '@/components/create/SceneBiblePanel'
@@ -1039,6 +1042,18 @@ function metadataRecord(metadataJson: unknown) {
   return metadataJson && typeof metadataJson === 'object' && !Array.isArray(metadataJson)
     ? metadataJson as Record<string, unknown>
     : {}
+}
+
+function seedanceReceiptsFromMetadata(metadataJson: unknown): SeedanceDeliveryReceipt[] {
+  const deliveries = parseSeedancePrevisDeliveries(metadataJson)
+  if (!deliveries) return []
+  return deliveries.items.flatMap((delivery) => {
+    try {
+      return [receiptFromDelivery(delivery)]
+    } catch {
+      return []
+    }
+  })
 }
 
 function getTaskEditorSize(metadataJson: unknown): CanvasTaskEditorSize | null {
@@ -2687,6 +2702,7 @@ export function VisualCanvasWorkspace({
   const [isShotSequencerOpen, setIsShotSequencerOpen] = useState(false)
   const [cloudShotSequence, setCloudShotSequence] = useState<ShotSequenceState | null>(null)
   const [spatialPrevis, setSpatialPrevis] = useState<SpatialPrevisState | null>(null)
+  const [seedanceReceipts, setSeedanceReceipts] = useState<SeedanceDeliveryReceipt[]>([])
   const [isSpatialPrevisOpen, setIsSpatialPrevisOpen] = useState(false)
   const [spatialPrevisPanelRevision, setSpatialPrevisPanelRevision] = useState(0)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
@@ -4111,11 +4127,29 @@ export function VisualCanvasWorkspace({
       const responseServerVersion = data.serverUpdatedAt ?? data.workflow?.updatedAt
       if (responseServerVersion) serverSaveVersionRef.current = responseServerVersion
       setSpatialPrevis(next)
+      setSeedanceReceipts(seedanceReceiptsFromMetadata(data.workflow?.metadataJson))
       setSpatialPrevisPanelRevision((current) => current + 1)
       setIsSpatialPrevisOpen(true)
       return 'success'
     } catch {
       return 'failed'
+    }
+  }, [projectId])
+
+  const refreshSeedanceReceipts = useCallback(async () => {
+    if (!projectId) return
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+      })
+      if (!response.ok) return
+      const data = await response.json().catch(() => ({})) as CanvasLoadResponse
+      setSeedanceReceipts(seedanceReceiptsFromMetadata(data.workflow?.metadataJson))
+    } catch {
+      // Delivery status remains visible from its last known receipt.
     }
   }, [projectId])
 
@@ -4146,11 +4180,40 @@ export function VisualCanvasWorkspace({
       if (!response.ok || !data?.success) {
         return { success: false, message: data?.message ?? 'Seedance 提交失败。' }
       }
+      await refreshSeedanceReceipts()
       return { success: true, message: 'Seedance 已提交，首段生成中。' }
     } catch {
       return { success: false, message: 'Seedance 提交失败。' }
     }
-  }, [handleSaveSpatialPrevis, projectId, workflowId])
+  }, [handleSaveSpatialPrevis, projectId, refreshSeedanceReceipts, workflowId])
+
+  const handleRetrySeedanceSegment = useCallback(async (
+    input: SeedanceChainRetryRequest,
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!projectId || !workflowId) return { success: false, message: '请先完成项目同步。' }
+    try {
+      const response = await fetch(`/api/generate/seedance-previs/${encodeURIComponent(input.deliveryId)}/retry`, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          projectId,
+          workflowId,
+          segmentId: input.segmentId,
+          ...(input.reviewFindingCode ? { reviewFindingCode: input.reviewFindingCode } : {}),
+        }),
+      })
+      const data = await response.json().catch(() => null) as { success?: boolean; message?: string }
+      if (!response.ok || !data?.success) {
+        return { success: false, message: data?.message ?? '片段恢复提交失败。' }
+      }
+      await refreshSeedanceReceipts()
+      return { success: true, message: '片段恢复已提交。' }
+    } catch {
+      return { success: false, message: '片段恢复提交失败。' }
+    }
+  }, [projectId, refreshSeedanceReceipts, workflowId])
 
   const createGeneratedAsset = useCallback(async (args: {
     nodeId: string
@@ -4303,6 +4366,7 @@ export function VisualCanvasWorkspace({
           setSceneBible(loadSceneBible(ensureData.project.id, ensureData.workflow.metadataJson))
           setCloudShotSequence(parseShotSequenceFromWorkflowMetadata(ensureData.workflow.metadataJson))
           setSpatialPrevis(parseSpatialPrevisMetadata(ensureData.workflow.metadataJson))
+          setSeedanceReceipts(seedanceReceiptsFromMetadata(ensureData.workflow.metadataJson))
           try {
             window.localStorage.setItem('creator-city:last-project-id', ensureData.project.id)
             if (ensureData.workflow?.id) window.localStorage.setItem('creator-city:last-workflow-id', ensureData.workflow.id)
@@ -4395,6 +4459,7 @@ export function VisualCanvasWorkspace({
         setSceneBible(loadSceneBible(resolvedProjectId, data.workflow?.metadataJson))
         setCloudShotSequence(parseShotSequenceFromWorkflowMetadata(data.workflow?.metadataJson))
         setSpatialPrevis(parseSpatialPrevisMetadata(data.workflow?.metadataJson))
+        setSeedanceReceipts(seedanceReceiptsFromMetadata(data.workflow?.metadataJson))
 
         // Persist so next visit to /create (without ?projectId) reopens this project
         try {
@@ -11809,6 +11874,8 @@ export function VisualCanvasWorkspace({
             onSave={handleSaveSpatialPrevis}
             onReload={handleReloadSpatialPrevis}
             onDeliverToSeedance={handleDeliverSpatialPrevisToSeedance}
+            seedanceReceipts={seedanceReceipts}
+            onRetrySeedanceSegment={handleRetrySeedanceSegment}
             onClose={() => closeCanvasPanel()}
           />
         </div>

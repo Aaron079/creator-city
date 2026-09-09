@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { SeedancePrevisVideoInput, SeedanceVideoResult } from '@/lib/providers/china/volcengine'
 import { spatialPrevisMetadata } from '@/lib/spatial-previs/persistence'
 import { normalizeSpatialPrevis } from '@/lib/spatial-previs/normalize'
-import { createSeedancePrevisGetHandler, createSeedancePrevisPostHandler } from './route'
+import { createSeedancePrevisGetHandler, createSeedancePrevisPostHandler } from './handler'
 
 type Harness = {
   post: ReturnType<typeof createSeedancePrevisPostHandler>

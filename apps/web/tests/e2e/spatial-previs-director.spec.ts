@@ -39,6 +39,11 @@ type SeedancePrevisDeliveryRequest = {
   acknowledgedFindingIds?: unknown
 }
 
+type SeedancePrevisRetryRequest = {
+  segmentId?: unknown
+  reviewFindingCode?: unknown
+}
+
 type SaveOutcome = 'success' | 'conflict' | 'pending-success'
 
 type CanvasApiOptions = {
@@ -82,6 +87,36 @@ function reloadedSpatialPrevis(durationSec = 30) {
       },
       editorMode: 'beats',
       updatedAt: reloadedServerVersion,
+    },
+  }
+}
+
+function reviewSpatialPrevis() {
+  return {
+    ...reloadedSpatialPrevis(60),
+    seedancePrevisDeliveries: {
+      version: 1,
+      items: [{
+        deliveryId: 'delivery-review-1',
+        masterTakeId: 'server-reloaded-take',
+        package: {
+          direction: 'Keep the camera following the actor.',
+          aspectRatio: '16:9',
+          durationSec: 60,
+          chain: {
+            segments: [
+              { id: 'server-reloaded-take:segment-1', index: 0, startSec: 0, endSec: 30 },
+              { id: 'server-reloaded-take:segment-2', index: 1, startSec: 30, endSec: 60 },
+            ],
+          },
+        },
+        capabilitySnapshot: { model: 'seedance-2.5' },
+        acknowledgements: ['continuity-chain-recommended'],
+        segmentResults: [
+          { segmentId: 'server-reloaded-take:segment-1', index: 0, status: 'succeeded', videoUrl: 'https://example.com/1.mp4' },
+          { segmentId: 'server-reloaded-take:segment-2', index: 1, status: 'failed', errorCode: 'provider_failed' },
+        ],
+      }],
     },
   }
 }
@@ -143,6 +178,7 @@ function canvasLoadResponse(options: CanvasApiOptions, isReload = false) {
 async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
   const saveRequests: CanvasSaveRequest[] = []
   const seedanceRequests: SeedancePrevisDeliveryRequest[] = []
+  const seedanceRetryRequests: SeedancePrevisRetryRequest[] = []
   let ensureCount = 0
   let getCount = 0
   let serveReloadMetadata = false
@@ -153,6 +189,15 @@ async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
   await page.route('**/api/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname
     const method = route.request().method()
+
+    if (pathname === '/api/generate/seedance-previs/delivery-review-1/retry' && method === 'POST') {
+      seedanceRetryRequests.push(route.request().postDataJSON() as SeedancePrevisRetryRequest)
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, taskId: 'retry-2' }),
+      })
+      return
+    }
 
     if (pathname === '/api/generate/seedance-previs') {
       if (method === 'GET') {
@@ -253,6 +298,7 @@ async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
   return {
     saveRequests,
     seedanceRequests,
+    seedanceRetryRequests,
     ensureCount: () => ensureCount,
     getCount: () => getCount,
     waitForPendingSave: () => pendingSaveReady,
@@ -426,4 +472,30 @@ test('spatial previs sends an explicit direct or acknowledged continuity selecti
     confirmedMode: 'continuity-chain',
     acknowledgedFindingIds: ['continuity-chain-recommended'],
   })
+})
+
+test('spatial previs reviews the master timeline and retries only its failed segment', async ({ page }) => {
+  test.setTimeout(120_000)
+  if (!fixture.ready) {
+    test.skip(true, fixture.reason)
+    return
+  }
+  const canvasApi = await stubCanvasApis(page, { initialMetadata: reviewSpatialPrevis() })
+
+  await page.goto(canvasUrl(), { waitUntil: 'domcontentloaded' })
+  await expect(page.locator('.canvas-viewport')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: '已同步到云端' })).toBeVisible({ timeout: 30_000 })
+  await openSpatialPrevis(page)
+
+  await page.getByRole('button', { name: '生成复核' }).click()
+  const reviewTimeline = page.locator('[data-master-review-timeline="true"]')
+  await expect(reviewTimeline).toBeVisible()
+  await expect(reviewTimeline).toContainText('00:30')
+  const retryButtons = page.getByRole('button', { name: '仅重新生成此段' })
+  await expect(retryButtons.nth(0)).toBeDisabled()
+  await expect(retryButtons.nth(1)).toBeEnabled()
+  await retryButtons.nth(1).click()
+  await expect(page.getByText('片段恢复已提交。')).toBeVisible()
+  expect(canvasApi.seedanceRetryRequests).toHaveLength(1)
+  expect(canvasApi.seedanceRetryRequests[0]).toMatchObject({ segmentId: 'server-reloaded-take:segment-2' })
 })

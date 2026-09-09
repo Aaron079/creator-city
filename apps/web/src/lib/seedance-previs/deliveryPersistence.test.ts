@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   appendSeedancePrevisDeliveryMetadata,
   parseSeedancePrevisDeliveries,
+  replaceSeedancePrevisDeliveryMetadata,
   updateSeedancePrevisDeliverySegmentResults,
 } from './deliveryPersistence'
 
@@ -107,6 +108,31 @@ test('records the provider result against only the dispatched delivery segment',
   assert.deepEqual(parseSeedancePrevisDeliveries(next)?.items[0]?.segmentResults, [
     { segmentId: 'take-1:segment-1', status: 'submitted', providerTaskId: 'task-1' },
   ])
+})
+
+test('replaces one immutable receipt without changing spatial previs or another delivery', () => {
+  const existingMetadata = appendSeedancePrevisDeliveryMetadata({ spatialPrevis: { version: 1, masterTake: { id: 'take-1' } } }, {
+    deliveryId: 'delivery-1',
+    masterTakeId: 'take-1',
+    package: { durationSec: 30 },
+    segmentResults: [{ segmentId: 'take-1', index: 0, status: 'submitted' }],
+  })
+  const withSecondDelivery = appendSeedancePrevisDeliveryMetadata(existingMetadata, {
+    deliveryId: 'delivery-2',
+    masterTakeId: 'take-2',
+    segmentResults: [],
+  })
+  const receipt = parseSeedancePrevisDeliveries(withSecondDelivery)?.items[0]
+  assert.ok(receipt)
+
+  const next = replaceSeedancePrevisDeliveryMetadata(withSecondDelivery, {
+    ...receipt,
+    segmentResults: [{ segmentId: 'take-1', index: 0, status: 'succeeded', videoUrl: 'https://example.com/take-1.mp4' }],
+  })
+
+  assert.deepEqual(next.spatialPrevis, { version: 1, masterTake: { id: 'take-1' } })
+  assert.equal(parseSeedancePrevisDeliveries(next)?.items[0]?.segmentResults[0]?.status, 'succeeded')
+  assert.equal(parseSeedancePrevisDeliveries(next)?.items[1]?.deliveryId, 'delivery-2')
 })
 
 test('parses only complete version-one delivery metadata records', () => {
