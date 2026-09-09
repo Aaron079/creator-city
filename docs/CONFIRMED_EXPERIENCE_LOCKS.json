@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "policy": "Founder-approved canvas experience is additive-only unless a documented exception is approved.",
+  "declaration": {
+    "unaffected": "Confirmed experience impact: none",
+    "exception": "Confirmed experience exception: <lock id>\nFounder approval: <approval record or task link>"
+  },
+  "locks": [
+    {
+      "id": "node-editor-anchor",
+      "title": "Node editor anchor",
+      "owners": [
+        "apps/web/src/components/create/VisualCanvasWorkspace.tsx",
+        "apps/web/src/components/create/canvas/canvasWorkspaceLayout.ts"
+      ],
+      "checks": [
+        "apps/web/src/components/create/canvas/canvasTaskDialog.rendered-layout.test.tsx"
+      ]
+    },
+    {
+      "id": "prompt-editor-fixed-regions",
+      "title": "Prompt editor fixed regions",
+      "owners": [
+        "apps/web/src/components/create/CanvasPromptBox.tsx",
+        "apps/web/src/components/create/canvas.module.css"
+      ],
+      "checks": [
+        "apps/web/src/components/create/canvas/canvasTaskDialog.rendered-layout.test.tsx"
+      ]
+    },
+    {
+      "id": "node-editor-coupled-drag",
+      "title": "Node editor coupled drag",
+      "owners": [
+        "apps/web/src/components/create/VisualCanvasWorkspace.tsx",
+        "apps/web/src/components/create/canvas/canvasWorkspaceLayout.ts"
+      ],
+      "checks": [
+        "apps/web/src/components/create/canvas/canvasTaskDialog.rendered-layout.test.tsx"
+      ]
+    },
+    {
+      "id": "four-edge-resize-without-handles",
+      "title": "Four-edge resize without handles",
+      "owners": [
+        "apps/web/src/components/create/CanvasNodeCard.tsx",
+        "apps/web/src/components/create/CanvasPromptBox.tsx",
+        "apps/web/src/components/create/VisualCanvasWorkspace.tsx",
+        "apps/web/src/components/create/canvas/canvasResizeGeometry.ts",
+        "apps/web/src/components/create/canvas.module.css"
+      ],
+      "checks": [
+        "apps/web/src/components/create/canvas/canvasTaskDialog.rendered-layout.test.tsx",
+        "apps/web/src/components/create/canvas/secondaryClickSequence.test.ts"
+      ]
+    },
+    {
+      "id": "node-context-menu-actions",
+      "title": "Node context menu actions",
+      "owners": [
+        "apps/web/src/components/create/VisualCanvasWorkspace.tsx",
+        "apps/web/src/components/create/CanvasNodeCard.tsx"
+      ],
+      "checks": [
+        "apps/web/src/components/create/canvas/secondaryClickSequence.test.ts",
+        "apps/web/tests/e2e/canvas-context-menus.spec.ts"
+      ]
+    },
+    {
+      "id": "canvas-context-menu-actions",
+      "title": "Canvas context menu actions",
+      "owners": [
+        "apps/web/src/components/create/VisualCanvasWorkspace.tsx"
+      ],
+      "checks": [
+        "apps/web/src/components/create/canvas/secondaryClickSequence.test.ts",
+        "apps/web/tests/e2e/canvas-context-menus.spec.ts"
+      ]
+    },
+    {
+      "id": "safari-canvas-context-menu-capture",
+      "title": "Safari canvas context menu capture",
+      "owners": [
+        "apps/web/src/components/create/VisualCanvasWorkspace.tsx",
+        "apps/web/src/components/create/CanvasNodeCard.tsx"
+      ],
+      "checks": [
+        "apps/web/src/components/create/canvas/secondaryClickSequence.test.ts",
+        "apps/web/tests/e2e/canvas-context-menus.spec.ts"
+      ]
+    }
+  ]
+}
