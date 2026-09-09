@@ -79,3 +79,11 @@ test('locks spatial editor mutations during pending save and exposes explicit co
   assert.match(panelSource, /保存冲突/)
   assert.match(panelSource, /重新加载预演/)
 })
+
+test('releases an incomplete canvas initialization after effect cleanup', () => {
+  const initializationSource = sourceBetween(workspaceSource, 'useEffect(() => {\n    let cancelled = false', '  }, [applyCanvasSnapshot')
+
+  assert.match(initializationSource, /let initializationCompleted = false/)
+  assert.equal((initializationSource.match(/initializationCompleted = true/g) ?? []).length, 2)
+  assert.match(initializationSource, /if \(!initializationCompleted && initStartedRef\.current === initKey\) initStartedRef\.current = ''/)
+})

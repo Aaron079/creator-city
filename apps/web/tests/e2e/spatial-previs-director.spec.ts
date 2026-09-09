@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { getSafePreviewFixture } from './support/canvas-e2e-safety'
 
-const projectId = 'e2e-spatial-previs-project'
+const projectId = process.env.PLAYWRIGHT_SAFE_PROJECT_ID ?? 'e2e-spatial-previs-project'
 const workflowId = 'e2e-spatial-previs-workflow'
 const initialServerVersion = '2026-09-09T00:00:00.000Z'
 const reloadedServerVersion = '2026-09-09T00:02:00.000Z'
@@ -94,15 +94,61 @@ function mediaNode() {
   }
 }
 
+function projectRecord() {
+  return {
+    id: projectId,
+    title: 'Spatial Previs E2E',
+    description: '',
+    status: 'active',
+    visibility: 'private',
+    thumbnailUrl: null,
+    createdAt: initialServerVersion,
+    updatedAt: initialServerVersion,
+    lastOpenedAt: initialServerVersion,
+    ownerId: 'e2e-user',
+  }
+}
+
+function canvasLoadResponse(options: CanvasApiOptions, isReload = false) {
+  return {
+    success: true,
+    project: projectRecord(),
+    workflow: {
+      id: workflowId,
+      metadataJson: isReload ? (options.reloadMetadata ?? options.initialMetadata ?? {}) : (options.initialMetadata ?? {}),
+      updatedAt: isReload ? reloadedServerVersion : initialServerVersion,
+      viewportJson: { x: 0, y: 0, zoom: 1 },
+    },
+    nodes: options.nodes ?? [],
+    edges: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+    serverUpdatedAt: isReload ? reloadedServerVersion : initialServerVersion,
+  }
+}
+
 async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
   const saveRequests: CanvasSaveRequest[] = []
+  let ensureCount = 0
   let getCount = 0
+  let serveReloadMetadata = false
   let releasePendingSave: (() => void) | null = null
   let markPendingSaveReady: (() => void) | null = null
   const pendingSaveReady = new Promise<void>((resolve) => { markPendingSaveReady = resolve })
 
   await page.route('**/api/**', async (route) => {
-    if (new URL(route.request().url()).pathname !== `/api/projects/${projectId}/canvas`) {
+    const pathname = new URL(route.request().url()).pathname
+    const method = route.request().method()
+
+    if (pathname === '/api/projects/ensure' && (method === 'GET' || method === 'POST')) {
+      ensureCount += 1
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify(canvasLoadResponse(options)),
+      })
+      return
+    }
+
+    if (pathname !== `/api/projects/${projectId}/canvas`) {
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({ success: true, accounts: [], providers: [] }),
@@ -110,28 +156,18 @@ async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
       return
     }
 
-    if (route.request().method() === 'GET') {
+    if (method === 'GET') {
       getCount += 1
-      const isReload = getCount > 1
+      const isReload = serveReloadMetadata
+      serveReloadMetadata = false
       await route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({
-          project: { id: projectId, title: 'Spatial Previs E2E' },
-          workflow: {
-            id: workflowId,
-            metadataJson: isReload ? (options.reloadMetadata ?? options.initialMetadata ?? {}) : (options.initialMetadata ?? {}),
-            updatedAt: isReload ? reloadedServerVersion : initialServerVersion,
-          },
-          nodes: options.nodes ?? [],
-          edges: [],
-          viewport: { x: 0, y: 0, zoom: 1 },
-          serverUpdatedAt: isReload ? reloadedServerVersion : initialServerVersion,
-        }),
+        body: JSON.stringify(canvasLoadResponse(options, isReload)),
       })
       return
     }
 
-    if (route.request().method() !== 'PUT') {
+    if (method !== 'PUT') {
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({ success: true }),
@@ -142,6 +178,7 @@ async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
     saveRequests.push(route.request().postDataJSON() as CanvasSaveRequest)
     const outcome = options.saveOutcomes?.[saveRequests.length - 1] ?? 'success'
     if (outcome === 'conflict') {
+      serveReloadMetadata = true
       await route.fulfill({
         status: 409,
         contentType: 'application/json',
@@ -171,6 +208,7 @@ async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
 
   return {
     saveRequests,
+    ensureCount: () => ensureCount,
     getCount: () => getCount,
     waitForPendingSave: () => pendingSaveReady,
     releasePendingSave: () => releasePendingSave?.(),
@@ -195,9 +233,7 @@ async function openFloatingMediaReview(page: Page) {
 }
 
 function canvasUrl() {
-  const url = new URL('/create', fixture.baseUrl)
-  url.searchParams.set('projectId', projectId)
-  return url.toString()
+  return new URL('/create', fixture.baseUrl).toString()
 }
 
 test('spatial previs remains clickable above a floating review, receives wheel, and saves its accepted snapshot', async ({ page }) => {
@@ -214,6 +250,8 @@ test('spatial previs remains clickable above a floating review, receives wheel, 
   await page.goto(canvasUrl(), { waitUntil: 'domcontentloaded' })
   await expect(page.locator('.canvas-viewport')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('button', { name: '已同步到云端' })).toBeVisible({ timeout: 30_000 })
+  expect(canvasApi.ensureCount()).toBeGreaterThanOrEqual(1)
+  await expect(page).toHaveURL(new RegExp(`/create\\?projectId=${projectId}$`))
 
   const review = await openFloatingMediaReview(page)
   const reviewZIndex = await review.evaluate((element) => Number(getComputedStyle(element).zIndex))
@@ -272,6 +310,8 @@ test('spatial previs exposes reload after a save conflict and rehydrates from th
   await page.goto(canvasUrl(), { waitUntil: 'domcontentloaded' })
   await expect(page.locator('.canvas-viewport')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('button', { name: '已同步到云端' })).toBeVisible({ timeout: 30_000 })
+  expect(canvasApi.ensureCount()).toBeGreaterThanOrEqual(1)
+  await expect(page).toHaveURL(new RegExp(`/create\\?projectId=${projectId}$`))
 
   const viewport = await openSpatialPrevis(page)
   await viewport.getByLabel('跟拍').click()
@@ -285,9 +325,11 @@ test('spatial previs exposes reload after a save conflict and rehydrates from th
   await page.getByRole('button', { name: '重新加载预演' }).click()
   await expect(page.locator('[data-master-take-id="server-reloaded-take"][aria-busy]')).toBeVisible()
   await expect(page.getByText('保存冲突：服务器预演已更新，未覆盖服务器数据。')).toHaveCount(0)
-  expect(canvasApi.getCount()).toBe(2)
+  expect(canvasApi.getCount()).toBe(1)
 
-  await viewport.getByLabel('跟拍').click()
+  const reloadedViewport = page.locator('[data-spatial-previs-viewport="true"]')
+  await expect(reloadedViewport).toBeVisible()
+  await reloadedViewport.getByLabel('跟拍').click()
   await page.getByRole('button', { name: '保存预演' }).click()
   await expect(page.getByRole('status')).toHaveText('预演已保存')
   expect(canvasApi.saveRequests).toHaveLength(2)

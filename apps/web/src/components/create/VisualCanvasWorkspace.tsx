@@ -4199,12 +4199,13 @@ export function VisualCanvasWorkspace({
 
   useEffect(() => {
     let cancelled = false
+    const nextProjectId = searchParamProjectId
+    const initKey = nextProjectId ? `project:${nextProjectId}` : 'ensure'
+    let initializationCompleted = false
 
     async function loadOrCreateProject() {
       devPerf('init')
       isSwitchingProjectRef.current = false
-      const nextProjectId = searchParamProjectId
-      const initKey = nextProjectId ? `project:${nextProjectId}` : 'ensure'
       if (initStartedRef.current === initKey) return
       initStartedRef.current = initKey
       initAbortRef.current?.abort()
@@ -4290,6 +4291,7 @@ export function VisualCanvasWorkspace({
           canvasLoadedRef.current = true
           hasHydratedCanvasRef.current = true
           isInitializingRef.current = false
+          initializationCompleted = true
           initStartedRef.current = `project:${ensureData.project.id}`
           router.replace(`/create?projectId=${encodeURIComponent(ensureData.project.id)}`)
           return
@@ -4435,6 +4437,7 @@ export function VisualCanvasWorkspace({
         canvasLoadedRef.current = true
         hasHydratedCanvasRef.current = true
         isInitializingRef.current = false
+        initializationCompleted = true
         devPerf('first-render')
       } catch (error) {
         if ((error as { name?: string }).name === 'AbortError') return
@@ -4466,6 +4469,7 @@ export function VisualCanvasWorkspace({
     return () => {
       cancelled = true
       initAbortRef.current?.abort()
+      if (!initializationCompleted && initStartedRef.current === initKey) initStartedRef.current = ''
     }
   }, [applyCanvasSnapshot, clearGenerationTimersAndRequests, projectTitle, readBestLocalCanvasSnapshot, router, searchParamProjectId, writeCanvasCache])
 
