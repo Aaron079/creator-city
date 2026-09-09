@@ -51,6 +51,12 @@ function direction(from: Vec3, to: Vec3): Vec3 {
   return length > 1e-6 ? scaleVector(delta, 1 / length) : { x: 0, y: 0, z: -1 }
 }
 
+function lateralDirection(forward: Vec3): Vec3 {
+  const right = { x: -forward.z, y: 0, z: forward.x }
+  const length = Math.hypot(right.x, right.z)
+  return length > 1e-6 ? scaleVector(right, 1 / length) : { x: 1, y: 0, z: 0 }
+}
+
 function stepToward(from: Vec3, to: Vec3, maxDistance: number): Vec3 {
   const forward = direction(from, to)
   const distance = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z)
@@ -63,7 +69,7 @@ function cameraPatch(
   actorPosition: Vec3 | null,
 ): Pick<CameraKeyframe, 'position' | 'target' | 'focalLengthMm' | 'intent'> {
   const forward = direction(keyframe.position, keyframe.target)
-  const right = { x: -forward.z, y: 0, z: forward.x }
+  const right = lateralDirection(forward)
 
   switch (action) {
     case '推/拉': {

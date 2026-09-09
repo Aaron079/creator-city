@@ -106,6 +106,20 @@ describe('SpatialPrevisViewport', () => {
     assert.match(markup, /value="actor-track-support"/)
   })
 
+  test('renders accessible selected-keyframe nudge buttons and disables them without an exact keyframe', () => {
+    const markup = renderToStaticMarkup(
+      createElement(SpatialPrevisViewport, { state, currentTimeSec: 6, onChange: () => undefined }),
+    )
+    const noKeyframeMarkup = renderToStaticMarkup(
+      createElement(SpatialPrevisViewport, { state, currentTimeSec: 5, onChange: () => undefined }),
+    )
+
+    assert.match(markup, /aria-label="演员关键帧微调"/)
+    assert.match(markup, /type="button" aria-label="演员向 X 轴正向微调"/)
+    assert.match(markup, /aria-label="演员向 Z 轴负向微调"/)
+    assert.match(noKeyframeMarkup, /aria-label="演员向 X 轴正向微调" disabled=""/)
+  })
+
   test('renders the sampled shared camera frame in the live preview', () => {
     const markup = renderToStaticMarkup(
       createElement(SpatialPrevisViewport, { state, currentTimeSec: 3, onChange: () => undefined }),
@@ -192,6 +206,48 @@ describe('SpatialPrevisViewport', () => {
     assertOtherCameraFramesUnchanged(crane, actionState)
   })
 
+  test('moves laterally with a stable horizontal fallback for vertical camera views', () => {
+    for (const targetY of [9, -6]) {
+      const verticalState: SpatialPrevisState = {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          cameraTrack: {
+            ...state.masterTake.cameraTrack,
+            keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.timeSec === 6
+              ? {
+                ...keyframe,
+                position: { x: 3, y: 1, z: -4 },
+                target: { x: 3, y: targetY, z: -4 },
+                intent: 'static',
+              }
+              : keyframe),
+          },
+        },
+      }
+      const original = verticalState.masterTake.cameraTrack.keyframes[1]!
+      const next = applySpatialCameraAction(verticalState, 6, '移')
+      const nudged = next.masterTake.cameraTrack.keyframes[1]!
+      const cameraDelta = {
+        x: nudged.position.x - original.position.x,
+        y: nudged.position.y - original.position.y,
+        z: nudged.position.z - original.position.z,
+      }
+      const targetDelta = {
+        x: nudged.target.x - original.target.x,
+        y: nudged.target.y - original.target.y,
+        z: nudged.target.z - original.target.z,
+      }
+
+      assert.ok(Math.abs(cameraDelta.x - 0.35) < 1e-9)
+      assert.equal(cameraDelta.y, 0)
+      assert.equal(cameraDelta.z, 0)
+      assert.deepEqual(targetDelta, cameraDelta)
+      assert.equal(nudged.focalLengthMm, original.focalLengthMm)
+      assertOtherCameraFramesUnchanged(next, verticalState)
+    }
+  })
+
   test('updates only the selected actor track at an existing exact keyframe', async () => {
     const spatialViewportModule = await import('./SpatialPrevisViewport') as {
       updateSpatialActorPosition?: (
@@ -212,6 +268,95 @@ describe('SpatialPrevisViewport', () => {
     assert.deepEqual(next.masterTake.actorTracks[1]?.keyframes[2], source.masterTake.actorTracks[1]?.keyframes[2])
     assert.deepEqual(next.masterTake.actorTracks[1]?.keyframes[1]?.position, { x: 4, y: 0, z: -1 })
     assert.equal(spatialViewportModule.updateSpatialActorPosition!(source, 'actor-track-support', 5, { x: 4, y: 0, z: -1 }), source)
+  })
+
+  test('nudges only the selected existing actor, camera, or target keyframe', async () => {
+    const spatialViewportModule = await import('./SpatialPrevisViewport') as {
+      applySpatialNudge?: (state: SpatialPrevisState, input: {
+        currentTimeSec: number
+        selection: 'actor' | 'camera' | 'target'
+        actorTrackId?: string
+        axis: 'x+' | 'y+' | 'z-'
+      }) => SpatialPrevisState
+    }
+    assert.equal(typeof spatialViewportModule.applySpatialNudge, 'function')
+
+    const source = stateWithTwoActors()
+    const actorNudge = spatialViewportModule.applySpatialNudge!(source, {
+      currentTimeSec: 6,
+      selection: 'actor',
+      actorTrackId: 'actor-track-support',
+      axis: 'x+',
+    })
+    assert.deepEqual(actorNudge.masterTake.actorTracks[0], source.masterTake.actorTracks[0])
+    assert.deepEqual(actorNudge.masterTake.actorTracks[1]?.keyframes[0], source.masterTake.actorTracks[1]?.keyframes[0])
+    assert.deepEqual(actorNudge.masterTake.actorTracks[1]?.keyframes[2], source.masterTake.actorTracks[1]?.keyframes[2])
+    assert.equal(actorNudge.masterTake.actorTracks[1]?.keyframes[1]?.position.x, 2.1)
+    assert.deepEqual(actorNudge.masterTake.cameraTrack, source.masterTake.cameraTrack)
+
+    const cameraNudge = spatialViewportModule.applySpatialNudge!(source, {
+      currentTimeSec: 6,
+      selection: 'camera',
+      axis: 'y+',
+    })
+    assert.deepEqual(cameraNudge.masterTake.actorTracks, source.masterTake.actorTracks)
+    assertOtherCameraFramesUnchanged(cameraNudge, source)
+    assert.ok(Math.abs(cameraNudge.masterTake.cameraTrack.keyframes[1]!.position.y - 1.9) < 1e-9)
+    assert.deepEqual(cameraNudge.masterTake.cameraTrack.keyframes[1]!.target, source.masterTake.cameraTrack.keyframes[1]!.target)
+
+    const targetNudge = spatialViewportModule.applySpatialNudge!(source, {
+      currentTimeSec: 6,
+      selection: 'target',
+      axis: 'z-',
+    })
+    assert.deepEqual(targetNudge.masterTake.actorTracks, source.masterTake.actorTracks)
+    assertOtherCameraFramesUnchanged(targetNudge, source)
+    assert.deepEqual(targetNudge.masterTake.cameraTrack.keyframes[1]!.position, source.masterTake.cameraTrack.keyframes[1]!.position)
+    assert.ok(Math.abs(targetNudge.masterTake.cameraTrack.keyframes[1]!.target.z + 1.1) < 1e-9)
+
+    assert.equal(spatialViewportModule.applySpatialNudge!(source, {
+      currentTimeSec: 5,
+      selection: 'actor',
+      actorTrackId: 'actor-track-support',
+      axis: 'x+',
+    }), source)
+  })
+
+  test('dispatches an exact selected-keyframe nudge through the button handler', async () => {
+    const spatialViewportModule = await import('./SpatialPrevisViewport') as {
+      dispatchSpatialNudge?: (input: {
+        state: SpatialPrevisState
+        currentTimeSec: number
+        selection: 'actor'
+        actorTrackId: string
+        axis: 'x+'
+        onChange: (next: SpatialPrevisState) => void
+      }) => void
+    }
+    assert.equal(typeof spatialViewportModule.dispatchSpatialNudge, 'function')
+
+    let changed: SpatialPrevisState | null = null
+    spatialViewportModule.dispatchSpatialNudge!({
+      state,
+      currentTimeSec: 6,
+      selection: 'actor',
+      actorTrackId: 'actor-track-lead',
+      axis: 'x+',
+      onChange: (next) => { changed = next },
+    })
+    assert.ok(changed)
+    assert.notEqual(changed, state)
+
+    changed = null
+    spatialViewportModule.dispatchSpatialNudge!({
+      state,
+      currentTimeSec: 5,
+      selection: 'actor',
+      actorTrackId: 'actor-track-lead',
+      axis: 'x+',
+      onChange: (next) => { changed = next },
+    })
+    assert.equal(changed, null)
   })
 
   test('dispatches a local camera action through the strip handler only when a keyframe exists', async () => {

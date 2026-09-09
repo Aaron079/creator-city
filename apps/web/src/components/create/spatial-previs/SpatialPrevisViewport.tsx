@@ -19,10 +19,28 @@ import { sampleCamera } from '@/lib/spatial-previs/sampler'
 import { SpatialCameraControlStrip } from './SpatialCameraControlStrip'
 
 const KEYFRAME_EPSILON = 1e-6
+const NUDGE_DELTA = 0.1
 const WORLD_CAMERA_POSITION: [number, number, number] = [10, 8, 12]
 const WORLD_CAMERA_TARGET: [number, number, number] = [0, 1, 0]
 
 type TransformSelection = 'actor' | 'camera' | 'target'
+
+const TRANSFORM_SELECTION_LABELS: Record<TransformSelection, string> = {
+  actor: '演员',
+  camera: '相机',
+  target: '目标',
+}
+
+const SPATIAL_NUDGE_AXES = [
+  { axis: 'x-', label: '向 X 轴负向', shortLabel: 'X-' },
+  { axis: 'x+', label: '向 X 轴正向', shortLabel: 'X+' },
+  { axis: 'y-', label: '向 Y 轴负向', shortLabel: 'Y-' },
+  { axis: 'y+', label: '向 Y 轴正向', shortLabel: 'Y+' },
+  { axis: 'z-', label: '向 Z 轴负向', shortLabel: 'Z-' },
+  { axis: 'z+', label: '向 Z 轴正向', shortLabel: 'Z+' },
+] as const
+
+type SpatialNudgeAxis = typeof SPATIAL_NUDGE_AXES[number]['axis']
 
 type WorldAnchor = {
   id: string
@@ -35,6 +53,13 @@ type SpatialPrevisViewportProps = {
   state: SpatialPrevisState
   currentTimeSec: number
   onChange: (next: SpatialPrevisState) => void
+}
+
+type SpatialNudgeInput = {
+  currentTimeSec: number
+  selection: TransformSelection
+  actorTrackId?: string
+  axis: SpatialNudgeAxis
 }
 
 function tuple(vector: Vec3): [number, number, number] {
@@ -56,6 +81,21 @@ function exactKeyframe<T extends { timeSec: number }>(keyframes: T[], timeSec: n
 
 function initialActorPosition(track: ActorTrack, currentTimeSec: number) {
   return exactKeyframe(track.keyframes, currentTimeSec)?.position ?? track.keyframes[0]?.position ?? { x: 0, y: 0, z: 0 }
+}
+
+function nudgeDelta(axis: SpatialNudgeAxis): Vec3 {
+  switch (axis) {
+    case 'x-': return { x: -NUDGE_DELTA, y: 0, z: 0 }
+    case 'x+': return { x: NUDGE_DELTA, y: 0, z: 0 }
+    case 'y-': return { x: 0, y: -NUDGE_DELTA, z: 0 }
+    case 'y+': return { x: 0, y: NUDGE_DELTA, z: 0 }
+    case 'z-': return { x: 0, y: 0, z: -NUDGE_DELTA }
+    case 'z+': return { x: 0, y: 0, z: NUDGE_DELTA }
+  }
+}
+
+function addVector(vector: Vec3, delta: Vec3): Vec3 {
+  return { x: vector.x + delta.x, y: vector.y + delta.y, z: vector.z + delta.z }
 }
 
 function worldAnchors(state: SpatialPrevisState, currentTimeSec: number): WorldAnchor[] {
@@ -115,6 +155,47 @@ export function updateSpatialActorPosition(
       }),
     },
   }
+}
+
+export function applySpatialNudge(state: SpatialPrevisState, {
+  currentTimeSec,
+  selection,
+  actorTrackId,
+  axis,
+}: SpatialNudgeInput): SpatialPrevisState {
+  const delta = nudgeDelta(axis)
+
+  if (selection === 'actor') {
+    const track = state.masterTake.actorTracks.find((item) => item.id === actorTrackId)
+    const keyframe = track ? exactKeyframe(track.keyframes, currentTimeSec) : null
+    return track && keyframe
+      ? updateSpatialActorPosition(state, track.id, currentTimeSec, addVector(keyframe.position, delta))
+      : state
+  }
+
+  if (state.scene.coverage.cameraFreedom === 'disabled') return state
+  const keyframe = exactKeyframe(state.masterTake.cameraTrack.keyframes, currentTimeSec)
+  if (!keyframe) return state
+
+  return replaceCameraKeyframe(
+    state,
+    keyframe,
+    selection === 'camera'
+      ? { position: addVector(keyframe.position, delta) }
+      : { target: addVector(keyframe.target, delta) },
+  )
+}
+
+export function dispatchSpatialNudge({
+  state,
+  onChange,
+  ...input
+}: SpatialNudgeInput & {
+  state: SpatialPrevisState
+  onChange: (next: SpatialPrevisState) => void
+}) {
+  const next = applySpatialNudge(state, input)
+  if (next !== state) onChange(next)
 }
 
 function ActorProxy({ position, selected }: { position: Vec3; selected: boolean }) {
@@ -212,6 +293,38 @@ function TransformableProxy({
         {selection === 'target' ? <TargetRing position={{ x: 0, y: 0, z: 0 }} selected /> : null}
       </group>
     </TransformControls>
+  )
+}
+
+function SpatialNudgeControls({
+  state,
+  currentTimeSec,
+  selection,
+  actorTrackId,
+  disabled,
+  onChange,
+}: Omit<SpatialNudgeInput, 'axis'> & {
+  state: SpatialPrevisState
+  disabled: boolean
+  onChange: (next: SpatialPrevisState) => void
+}) {
+  const selectionLabel = TRANSFORM_SELECTION_LABELS[selection]
+
+  return (
+    <div className="inline-flex items-center overflow-hidden rounded-md border border-white/12" role="group" aria-label={`${selectionLabel}关键帧微调`}>
+      {SPATIAL_NUDGE_AXES.map((nudge) => (
+        <button
+          key={nudge.axis}
+          type="button"
+          aria-label={`${selectionLabel}${nudge.label}微调`}
+          disabled={disabled}
+          onClick={() => dispatchSpatialNudge({ state, currentTimeSec, selection, actorTrackId, axis: nudge.axis, onChange })}
+          className="h-7 w-8 border-r border-white/10 bg-white/[0.025] text-[10px] font-medium text-white/58 transition last:border-r-0 hover:bg-cyan-200/[0.09] hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          {nudge.shortLabel}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -396,23 +509,32 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
             </select>
           ) : null}
         </div>
-        <div className="inline-flex overflow-hidden rounded-md border border-white/12" role="group" aria-label="直接操控对象">
-          {(['actor', 'camera', 'target'] as const).map((item) => {
-            const labels: Record<TransformSelection, string> = { actor: '演员', camera: '相机', target: '目标' }
-            const isDisabled = item === 'actor' && !selectedActorTrack
-            return (
-              <button
-                key={item}
-                type="button"
-                disabled={isDisabled}
-                aria-pressed={selection === item}
-                onClick={() => setSelection(item)}
-                className={`border-r border-white/10 px-2.5 py-1.5 text-xs transition last:border-r-0 disabled:cursor-not-allowed disabled:opacity-35 ${selection === item ? 'bg-cyan-300/15 text-cyan-50' : 'bg-white/[0.025] text-white/52 hover:bg-white/[0.07] hover:text-white/78'}`}
-              >
-                {labels[item]}
-              </button>
-            )
-          })}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="inline-flex overflow-hidden rounded-md border border-white/12" role="group" aria-label="直接操控对象">
+            {(['actor', 'camera', 'target'] as const).map((item) => {
+              const isDisabled = item === 'actor' && !selectedActorTrack
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  disabled={isDisabled}
+                  aria-pressed={selection === item}
+                  onClick={() => setSelection(item)}
+                  className={`border-r border-white/10 px-2.5 py-1.5 text-xs transition last:border-r-0 disabled:cursor-not-allowed disabled:opacity-35 ${selection === item ? 'bg-cyan-300/15 text-cyan-50' : 'bg-white/[0.025] text-white/52 hover:bg-white/[0.07] hover:text-white/78'}`}
+                >
+                  {TRANSFORM_SELECTION_LABELS[item]}
+                </button>
+              )
+            })}
+          </div>
+          <SpatialNudgeControls
+            state={state}
+            currentTimeSec={currentTimeSec}
+            selection={selection}
+            actorTrackId={selectedActorTrackId}
+            disabled={!manipulationEnabled}
+            onChange={onChange}
+          />
         </div>
       </header>
 
