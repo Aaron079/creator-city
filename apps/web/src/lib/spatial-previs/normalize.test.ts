@@ -137,6 +137,33 @@ describe('spatial previs normalization', () => {
     )
   })
 
+  test('rejects a beat patch when no camera keyframe matches its midpoint', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const beat = state.masterTake.beats[0]
+    assert.ok(beat)
+    const missingMidpointState = {
+      ...state,
+      masterTake: {
+        ...state.masterTake,
+        cameraTrack: {
+          ...state.masterTake.cameraTrack,
+          keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe, index) => ({
+            ...keyframe,
+            timeSec: (index + 1) * 10,
+          })),
+        },
+      },
+    }
+
+    assert.throws(
+      () => applyBeatPatch(missingMidpointState, beat.id, {
+        position: { x: 2, y: 3, z: 4 },
+        target: { x: 0, y: 1, z: 0 },
+      }),
+      /No camera keyframe at midpoint for beat: beat-entry/,
+    )
+  })
+
   test('defaults and clamps duration without mutating the source input', () => {
     const input = {
       projectId: 'project-1',
