@@ -103,6 +103,25 @@ describe('camera sampling', () => {
     assert.deepEqual(keyframes, source)
   })
 
+  test('returns detached frames and vectors for every sample path', () => {
+    const source = [
+      keyframe('start', 0, { x: 0, y: 2, z: 8 }, { x: 0, y: 1, z: 0 }, 24, 'push'),
+      keyframe('exact', 5, { x: 4, y: 3, z: 2 }, { x: 1, y: 2, z: 3 }, 35, 'crane'),
+      keyframe('end', 10, { x: 10, y: 4, z: 2 }, { x: 2, y: 3, z: -4 }, 50, 'dolly'),
+    ]
+
+    for (const timeSec of [-1, 2.5, 5, 10, 11]) {
+      const keyframes = structuredClone(source)
+      const sampled = sampleCamera(keyframes, timeSec)
+
+      sampled.id = `mutated-${timeSec}`
+      sampled.position.x = 999
+      sampled.target.z = -999
+
+      assert.deepEqual(keyframes, source)
+    }
+  })
+
   test('keeps duplicate timestamp samples finite without mutating input objects', () => {
     const keyframes = [
       keyframe('first', 0, { x: 0, y: 1, z: 8 }, { x: 0, y: 1, z: 0 }, 24, 'static'),

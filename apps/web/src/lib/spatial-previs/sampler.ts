@@ -8,6 +8,14 @@ function interpolateVec3(start: Vec3, end: Vec3, progress: number): Vec3 {
   }
 }
 
+function cloneKeyframe(keyframe: CameraKeyframe): CameraKeyframe {
+  return {
+    ...keyframe,
+    position: { ...keyframe.position },
+    target: { ...keyframe.target },
+  }
+}
+
 export function sampleCamera(keyframes: CameraKeyframe[], timeSec: number): CameraKeyframe {
   if (keyframes.length === 0) throw new Error('Cannot sample an empty camera track')
 
@@ -18,8 +26,8 @@ export function sampleCamera(keyframes: CameraKeyframe[], timeSec: number): Came
   const first = sortedKeyframes[0]
   const last = sortedKeyframes.at(-1)
   if (!first || !last) throw new Error('Cannot sample an empty camera track')
-  if (timeSec < first.timeSec) return first
-  if (timeSec >= last.timeSec) return last
+  if (timeSec < first.timeSec) return cloneKeyframe(first)
+  if (timeSec >= last.timeSec) return cloneKeyframe(last)
 
   let startIndex = sortedKeyframes.length - 1
   while (sortedKeyframes[startIndex]!.timeSec > timeSec) startIndex -= 1
@@ -27,11 +35,11 @@ export function sampleCamera(keyframes: CameraKeyframe[], timeSec: number): Came
   const start = sortedKeyframes[startIndex]
   const end = sortedKeyframes[startIndex + 1]
   if (!start || !end) throw new Error('Cannot sample camera track segment')
-  if (start.timeSec === timeSec) return start
+  if (start.timeSec === timeSec) return cloneKeyframe(start)
 
   const progress = (timeSec - start.timeSec) / (end.timeSec - start.timeSec)
   return {
-    ...end,
+    ...cloneKeyframe(end),
     timeSec,
     position: interpolateVec3(start.position, end.position, progress),
     target: interpolateVec3(start.target, end.target, progress),
