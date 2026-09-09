@@ -15,14 +15,22 @@ describe('spatial previs persistence', () => {
       updatedAt: '2026-09-09T00:00:00.000Z',
     })
 
+    const existingMetadata = {
+      shotSequence: { version: 1 },
+      custom: 'preserved',
+      spatialPrevis: { version: 0 },
+    }
+    const source = structuredClone(existingMetadata)
+
     assert.deepEqual(
-      spatialPrevisMetadata({ shotSequence: { version: 1 }, custom: 'preserved' }, state),
+      spatialPrevisMetadata(existingMetadata, state),
       {
         shotSequence: { version: 1 },
         custom: 'preserved',
         spatialPrevis: state,
       },
     )
+    assert.deepEqual(existingMetadata, source)
   })
 
   test('restores a normalized version-1 spatial previs state', () => {
@@ -52,6 +60,46 @@ describe('spatial previs persistence', () => {
 
     for (const metadata of malformedMetadata) {
       assert.equal(parseSpatialPrevisMetadata(metadata), null)
+    }
+  })
+
+  test('returns null for restored timelines that cannot be sampled or patched', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const midpoint = state.masterTake.durationSec / 2
+    const nonExecutableTimelines = [
+      {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          cameraTrack: { ...state.masterTake.cameraTrack, keyframes: [] },
+        },
+      },
+      {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          cameraTrack: {
+            ...state.masterTake.cameraTrack,
+            keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.id === 'camera-mid'
+              ? { ...keyframe, timeSec: midpoint + 1 }
+              : keyframe),
+          },
+        },
+      },
+      {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          cameraTrack: {
+            ...state.masterTake.cameraTrack,
+            keyframes: [...state.masterTake.cameraTrack.keyframes, { ...state.masterTake.cameraTrack.keyframes[1]! }],
+          },
+        },
+      },
+    ]
+
+    for (const spatialPrevis of nonExecutableTimelines) {
+      assert.equal(parseSpatialPrevisMetadata({ spatialPrevis }), null)
     }
   })
 })

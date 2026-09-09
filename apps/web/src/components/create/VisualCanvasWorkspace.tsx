@@ -4030,8 +4030,6 @@ export function VisualCanvasWorkspace({
     const submittedEdgeRevisions = new Map(
       entityPayload.edges.map((edge) => [edge.id, dirtyEdgeRevisionRef.current.get(edge.id)]),
     )
-    const submittedDeletedNodeIds = [...deletedNodeIdsRef.current]
-    const submittedDeletedEdgeIds = [...deletedEdgeIdsRef.current]
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
         method: 'PUT',
@@ -4044,8 +4042,8 @@ export function VisualCanvasWorkspace({
           saveMode,
           nodes: entityPayload.nodes,
           edges: entityPayload.edges,
-          deletedNodeIds: submittedDeletedNodeIds,
-          deletedEdgeIds: submittedDeletedEdgeIds,
+          deletedNodeIds: [],
+          deletedEdgeIds: [],
           workflowMetadata: spatialPrevisMetadata({}, next),
           baseUpdatedAt: serverSaveVersionRef.current,
         }),
@@ -4068,8 +4066,6 @@ export function VisualCanvasWorkspace({
           dirtyEdgeRevisionRef.current.delete(edgeId)
         }
       }
-      deletedNodeIdsRef.current = deletedNodeIdsRef.current.filter((nodeId) => !submittedDeletedNodeIds.includes(nodeId))
-      deletedEdgeIdsRef.current = deletedEdgeIdsRef.current.filter((edgeId) => !submittedDeletedEdgeIds.includes(edgeId))
       if (saveMode === 'full') forceFullCanvasSaveRef.current = false
       const savedAt = data.serverUpdatedAt ?? data.savedAt
       if (savedAt) {

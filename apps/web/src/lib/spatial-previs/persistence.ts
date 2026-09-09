@@ -15,6 +15,7 @@ const SOURCE_MODES = new Set(['single-image-exterior', 'multi-view', 'video-scan
 const ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1'])
 const EDITOR_MODES = new Set(['continuous', 'beats'])
 const CAMERA_INTENTS = new Set(['push', 'pull', 'pan-tilt', 'dolly', 'follow', 'crane', 'static'])
+const MIDPOINT_EPSILON = 1e-6
 
 function record(value: unknown): MetadataRecord | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -126,6 +127,16 @@ function beats(value: unknown): SpatialPrevisBeat[] | null {
   return items
 }
 
+function timelineIsExecutable(cameraTrack: CameraTrack, beats: SpatialPrevisBeat[]) {
+  if (cameraTrack.keyframes.length === 0) return false
+  return beats.every((beat) => {
+    const midpoint = (beat.startSec + beat.endSec) / 2
+    return cameraTrack.keyframes.filter(
+      (keyframe) => Math.abs(keyframe.timeSec - midpoint) <= MIDPOINT_EPSILON,
+    ).length === 1
+  })
+}
+
 function state(value: unknown): SpatialPrevisState | null {
   const candidate = record(value)
   if (!candidate || candidate.version !== 1) return null
@@ -166,6 +177,7 @@ function state(value: unknown): SpatialPrevisState | null {
     || !parsedActorTracks
     || !parsedCameraTrack
     || !parsedBeats
+    || !timelineIsExecutable(parsedCameraTrack, parsedBeats)
   ) {
     return null
   }
