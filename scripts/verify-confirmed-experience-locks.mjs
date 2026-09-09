@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { realpathSync, readFileSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -32,13 +32,35 @@ export function validateRegistry(registry) {
   return errors
 }
 
-function pathIsWithinRoot(root, filePath) {
-  const relativePath = relative(root, resolve(root, filePath))
+function pathIsWithinRoot(root, candidatePath) {
+  const relativePath = relative(root, candidatePath)
   return relativePath !== '..' && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath)
 }
 
+function isSafeRegistryPath(root, filePath) {
+  return typeof filePath === 'string'
+    && !filePath.includes('\\')
+    && !isAbsolute(filePath)
+    && !win32.isAbsolute(filePath)
+    && pathIsWithinRoot(root, resolve(root, filePath))
+}
+
+function isRegularFileWithinRoot(root, filePath) {
+  const candidatePath = resolve(root, filePath)
+  try {
+    return pathIsWithinRoot(root, realpathSync(candidatePath)) && statSync(candidatePath).isFile()
+  } catch {
+    return false
+  }
+}
+
 export function verifyRegistry({ root = repositoryRoot, registryPath = defaultRegistryPath } = {}) {
-  const resolvedRoot = resolve(root)
+  let resolvedRoot
+  try {
+    resolvedRoot = realpathSync(resolve(root))
+  } catch (error) {
+    return [`Unable to resolve repository root: ${error.message}`]
+  }
   const resolvedRegistryPath = isAbsolute(registryPath)
     ? registryPath
     : resolve(resolvedRoot, registryPath)
@@ -56,9 +78,9 @@ export function verifyRegistry({ root = repositoryRoot, registryPath = defaultRe
   for (const lock of registry.locks) {
     for (const [kind, paths] of [['owner', lock.owners], ['check', lock.checks]]) {
       for (const filePath of paths) {
-        if (typeof filePath !== 'string' || isAbsolute(filePath) || !pathIsWithinRoot(resolvedRoot, filePath)) {
+        if (!isSafeRegistryPath(resolvedRoot, filePath)) {
           errors.push(`${lock.id}: path escapes repository root: ${filePath}`)
-        } else if (!existsSync(resolve(resolvedRoot, filePath))) {
+        } else if (!isRegularFileWithinRoot(resolvedRoot, filePath)) {
           errors.push(`${lock.id}: missing ${kind} file: ${filePath}`)
         }
       }

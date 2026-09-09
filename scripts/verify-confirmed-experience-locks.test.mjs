@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
@@ -109,6 +109,18 @@ describe('confirmed experience lock verifier', () => {
     ])
   })
 
+  test('rejects backslash separators and Windows absolute paths', () => {
+    const registry = fixtureRegistry()
+    registry.locks[0].owners = ['..\\outside.ts']
+    registry.locks[0].checks = ['C:\\escape.ts']
+    const root = createFixture(registry)
+
+    assert.deepEqual(verifyRegistry({ root, registryPath }), [
+      'fixture-lock: path escapes repository root: ..\\outside.ts',
+      'fixture-lock: path escapes repository root: C:\\escape.ts',
+    ])
+  })
+
   test('rejects absolute paths even when they are inside the repository root', () => {
     const root = createFixture()
     const absoluteOwnerPath = join(root, 'apps/web/owner.ts')
@@ -118,6 +130,40 @@ describe('confirmed experience lock verifier', () => {
 
     assert.deepEqual(verifyRegistry({ root, registryPath }), [
       `fixture-lock: path escapes repository root: ${absoluteOwnerPath}`,
+    ])
+  })
+
+  test('rejects directories referenced as owner and check files', () => {
+    const root = createFixture()
+    const registry = fixtureRegistry()
+    registry.locks[0].owners = ['apps/web/owner-directory']
+    registry.locks[0].checks = ['apps/web/check-directory']
+    mkdirSync(join(root, registry.locks[0].owners[0]))
+    mkdirSync(join(root, registry.locks[0].checks[0]))
+    writeFileSync(join(root, registryPath), JSON.stringify(registry))
+
+    assert.deepEqual(verifyRegistry({ root, registryPath }), [
+      'fixture-lock: missing owner file: apps/web/owner-directory',
+      'fixture-lock: missing check file: apps/web/check-directory',
+    ])
+  })
+
+  test('rejects owner and check symlinks that resolve outside the fixture root', () => {
+    const root = createFixture()
+    const outsideRoot = mkdtempSync(join(tmpdir(), 'confirmed-experience-locks-outside-'))
+    temporaryRoots.push(outsideRoot)
+    const outsideFile = join(outsideRoot, 'outside.ts')
+    writeFileSync(outsideFile, '')
+    const registry = fixtureRegistry()
+    registry.locks[0].owners = ['apps/web/external-owner.ts']
+    registry.locks[0].checks = ['apps/web/external-check.ts']
+    symlinkSync(outsideFile, join(root, registry.locks[0].owners[0]))
+    symlinkSync(outsideFile, join(root, registry.locks[0].checks[0]))
+    writeFileSync(join(root, registryPath), JSON.stringify(registry))
+
+    assert.deepEqual(verifyRegistry({ root, registryPath }), [
+      'fixture-lock: missing owner file: apps/web/external-owner.ts',
+      'fixture-lock: missing check file: apps/web/external-check.ts',
     ])
   })
 
