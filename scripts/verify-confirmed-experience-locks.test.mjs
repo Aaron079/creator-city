@@ -59,6 +59,28 @@ afterEach(() => {
 })
 
 describe('confirmed experience lock verifier', () => {
+  test('enforces confirmed experience checks in repository policy and scripts', () => {
+    const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    const agentLoopCheck = readFileSync(new URL('./agent-loop-check.mjs', import.meta.url), 'utf8')
+    const agents = readFileSync(new URL('../AGENTS.md', import.meta.url), 'utf8')
+
+    assert.equal(packageJson.scripts['experience:check'], 'node scripts/verify-confirmed-experience-locks.mjs')
+    assert.match(packageJson.scripts['agent:check'], /node scripts\/verify-confirmed-experience-locks\.mjs/)
+    assert.match(agentLoopCheck, /\{ key: 'CONFIRMED_EXPERIENCE_LOCKS', path: 'docs\/CONFIRMED_EXPERIENCE_LOCKS\.json' \}/)
+    assert.match(agentLoopCheck, /canvas work requires `pnpm experience:check` plus lock-listed focused checks before completion\./)
+
+    for (const token of [
+      '## Confirmed Experience Locks',
+      'Before changing canvas code, read `docs/CONFIRMED_EXPERIENCE_LOCKS.json`.',
+      'Existing approved canvas experience is additive-only.',
+      'Do not move, restyle, remove, or weaken a registered lock without a founder-approved exception.',
+      'Every canvas task and delivery must state either `Confirmed experience impact: none` or name exact lock plus founder approval record.',
+      'Run `pnpm experience:check` with listed focused checks before describing canvas work complete.',
+    ]) {
+      assert.ok(agents.includes(token), `AGENTS.md is missing policy token: ${token}`)
+    }
+  })
+
   test('matches the committed registry contract and verifies its repository files', () => {
     const registry = JSON.parse(readFileSync(new URL(`../${registryPath}`, import.meta.url), 'utf8'))
 

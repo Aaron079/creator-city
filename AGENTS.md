@@ -5,6 +5,14 @@
 - `docs/product-principles.md`
 - `docs/claude.md`
 
+## Confirmed Experience Locks
+
+- Before changing canvas code, read `docs/CONFIRMED_EXPERIENCE_LOCKS.json`.
+- Existing approved canvas experience is additive-only.
+- Do not move, restyle, remove, or weaken a registered lock without a founder-approved exception.
+- Every canvas task and delivery must state either `Confirmed experience impact: none` or name exact lock plus founder approval record.
+- Run `pnpm experience:check` with listed focused checks before describing canvas work complete.
+
 任何改动都必须遵守：
 
 1. Creator City 是专业创作系统，不是 AI 娱乐工具。

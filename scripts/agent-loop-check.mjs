@@ -28,6 +28,7 @@ const REQUIRED_FILES = [
   { key: 'QA_RUNBOOK',         path: 'docs/QA_RUNBOOK.md' },
   { key: 'AGENT_REPORT_TEMPLATE', path: 'docs/AGENT_REPORT_TEMPLATE.md' },
   { key: 'AGENT_MODES',        path: 'docs/AGENT_MODES.md' },
+  { key: 'CONFIRMED_EXPERIENCE_LOCKS', path: 'docs/CONFIRMED_EXPERIENCE_LOCKS.json' },
 ]
 
 const PENDING_STATUS_TOKENS = ['TODO', 'WAITING', 'BLOCKED', 'IN_PROGRESS']
@@ -123,6 +124,7 @@ console.log('  schema / payment / wallet / generate / env / production mutation'
 console.log('  require explicit user approval every session.')
 console.log('  Default mode is AUDIT_ONLY. Do not implement without authorization.')
 console.log('  Do not push / deploy without user confirmation.')
+console.log('  canvas work requires `pnpm experience:check` plus lock-listed focused checks before completion.')
 
 // ─── Exit code ────────────────────────────────────────────────────────────────
 
