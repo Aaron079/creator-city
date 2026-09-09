@@ -4323,6 +4323,7 @@ export function VisualCanvasWorkspace({
         setCharacterBible(loadCharacterBible(resolvedProjectId, data.workflow?.metadataJson))
         setSceneBible(loadSceneBible(resolvedProjectId, data.workflow?.metadataJson))
         setCloudShotSequence(parseShotSequenceFromWorkflowMetadata(data.workflow?.metadataJson))
+        setSpatialPrevis(parseSpatialPrevisMetadata(data.workflow?.metadataJson))
 
         // Persist so next visit to /create (without ?projectId) reopens this project
         try {
