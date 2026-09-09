@@ -173,7 +173,6 @@ export function applySpatialNudge(state: SpatialPrevisState, {
       : state
   }
 
-  if (state.scene.coverage.cameraFreedom === 'disabled') return state
   const keyframe = exactKeyframe(state.masterTake.cameraTrack.keyframes, currentTimeSec)
   if (!keyframe) return state
 
@@ -461,13 +460,8 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
   const exactCamera = exactKeyframe(state.masterTake.cameraTrack.keyframes, currentTimeSec)
   const exactActor = selectedActorTrack ? exactKeyframe(selectedActorTrack.keyframes, currentTimeSec) : null
   const selectionHasKeyframe = selection === 'actor' ? Boolean(exactActor) : Boolean(exactCamera)
-  const cameraUnavailable = state.scene.coverage.cameraFreedom === 'disabled'
-  const manipulationEnabled = selectionHasKeyframe && !(cameraUnavailable && selection !== 'actor')
-  const disabledReason = cameraUnavailable
-    ? '当前空间覆盖不支持相机编辑'
-    : selectionHasKeyframe
-      ? undefined
-      : '当前时间没有可编辑的关键帧'
+  const manipulationEnabled = selectionHasKeyframe
+  const disabledReason = selectionHasKeyframe ? undefined : '当前时间没有可编辑的关键帧'
 
   useEffect(() => {
     setMounted(true)
@@ -574,8 +568,6 @@ export function SpatialPrevisViewport({ state, currentTimeSec, onChange }: Spati
         state={state}
         currentTimeSec={currentTimeSec}
         actorTrackId={selectedActorTrackId}
-        disabled={cameraUnavailable}
-        disabledReason={cameraUnavailable ? '当前空间覆盖不支持相机编辑' : undefined}
         onChange={onChange}
       />
     </section>

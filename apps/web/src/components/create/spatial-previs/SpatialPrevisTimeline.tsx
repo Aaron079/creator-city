@@ -34,6 +34,12 @@ export function clampSpatialPrevisTime(timeSec: number, durationSec: number) {
   return Math.min(duration, Math.max(0, timeSec))
 }
 
+export function commitSpatialNumericDraft(draft: string, previousValue: number) {
+  if (draft.trim() === '') return previousValue
+  const parsed = Number(draft)
+  return Number.isFinite(parsed) ? parsed : previousValue
+}
+
 function TimelineTrack({
   label,
   keyframes,
@@ -73,6 +79,22 @@ function VectorInputs({
   value: Vec3
   onChange: (next: Vec3) => void
 }) {
+  const [drafts, setDrafts] = React.useState(() => ({
+    x: String(value.x),
+    y: String(value.y),
+    z: String(value.z),
+  }))
+
+  React.useEffect(() => {
+    setDrafts({ x: String(value.x), y: String(value.y), z: String(value.z) })
+  }, [value.x, value.y, value.z])
+
+  const commitDraft = (axis: keyof Vec3) => {
+    const nextValue = commitSpatialNumericDraft(drafts[axis], value[axis])
+    setDrafts((current) => ({ ...current, [axis]: String(nextValue) }))
+    if (nextValue !== value[axis]) onChange({ ...value, [axis]: nextValue })
+  }
+
   return (
     <fieldset className="min-w-0">
       <legend className="mb-1 text-[10px] text-white/38">{label}</legend>
@@ -81,15 +103,17 @@ function VectorInputs({
           <label key={axis} className="flex min-w-0 items-center gap-1 rounded-md border border-white/[0.08] bg-black/15 px-1.5 py-1 text-[10px] text-white/38">
             {axis.toUpperCase()}
             <input
-              type="number"
+              type="text"
               inputMode="decimal"
-              step="0.1"
               aria-label={`${label} ${axis.toUpperCase()}`}
-              value={value[axis]}
-              onChange={(event) => {
-                if (event.target.value === '') return
-                const nextValue = Number(event.target.value)
-                if (Number.isFinite(nextValue)) onChange({ ...value, [axis]: nextValue })
+              value={drafts[axis]}
+              onChange={(event) => setDrafts((current) => ({ ...current, [axis]: event.target.value }))}
+              onBlur={() => commitDraft(axis)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  event.currentTarget.blur()
+                }
               }}
               className="min-w-0 flex-1 bg-transparent text-right text-[11px] text-white/78 outline-none focus:text-cyan-50"
             />

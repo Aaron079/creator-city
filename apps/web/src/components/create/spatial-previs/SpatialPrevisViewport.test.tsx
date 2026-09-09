@@ -6,8 +6,9 @@ import { describe, test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { applySpatialCameraAction } from './SpatialCameraControlStrip'
-import { SpatialPrevisViewport } from './SpatialPrevisViewport'
+import { applySpatialNudge, SpatialPrevisViewport } from './SpatialPrevisViewport'
 import type { SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
 
 const viewportSource = readFileSync(new URL('./SpatialPrevisViewport.tsx', import.meta.url), 'utf8')
@@ -82,6 +83,34 @@ describe('SpatialPrevisViewport', () => {
     assert.equal(markup.match(/data-spatial-camera-preview="([^"]+)"/)?.[1], 'true')
     assert.match(markup, /aria-label="推\/拉"/)
     assert.match(markup, /aria-label="跟拍"/)
+  })
+
+  test('keeps unavailable coverage advisory-only while camera actions and nudges remain editable', () => {
+    const unavailableState: SpatialPrevisState = {
+      ...state,
+      scene: {
+        ...state.scene,
+        coverage: { mode: 'unavailable', cameraFreedom: 'disabled' },
+      },
+    }
+    const markup = renderToStaticMarkup(
+      createElement(SpatialPrevisViewport, { state: unavailableState, currentTimeSec: 6, onChange: () => undefined }),
+    )
+    const action = applySpatialCameraAction(unavailableState, 6, '推/拉')
+    const nudge = applySpatialNudge(unavailableState, {
+      currentTimeSec: 6,
+      selection: 'camera',
+      axis: 'x+',
+    })
+    const [risk] = assessAuthoringRisks(
+      unavailableState.scene.coverage,
+      unavailableState.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.position),
+    )
+
+    assert.notEqual(action, unavailableState)
+    assert.notEqual(nudge, unavailableState)
+    assert.equal(risk?.blocking, false)
+    assert.doesNotMatch(markup, /aria-label="推\/拉" disabled=""/)
   })
 
   test('declares literal true data-attribute values rather than boolean JSX attributes', () => {

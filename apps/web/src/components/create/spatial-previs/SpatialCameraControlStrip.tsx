@@ -128,7 +128,7 @@ export function applySpatialCameraAction(
   actorTrackId?: string,
 ): SpatialPrevisState {
   const keyframe = exactCameraKeyframe(state.masterTake.cameraTrack.keyframes, currentTimeSec)
-  if (!keyframe || state.scene.coverage.cameraFreedom === 'disabled') return state
+  if (!keyframe) return state
 
   const patch = cameraPatch(keyframe, action, exactActorPosition(state, currentTimeSec, actorTrackId))
   return {
