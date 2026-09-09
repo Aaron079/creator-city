@@ -6,6 +6,7 @@ import {
   type ChinaProviderConfig,
 } from './types'
 import { providerFetch, type ProviderFetchFailure } from './provider-fetch'
+import type { SeedanceCapability } from '../../seedance-previs/capabilities'
 
 const VOLCENGINE_ARK_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 const VOLCENGINE_SEEDANCE_PROVIDER_ID = 'volcengine-seedance-video' as const
@@ -326,6 +327,79 @@ export type SeedanceVideoInput = {
   nodeId?: string
 }
 
+export type SeedancePrevisVideoInput = Omit<SeedanceVideoInput, 'providerId'> & {
+  referenceImages?: readonly string[]
+  referenceVideos?: readonly string[]
+  audioReferences?: readonly string[]
+  continuation?: boolean
+  capability: SeedanceCapability
+}
+
+export type SeedancePrevisRequest = {
+  prompt: string
+  imageUrl?: string
+  referenceImages: readonly string[]
+  referenceVideos: readonly string[]
+  audioReferences: readonly string[]
+  duration: number
+  aspectRatio: string
+  resolution?: string
+  continuation: boolean
+  capability: SeedanceCapability
+}
+
+function normalizeSeedancePrevisDuration(value: number | undefined, capability: SeedanceCapability) {
+  const duration = value ?? 5
+  const maxDurationSec = capability.maxContinuousDurationSec
+  if (!Number.isInteger(duration) || duration < 4 || duration > maxDurationSec) {
+    throw new RangeError(`Seedance previs duration must be an integer from 4 to ${maxDurationSec} seconds.`)
+  }
+  return duration
+}
+
+function normalizeSeedancePrevisUrl(value?: string) {
+  const url = value?.trim()
+  return url || undefined
+}
+
+function normalizeSeedancePrevisUrls(values?: readonly string[]) {
+  return values?.map(normalizeSeedancePrevisUrl).filter((value): value is string => Boolean(value)) ?? []
+}
+
+export function buildSeedancePrevisRequest(input: SeedancePrevisVideoInput): SeedancePrevisRequest {
+  const { supports } = input.capability
+  return {
+    prompt: input.prompt.trim(),
+    imageUrl: supports.firstFrame ? normalizeSeedancePrevisUrl(input.imageUrl) : undefined,
+    referenceImages: supports.imageReferences ? normalizeSeedancePrevisUrls(input.referenceImages) : [],
+    referenceVideos: supports.videoReferences ? normalizeSeedancePrevisUrls(input.referenceVideos) : [],
+    audioReferences: supports.audioReferences ? normalizeSeedancePrevisUrls(input.audioReferences) : [],
+    duration: normalizeSeedancePrevisDuration(input.duration, input.capability),
+    aspectRatio: normalizeSeedanceRatio(input.aspectRatio),
+    resolution: normalizeSeedanceResolution(input.resolution),
+    continuation: supports.continuation && input.continuation === true,
+    capability: input.capability,
+  }
+}
+
+function buildSeedancePrevisContent(input: SeedancePrevisRequest) {
+  const content: Array<Record<string, unknown>> = []
+  if (input.prompt) content.push({ type: 'text', text: input.prompt })
+  if (input.imageUrl) {
+    content.push({ type: 'image_url', image_url: { url: input.imageUrl }, role: 'first_frame' })
+  }
+  for (const url of input.referenceImages) {
+    content.push({ type: 'image_url', image_url: { url }, role: 'reference_image' })
+  }
+  for (const url of input.referenceVideos) {
+    content.push({ type: 'video_url', video_url: { url }, role: 'reference_video' })
+  }
+  for (const url of input.audioReferences) {
+    content.push({ type: 'audio_url', audio_url: { url }, role: 'reference_audio' })
+  }
+  return content
+}
+
 export type SeedanceVideoResult =
   | {
       success: true
@@ -427,6 +501,158 @@ export type SeedanceVideoStatusResult =
         providerResponse?: Record<string, unknown>
         submittedInput?: Record<string, unknown>
       }
+
+export async function generateSeedancePrevisVideo(input: SeedancePrevisVideoInput): Promise<SeedanceVideoResult> {
+  const providerId = VOLCENGINE_SEEDANCE_PROVIDER_ID
+  const model = (input.model || input.capability.model || process.env.VOLCENGINE_SEEDANCE_MODEL || '').trim()
+  const apiKey = process.env.VOLCENGINE_ARK_API_KEY
+  const baseUrl = (process.env.VOLCENGINE_ARK_BASE_URL || VOLCENGINE_ARK_DEFAULT_BASE_URL).replace(/\/+$/, '')
+  const endpoint = seedanceTaskEndpoint(baseUrl)
+  const method = 'POST'
+
+  if (!apiKey) {
+    return {
+      success: false,
+      providerId,
+      model,
+      errorCode: 'PROVIDER_NOT_CONFIGURED',
+      message: 'VOLCENGINE_ARK_API_KEY 未配置',
+    }
+  }
+  if (!model) {
+    return {
+      success: false,
+      providerId,
+      model,
+      errorCode: 'PROVIDER_NOT_CONFIGURED',
+      message: '请在 Vercel 填写 VOLCENGINE_SEEDANCE_MODEL，值从火山方舟 Seedance 调用示例复制。',
+    }
+  }
+
+  let request: SeedancePrevisRequest
+  try {
+    request = buildSeedancePrevisRequest(input)
+  } catch (error) {
+    return {
+      success: false,
+      providerId,
+      model,
+      errorCode: 'provider_invalid_parameter',
+      message: error instanceof Error ? error.message : 'Seedance previs input is invalid.',
+    }
+  }
+
+  const content = buildSeedancePrevisContent(request)
+  if (!content.length) {
+    return {
+      success: false,
+      providerId,
+      model,
+      errorCode: 'PROMPT_REQUIRED',
+      message: '请输入视频提示词，或连接一个当前 Seedance 能力支持的素材。',
+    }
+  }
+
+  const body: Record<string, unknown> = {
+    model,
+    content,
+    ratio: request.aspectRatio,
+    duration: request.duration,
+    watermark: false,
+  }
+  if (request.resolution) body.resolution = request.resolution
+  if (request.continuation) body.return_last_frame = true
+  const submittedInput = {
+    providerId,
+    model,
+    endpoint: '/contents/generations/tasks',
+    contentTypes: content.map((item) => item.type),
+    contentRoles: content.map((item) => item.role).filter((role): role is string => typeof role === 'string'),
+    promptChars: request.prompt.length,
+    hasImageUrl: Boolean(request.imageUrl),
+    imageUrl: summarizeSubmittedUrl(request.imageUrl),
+    referenceImageCount: request.referenceImages.length,
+    referenceVideoCount: request.referenceVideos.length,
+    audioReferenceCount: request.audioReferences.length,
+    ratio: request.aspectRatio,
+    duration: request.duration,
+    resolution: request.resolution ?? null,
+    returnLastFrame: request.continuation,
+    watermark: false,
+    projectId: input.projectId ?? null,
+    workflowId: input.workflowId ?? null,
+    nodeId: input.nodeId ?? null,
+  }
+
+  const result = await providerFetch(endpoint, {
+    method,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    timeoutMs: 60_000,
+    submittedInput,
+  })
+  if (!result.ok) {
+    return {
+      success: false,
+      providerId,
+      model,
+      ...providerFailureDetails(result),
+    }
+  }
+
+  const { data, raw, response } = result
+  const videoUrl = findVideoUrl(data)
+  if (videoUrl) {
+    return {
+      success: true,
+      async: false,
+      providerId,
+      model,
+      videoUrl,
+      submittedInput,
+      providerResponse: providerResponseSummary(data),
+      requestId: result.requestId,
+      ...providerRequestDetails(endpoint, method, response.status),
+      upstreamMessage: result.upstreamMessage,
+    }
+  }
+
+  const taskId = findTaskId(data)
+  if (taskId) {
+    return {
+      success: true,
+      async: true,
+      providerId,
+      model,
+      taskId,
+      status: 'running',
+      message: '视频任务已提交',
+      upstream: upstreamMessage(data, raw),
+      submittedInput,
+      providerResponse: providerResponseSummary(data),
+      requestId: result.requestId,
+      ...providerRequestDetails(endpoint, method, response.status),
+      upstreamMessage: result.upstreamMessage,
+    }
+  }
+
+  return {
+    success: false,
+    providerId,
+    model,
+    errorCode: 'provider_no_download_url',
+    message: 'Seedance 创建任务成功返回，但未找到 videoUrl 或 taskId，请查看 upstreamMessage。',
+    upstreamStatus: response.status,
+    upstreamMessage: upstreamMessage(data, raw),
+    requestId: result.requestId,
+    ...providerRequestDetails(endpoint, method, response.status),
+    submittedInput,
+    providerResponse: providerResponseSummary(data),
+  }
+}
 
 export async function generateSeedanceVideo(input: SeedanceVideoInput): Promise<SeedanceVideoResult> {
   const providerId = VOLCENGINE_SEEDANCE_PROVIDER_ID
