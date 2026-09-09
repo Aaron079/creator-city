@@ -33,6 +33,12 @@ type CanvasSaveRequest = {
   }
 }
 
+type SeedancePrevisDeliveryRequest = {
+  requestedMode?: unknown
+  confirmedMode?: unknown
+  acknowledgedFindingIds?: unknown
+}
+
 type SaveOutcome = 'success' | 'conflict' | 'pending-success'
 
 type CanvasApiOptions = {
@@ -42,7 +48,8 @@ type CanvasApiOptions = {
   saveOutcomes?: SaveOutcome[]
 }
 
-function reloadedSpatialPrevis() {
+function reloadedSpatialPrevis(durationSec = 30) {
+  const midpointSec = durationSec / 2
   return {
     spatialPrevis: {
       version: 1,
@@ -60,18 +67,18 @@ function reloadedSpatialPrevis() {
       },
       masterTake: {
         id: 'server-reloaded-take',
-        durationSec: 30,
+        durationSec,
         aspectRatio: '16:9',
         actorTracks: [],
         cameraTrack: {
           id: 'server-reloaded-camera',
           keyframes: [
             { id: 'server-camera-start', timeSec: 0, position: { x: 0, y: 1.6, z: 8 }, target: { x: 0, y: 1.6, z: 0 }, focalLengthMm: 35, intent: 'static' },
-            { id: 'server-camera-mid', timeSec: 15, position: { x: 0, y: 1.6, z: 8 }, target: { x: 0, y: 1.6, z: 0 }, focalLengthMm: 35, intent: 'static' },
-            { id: 'server-camera-end', timeSec: 30, position: { x: 0, y: 1.6, z: 8 }, target: { x: 0, y: 1.6, z: 0 }, focalLengthMm: 35, intent: 'static' },
+            { id: 'server-camera-mid', timeSec: midpointSec, position: { x: 0, y: 1.6, z: 8 }, target: { x: 0, y: 1.6, z: 0 }, focalLengthMm: 35, intent: 'static' },
+            { id: 'server-camera-end', timeSec: durationSec, position: { x: 0, y: 1.6, z: 8 }, target: { x: 0, y: 1.6, z: 0 }, focalLengthMm: 35, intent: 'static' },
           ],
         },
-        beats: [{ id: 'server-beat', label: '服务器节拍', startSec: 0, endSec: 30 }],
+        beats: [{ id: 'server-beat', label: '服务器节拍', startSec: 0, endSec: durationSec }],
       },
       editorMode: 'beats',
       updatedAt: reloadedServerVersion,
@@ -135,6 +142,7 @@ function canvasLoadResponse(options: CanvasApiOptions, isReload = false) {
 
 async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
   const saveRequests: CanvasSaveRequest[] = []
+  const seedanceRequests: SeedancePrevisDeliveryRequest[] = []
   let ensureCount = 0
   let getCount = 0
   let serveReloadMetadata = false
@@ -145,6 +153,35 @@ async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
   await page.route('**/api/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname
     const method = route.request().method()
+
+    if (pathname === '/api/generate/seedance-previs') {
+      if (method === 'GET') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            capability: {
+              providerId: 'volcengine-seedance-video',
+              model: 'seedance-2.5',
+              entryPoint: 'ark',
+              entitlement: 'standard',
+              maxSingleDurationSec: 30,
+              maxContinuousDurationSec: 30,
+              supports: { depth: false, segmentation: false, layout: false },
+            },
+          }),
+        })
+        return
+      }
+      if (method === 'POST') {
+        seedanceRequests.push(route.request().postDataJSON() as SeedancePrevisDeliveryRequest)
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, deliveryId: `delivery-${seedanceRequests.length}` }),
+        })
+        return
+      }
+    }
 
     if (pathname === '/api/projects/ensure' && (method === 'GET' || method === 'POST')) {
       ensureCount += 1
@@ -215,6 +252,7 @@ async function stubCanvasApis(page: Page, options: CanvasApiOptions = {}) {
 
   return {
     saveRequests,
+    seedanceRequests,
     ensureCount: () => ensureCount,
     getCount: () => getCount,
     waitForPendingSave: () => pendingSaveReady,
@@ -349,4 +387,43 @@ test('spatial previs exposes reload after a save conflict and rehydrates from th
   expect(canvasApi.saveRequests).toHaveLength(2)
   expect(canvasApi.saveRequests[1]?.baseUpdatedAt).toBe(reloadedServerVersion)
   expect(canvasApi.saveRequests[1]?.workflowMetadata?.spatialPrevis?.masterTake?.id).toBe('server-reloaded-take')
+})
+
+test('spatial previs sends an explicit direct or acknowledged continuity selection to Seedance', async ({ page }) => {
+  test.setTimeout(120_000)
+  if (!fixture.ready) {
+    test.skip(true, fixture.reason)
+    return
+  }
+  const canvasApi = await stubCanvasApis(page, { initialMetadata: reloadedSpatialPrevis(60) })
+
+  await page.goto(canvasUrl(), { waitUntil: 'domcontentloaded' })
+  await expect(page.locator('.canvas-viewport')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: '已同步到云端' })).toBeVisible({ timeout: 30_000 })
+  await expect(page).toHaveURL(new RegExp(`/create\\?projectId=${projectId}$`))
+  await openSpatialPrevis(page)
+
+  await page.getByRole('button', { name: '生成到 Seedance' }).click()
+  await expect(page.getByRole('button', { name: '继续直接生成' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '确认使用 30 秒连续组接' })).toBeDisabled()
+  await page.getByRole('button', { name: '继续直接生成' }).click()
+  await expect(page.getByText('Seedance 已提交，首段生成中。')).toBeVisible()
+  expect(canvasApi.saveRequests).toHaveLength(1)
+
+  await page.getByRole('checkbox').check()
+  await expect(page.getByRole('button', { name: '确认使用 30 秒连续组接' })).toBeEnabled()
+  await page.getByRole('button', { name: '确认使用 30 秒连续组接' }).click()
+  await expect.poll(() => canvasApi.seedanceRequests.length).toBe(2)
+  expect(canvasApi.saveRequests).toHaveLength(2)
+
+  expect(canvasApi.seedanceRequests[0]).toMatchObject({
+    requestedMode: 'direct',
+    confirmedMode: 'direct',
+    acknowledgedFindingIds: [],
+  })
+  expect(canvasApi.seedanceRequests[1]).toMatchObject({
+    requestedMode: 'direct',
+    confirmedMode: 'continuity-chain',
+    acknowledgedFindingIds: ['continuity-chain-recommended'],
+  })
 })

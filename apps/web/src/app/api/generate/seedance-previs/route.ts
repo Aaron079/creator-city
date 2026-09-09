@@ -162,7 +162,7 @@ const dependencies: SeedancePrevisRouteDependencies = {
     })
   },
   resolveEntitlement: serverEntitlement,
-  resolveModel: (submittedModel) => process.env.VOLCENGINE_SEEDANCE_MODEL?.trim() || submittedModel,
+  resolveModel: () => process.env.VOLCENGINE_SEEDANCE_MODEL?.trim() || 'seedance-2.5',
   platformDispatchEnabled: () => (
     process.env.ENABLE_PLATFORM_VIDEO_GENERATION === 'true'
     && process.env.ENABLE_SEEDANCE_PREVIS_DELIVERY === 'true'
@@ -385,4 +385,26 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
   }
 }
 
+export function createSeedancePrevisGetHandler(overrides: Partial<SeedancePrevisRouteDependencies> = {}) {
+  const deps = { ...dependencies, ...overrides }
+
+  return async function GET(request: Request) {
+    const user = await deps.getCurrentUser()
+    if (!user) return jsonError('UNAUTHORIZED', '请先登录后查看空间预演交付能力。', 401)
+
+    const submittedModel = new URL(request.url).searchParams.get('model') ?? 'seedance-2.5'
+    const model = requiredString(deps.resolveModel(submittedModel))
+    if (!model) return jsonError('PROVIDER_NOT_CONFIGURED', 'Seedance Model 未配置。', 503)
+
+    return jsonOk({
+      capability: resolveSeedanceCapability({
+        model,
+        entryPoint: 'ark',
+        entitlement: deps.resolveEntitlement(user),
+      }),
+    })
+  }
+}
+
+export const GET = createSeedancePrevisGetHandler()
 export const POST = createSeedancePrevisPostHandler()

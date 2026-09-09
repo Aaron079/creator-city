@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { SeedancePrevisVideoInput, SeedanceVideoResult } from '@/lib/providers/china/volcengine'
 import { spatialPrevisMetadata } from '@/lib/spatial-previs/persistence'
 import { normalizeSpatialPrevis } from '@/lib/spatial-previs/normalize'
-import { createSeedancePrevisPostHandler } from './route'
+import { createSeedancePrevisGetHandler, createSeedancePrevisPostHandler } from './route'
 
 type Harness = {
   post: ReturnType<typeof createSeedancePrevisPostHandler>
@@ -150,4 +150,20 @@ test('uses server entitlement and queues only the first confirmed continuity seg
   assert.deepEqual(deliveries.items[0]?.segmentResults.map((segment) => segment.status), ['submitted', 'queued'])
   assert.equal(deliveries.items[0]?.segmentResults[0]?.providerTaskId, 'task-1')
   assert.equal(deliveries.items[0]?.package.chain.segments.length, 2)
+})
+
+test('publishes the server-resolved capability without trusting a client entitlement', async () => {
+  const get = createSeedancePrevisGetHandler({
+    getCurrentUser: async () => ({ id: 'beta-user' }),
+    resolveModel: () => 'dreamina-seedance-2-5-260826',
+    resolveEntitlement: () => 'long-take-beta',
+  })
+
+  const response = await get(new Request('http://creator-city.test/api/generate/seedance-previs?model=seedance-2.0'))
+  const payload = await response.json()
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.capability.model, 'dreamina-seedance-2-5-260826')
+  assert.equal(payload.capability.entitlement, 'long-take-beta')
+  assert.equal(payload.capability.maxContinuousDurationSec, 180)
 })

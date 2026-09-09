@@ -59,7 +59,10 @@ import {
 } from '@/lib/spatial-previs/persistence'
 import { normalizeSpatialPrevis } from '@/lib/spatial-previs/normalize'
 import type { SpatialPrevisState } from '@/lib/spatial-previs/types'
-import { SpatialPrevisDirectorPanel } from '@/components/create/spatial-previs/SpatialPrevisDirectorPanel'
+import {
+  SpatialPrevisDirectorPanel,
+  type SeedancePrevisDeliveryRequest,
+} from '@/components/create/spatial-previs/SpatialPrevisDirectorPanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { CharacterBiblePanel } from '@/components/create/CharacterBiblePanel'
 import { SceneBiblePanel } from '@/components/create/SceneBiblePanel'
@@ -4021,8 +4024,6 @@ export function VisualCanvasWorkspace({
     }
   }, [flushLocalSnapshot, projectId, workflowId, getCanvasSnapshot])
 
-  // The persistence path is intentionally not connected to a panel until a later task.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleSaveSpatialPrevis = useCallback(async (next: SpatialPrevisState): Promise<'success' | 'failed' | 'conflict'> => {
     if (!projectId || !workflowId || spatialPrevisSaveInFlightRef.current) return 'failed'
     const snapshot = getCanvasSnapshot()
@@ -4117,6 +4118,39 @@ export function VisualCanvasWorkspace({
       return 'failed'
     }
   }, [projectId])
+
+  const handleDeliverSpatialPrevisToSeedance = useCallback(async (
+    input: SeedancePrevisDeliveryRequest,
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!projectId || !workflowId) return { success: false, message: '请先完成项目同步。' }
+    const saveResult = await handleSaveSpatialPrevis(input.previs)
+    if (saveResult !== 'success') {
+      return { success: false, message: '预演尚未保存，未提交到 Seedance。' }
+    }
+    try {
+      const response = await fetch('/api/generate/seedance-previs', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          projectId,
+          workflowId,
+          model: input.model,
+          requestedMode: input.requestedMode,
+          confirmedMode: input.confirmedMode,
+          acknowledgedFindingIds: input.acknowledgedFindingIds,
+        }),
+      })
+      const data = await response.json().catch(() => null) as { success?: boolean; message?: string }
+      if (!response.ok || !data?.success) {
+        return { success: false, message: data?.message ?? 'Seedance 提交失败。' }
+      }
+      return { success: true, message: 'Seedance 已提交，首段生成中。' }
+    } catch {
+      return { success: false, message: 'Seedance 提交失败。' }
+    }
+  }, [handleSaveSpatialPrevis, projectId, workflowId])
 
   const createGeneratedAsset = useCallback(async (args: {
     nodeId: string
@@ -11774,6 +11808,7 @@ export function VisualCanvasWorkspace({
             initialState={spatialPrevis}
             onSave={handleSaveSpatialPrevis}
             onReload={handleReloadSpatialPrevis}
+            onDeliverToSeedance={handleDeliverSpatialPrevisToSeedance}
             onClose={() => closeCanvasPanel()}
           />
         </div>

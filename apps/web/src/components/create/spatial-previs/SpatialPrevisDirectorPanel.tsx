@@ -1,18 +1,30 @@
 'use client'
 
 import * as React from 'react'
-import { useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { DirectorToolPanelFrame } from '@/components/canvas/tools/DirectorToolPanelFrame'
+import { resolveSeedanceCapability, type SeedanceCapability } from '@/lib/seedance-previs/capabilities'
+import { buildSeedanceTakePackage } from '@/lib/seedance-previs/package'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { applyBeatPatch } from '@/lib/spatial-previs/normalize'
 import type { BeatPatch, SpatialPrevisMode, SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
 import { SpatialPrevisTimeline, clampSpatialPrevisTime } from './SpatialPrevisTimeline'
 import { SpatialPrevisViewport } from './SpatialPrevisViewport'
+import {
+  SeedanceDeliveryPanel,
+  type SeedanceDeliveryPayload,
+} from './SeedanceDeliveryPanel'
+
+export type SeedancePrevisDeliveryRequest = SeedanceDeliveryPayload & {
+  model: string
+  previs: SpatialPrevisState
+}
 
 export type SpatialPrevisDirectorPanelProps = {
   initialState: SpatialPrevisState
   onSave: (state: SpatialPrevisState) => void | 'success' | 'failed' | 'conflict' | Promise<void | 'success' | 'failed' | 'conflict'>
   onReload?: () => void | 'success' | 'failed' | Promise<void | 'success' | 'failed'>
+  onDeliverToSeedance?: (input: SeedancePrevisDeliveryRequest) => Promise<{ success: boolean; message: string }>
   onClose: () => void
 }
 
@@ -63,7 +75,29 @@ export function applySpatialPrevisBeatPatch(state: SpatialPrevisState, beatId: s
   }
 }
 
-export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onClose }: SpatialPrevisDirectorPanelProps) {
+function standardSeedanceCapability() {
+  return resolveSeedanceCapability({
+    model: 'seedance-2.5',
+    entryPoint: 'ark',
+    entitlement: 'standard',
+  })
+}
+
+function receivedCapability(value: unknown): SeedanceCapability | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  const capability = value as Partial<SeedanceCapability>
+  return capability.providerId === 'volcengine-seedance-video'
+    && typeof capability.model === 'string'
+    && capability.entryPoint === 'ark'
+    && (capability.entitlement === 'standard' || capability.entitlement === 'long-take-beta')
+    && (capability.maxContinuousDurationSec === 30 || capability.maxContinuousDurationSec === 180)
+    && capability.maxSingleDurationSec === 30
+    && capability.supports !== undefined
+    ? capability as SeedanceCapability
+    : null
+}
+
+export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onDeliverToSeedance, onClose }: SpatialPrevisDirectorPanelProps) {
   const [state, setState] = useState(initialState)
   const [currentTimeSec, setCurrentTimeSec] = useState(() => clampSpatialPrevisTime(0, initialState.masterTake.durationSec))
   const [beatError, setBeatError] = useState<string | null>(null)
@@ -72,6 +106,9 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onC
   const [saveConflict, setSaveConflict] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isReloading, setIsReloading] = useState(false)
+  const [isDeliveryOpen, setIsDeliveryOpen] = useState(false)
+  const [deliveryStatus, setDeliveryStatus] = useState<string | null>(null)
+  const [capability, setCapability] = useState<SeedanceCapability>(standardSeedanceCapability)
   const saveGuard = useRef(createSpatialPrevisSaveGuard())
   const tabId = useId()
   const timelinePanelId = `spatial-previs-${tabId}-timeline`
@@ -85,6 +122,24 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onC
     state.scene.coverage,
     state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.position),
   ), [state.masterTake.cameraTrack.keyframes, state.scene.coverage])
+  const deliveryPackage = useMemo(() => buildSeedanceTakePackage({
+    previs: state,
+    capability,
+    deliveryMode: 'direct',
+  }), [capability, state])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void fetch('/api/generate/seedance-previs', { signal: controller.signal })
+      .then(async (response) => response.ok ? response.json() as Promise<unknown> : null)
+      .then((data) => {
+        if (controller.signal.aborted || data === null || typeof data !== 'object') return
+        const next = receivedCapability((data as { capability?: unknown }).capability)
+        if (next) setCapability(next)
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [])
 
   const handleStateChange = (next: SpatialPrevisState) => {
     if (!canMutateSpatialPrevisEditor(isBusy)) return
@@ -143,6 +198,17 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onC
       return
     }
     setSaveError('重新加载预演失败。')
+  }
+
+  const handleSeedanceDelivery = async (payload: SeedanceDeliveryPayload) => {
+    if (!onDeliverToSeedance || isBusy) return
+    setDeliveryStatus('正在提交 Seedance…')
+    try {
+      const result = await onDeliverToSeedance({ ...payload, model: capability.model, previs: state })
+      setDeliveryStatus(result.message)
+    } catch {
+      setDeliveryStatus('Seedance 提交失败。')
+    }
   }
 
   return (
@@ -237,6 +303,34 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onC
             </ul>
           ) : <p className="mt-1.5 text-[11px] text-white/38">暂无覆盖风险。</p>}
         </section>
+
+        {onDeliverToSeedance ? (
+          <section aria-label="Seedance 交付" className="border-t border-white/[0.08] pt-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">Seedance 交付</p>
+              </div>
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => setIsDeliveryOpen((current) => !current)}
+                className="rounded-md border border-indigo-200/30 bg-indigo-300/[0.1] px-2.5 py-1.5 text-[11px] font-medium text-indigo-50 disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                生成到 Seedance
+              </button>
+            </div>
+            {isDeliveryOpen ? (
+              <div className="mt-2">
+                <SeedanceDeliveryPanel
+                  capability={capability}
+                  package={deliveryPackage}
+                  onSubmit={(payload) => { void handleSeedanceDelivery(payload) }}
+                />
+              </div>
+            ) : null}
+            {deliveryStatus ? <p role="status" className="mt-2 text-[11px] text-indigo-100/75">{deliveryStatus}</p> : null}
+          </section>
+        ) : null}
       </section>
     </DirectorToolPanelFrame>
   )
