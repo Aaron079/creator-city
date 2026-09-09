@@ -64,9 +64,14 @@ export type SpatialPrevisScene = {
   coverage: SpatialCoverage
 }
 
+export type CoverageCorridor = {
+  min: Vec3
+  max: Vec3
+}
+
 export type SpatialCoverage =
   | { mode: 'verified'; cameraFreedom: 'full' }
-  | { mode: 'constrained'; cameraFreedom: 'corridor-only' }
+  | { mode: 'constrained'; cameraFreedom: 'corridor-only'; corridor: CoverageCorridor }
   | { mode: 'unavailable'; cameraFreedom: 'disabled' }
 
 export type SpatialPrevisState = {

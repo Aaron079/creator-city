@@ -48,6 +48,10 @@ describe('spatial previs normalization', () => {
     }).scene.coverage, {
       mode: 'constrained',
       cameraFreedom: 'corridor-only',
+      corridor: {
+        min: { x: -12, y: 0, z: -12 },
+        max: { x: 12, y: 12, z: 12 },
+      },
     })
     assert.deepEqual(normalizeSpatialPrevis({
       projectId: 'project-1',
@@ -69,6 +73,10 @@ describe('spatial previs normalization', () => {
     }).scene.coverage, {
       mode: 'constrained',
       cameraFreedom: 'corridor-only',
+      corridor: {
+        min: { x: -12, y: 0, z: -12 },
+        max: { x: 12, y: 12, z: 12 },
+      },
     })
   })
 

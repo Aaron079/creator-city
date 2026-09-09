@@ -24,7 +24,14 @@ function coverageFor(sourceMode: NonNullable<SpatialPrevisInput['sourceMode']>):
     return { mode: 'verified', cameraFreedom: 'full' }
   }
 
-  return { mode: 'constrained', cameraFreedom: 'corridor-only' }
+  return {
+    mode: 'constrained',
+    cameraFreedom: 'corridor-only',
+    corridor: {
+      min: { x: -12, y: 0, z: -12 },
+      max: { x: 12, y: 12, z: 12 },
+    },
+  }
 }
 
 function createCameraTrack(durationSec: number): CameraTrack {
