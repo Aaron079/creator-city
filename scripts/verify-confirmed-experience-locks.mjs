@@ -45,12 +45,35 @@ function isSafeRegistryPath(root, filePath) {
     && pathIsWithinRoot(root, resolve(root, filePath))
 }
 
-function isRegularFileWithinRoot(root, filePath) {
+function resolveRegularFileWithinRoot(root, filePath) {
   const candidatePath = resolve(root, filePath)
   try {
-    return pathIsWithinRoot(root, realpathSync(candidatePath)) && statSync(candidatePath).isFile()
+    const canonicalPath = realpathSync(candidatePath)
+    return pathIsWithinRoot(root, canonicalPath) && statSync(candidatePath).isFile()
+      ? canonicalPath
+      : null
   } catch {
-    return false
+    return null
+  }
+}
+
+function isRegularFileWithinRoot(root, filePath) {
+  return resolveRegularFileWithinRoot(root, filePath) !== null
+}
+
+function readRegistry(root, registryPath) {
+  if (!isSafeRegistryPath(root, registryPath)) {
+    return { error: `Registry path escapes repository root: ${registryPath}` }
+  }
+  const canonicalRegistryPath = resolveRegularFileWithinRoot(root, registryPath)
+  if (!canonicalRegistryPath) {
+    return { error: `Registry path must be a regular file within repository root: ${registryPath}` }
+  }
+
+  try {
+    return { registry: JSON.parse(readFileSync(canonicalRegistryPath, 'utf8')) }
+  } catch (error) {
+    return { error: `Unable to read registry: ${error.message}` }
   }
 }
 
@@ -61,16 +84,9 @@ export function verifyRegistry({ root = repositoryRoot, registryPath = defaultRe
   } catch (error) {
     return [`Unable to resolve repository root: ${error.message}`]
   }
-  const resolvedRegistryPath = isAbsolute(registryPath)
-    ? registryPath
-    : resolve(resolvedRoot, registryPath)
-  let registry
-
-  try {
-    registry = JSON.parse(readFileSync(resolvedRegistryPath, 'utf8'))
-  } catch (error) {
-    return [`Unable to read registry: ${error.message}`]
-  }
+  const registryResult = readRegistry(resolvedRoot, registryPath)
+  if (registryResult.error) return [registryResult.error]
+  const { registry } = registryResult
 
   const errors = validateRegistry(registry)
   if (errors.length > 0) return errors
@@ -117,12 +133,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     for (const error of errors) console.error(`[ERROR] ${error}`)
     process.exitCode = 1
   } else {
-    const registry = JSON.parse(readFileSync(
-      isAbsolute(options.registryPath)
-        ? options.registryPath
-        : resolve(options.root, options.registryPath),
-      'utf8',
-    ))
-    console.log(`[OK] Confirmed experience locks: ${registry.locks.length}`)
+    try {
+      const resolvedRoot = realpathSync(resolve(options.root))
+      const registryResult = readRegistry(resolvedRoot, options.registryPath)
+      if (registryResult.error) {
+        console.error(`[ERROR] ${registryResult.error}`)
+        process.exitCode = 1
+      } else {
+        console.log(`[OK] Confirmed experience locks: ${registryResult.registry.locks.length}`)
+      }
+    } catch (error) {
+      console.error(`[ERROR] Unable to resolve repository root: ${error.message}`)
+      process.exitCode = 1
+    }
   }
 }

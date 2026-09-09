@@ -54,6 +54,26 @@ function createFixture(registry = fixtureRegistry()) {
   return root
 }
 
+function createExternalRegistry() {
+  const root = mkdtempSync(join(tmpdir(), 'confirmed-experience-locks-external-'))
+  temporaryRoots.push(root)
+  const filePath = join(root, 'registry.json')
+  writeFileSync(filePath, JSON.stringify(fixtureRegistry()))
+  return filePath
+}
+
+function assertRegistryCliError(root, unsafeRegistryPath, message) {
+  const result = spawnSync(
+    process.execPath,
+    [verifierPath, '--root', root, '--registry', unsafeRegistryPath],
+    { encoding: 'utf8' },
+  )
+
+  assert.equal(result.status, 1)
+  assert.equal(result.stdout, '')
+  assert.equal(result.stderr, `[ERROR] ${message}\n`)
+}
+
 afterEach(() => {
   while (temporaryRoots.length) rmSync(temporaryRoots.pop(), { recursive: true, force: true })
 })
@@ -96,6 +116,26 @@ describe('confirmed experience lock verifier', () => {
       expectedLocks,
     )
     assert.deepEqual(verifyRegistry({ root: repositoryRoot, registryPath }), [])
+  })
+
+  test('rejects an external absolute registry path before reading it', () => {
+    const root = createFixture()
+    const externalRegistryPath = createExternalRegistry()
+    const message = `Registry path escapes repository root: ${externalRegistryPath}`
+
+    assert.deepEqual(verifyRegistry({ root, registryPath: externalRegistryPath }), [message])
+    assertRegistryCliError(root, externalRegistryPath, message)
+  })
+
+  test('rejects a root-internal registry symlink to an external file', () => {
+    const root = createFixture()
+    const externalRegistryPath = createExternalRegistry()
+    const linkedRegistryPath = 'docs/external-registry.json'
+    symlinkSync(externalRegistryPath, join(root, linkedRegistryPath))
+    const message = `Registry path must be a regular file within repository root: ${linkedRegistryPath}`
+
+    assert.deepEqual(verifyRegistry({ root, registryPath: linkedRegistryPath }), [message])
+    assertRegistryCliError(root, linkedRegistryPath, message)
   })
 
   test('reports a missing lock id', () => {
