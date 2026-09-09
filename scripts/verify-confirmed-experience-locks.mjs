@@ -56,7 +56,7 @@ export function verifyRegistry({ root = repositoryRoot, registryPath = defaultRe
   for (const lock of registry.locks) {
     for (const [kind, paths] of [['owner', lock.owners], ['check', lock.checks]]) {
       for (const filePath of paths) {
-        if (typeof filePath !== 'string' || !pathIsWithinRoot(resolvedRoot, filePath)) {
+        if (typeof filePath !== 'string' || isAbsolute(filePath) || !pathIsWithinRoot(resolvedRoot, filePath)) {
           errors.push(`${lock.id}: path escapes repository root: ${filePath}`)
         } else if (!existsSync(resolve(resolvedRoot, filePath))) {
           errors.push(`${lock.id}: missing ${kind} file: ${filePath}`)
@@ -72,9 +72,15 @@ function parseArguments(argumentsList) {
   for (let index = 0; index < argumentsList.length; index += 1) {
     const argument = argumentsList[index]
     if (argument === '--root') {
-      options.root = argumentsList[++index]
+      const value = argumentsList[index + 1]
+      if (!value || value.startsWith('--')) return { error: 'Missing value for --root.' }
+      options.root = value
+      index += 1
     } else if (argument === '--registry') {
-      options.registryPath = argumentsList[++index]
+      const value = argumentsList[index + 1]
+      if (!value || value.startsWith('--')) return { error: 'Missing value for --registry.' }
+      options.registryPath = value
+      index += 1
     } else {
       return { error: `Unknown argument: ${argument}` }
     }
