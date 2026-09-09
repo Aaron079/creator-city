@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { getSafePreviewRegistrationFixture } from './support/canvas-e2e-safety'
 
 const fixture = getSafePreviewRegistrationFixture(process.env)
@@ -50,6 +50,25 @@ async function findBlankCanvasPoint(page: Page) {
   })
 }
 
+async function expectMenuInsideCanvas(menu: Locator, viewport: Locator) {
+  await expect(menu).toHaveCount(1)
+  await expect(menu).toBeVisible()
+
+  const viewportElement = await viewport.elementHandle()
+  if (!viewportElement) {
+    throw new Error('Expected an active canvas viewport')
+  }
+
+  for (const menuElement of await menu.all()) {
+    expect(
+      await menuElement.evaluate(
+        (element, expectedViewport) => element.closest('.canvas-viewport') === expectedViewport,
+        viewportElement,
+      ),
+    ).toBe(true)
+  }
+}
+
 async function createTextNode(page: Page) {
   await page.getByLabel('添加节点').click()
   await expect(page.locator('.canvas-add-menu')).toBeVisible()
@@ -68,14 +87,17 @@ test('right-clicking a node opens a usable node context menu', async ({ page }) 
 
   await registerIsolatedPreviewUser(page)
   const node = await createTextNode(page)
+  const viewport = page.locator('.canvas-viewport').last()
   await node.click({ button: 'right', position: { x: 24, y: 24 } })
 
   const nodeMenu = page.locator('.canvas-context-menu')
   await expect(nodeMenu).toBeVisible()
+  await expectMenuInsideCanvas(nodeMenu, viewport)
   await expect(nodeMenu.getByRole('button', { name: '打开任务' })).toBeVisible()
   await nodeMenu.getByRole('button', { name: '复制节点' }).click()
 
   await node.click({ button: 'right', position: { x: 24, y: 24 } })
+  await expectMenuInsideCanvas(nodeMenu, viewport)
   await nodeMenu.getByRole('button', { name: '打开任务' }).click()
   await expect(page.locator('.canvas-node-dialog')).toBeVisible()
 })
@@ -89,8 +111,10 @@ test('right-clicking blank Canvas opens a usable canvas context menu', async ({ 
 
   await registerIsolatedPreviewUser(page)
   const node = await createTextNode(page)
+  const viewport = page.locator('.canvas-viewport').last()
   await node.click({ button: 'right', position: { x: 24, y: 24 } })
   const nodeMenu = page.locator('.canvas-context-menu')
+  await expectMenuInsideCanvas(nodeMenu, viewport)
   await nodeMenu.getByRole('button', { name: '复制节点' }).click()
 
   const blankPoint = await findBlankCanvasPoint(page)
@@ -98,6 +122,7 @@ test('right-clicking blank Canvas opens a usable canvas context menu', async ({ 
 
   const canvasMenu = page.locator('.canvas-canvas-context-menu')
   await expect(canvasMenu).toBeVisible()
+  await expectMenuInsideCanvas(canvasMenu, viewport)
   const upload = canvasMenu.getByRole('button', { name: '上传素材' })
   await expect(upload).toBeVisible()
   const fileChooserPromise = page.waitForEvent('filechooser')
@@ -106,6 +131,7 @@ test('right-clicking blank Canvas opens a usable canvas context menu', async ({ 
 
   await page.mouse.click(blankPoint.x, blankPoint.y, { button: 'right' })
   await expect(canvasMenu).toBeVisible()
+  await expectMenuInsideCanvas(canvasMenu, viewport)
   const paste = canvasMenu.getByRole('button', { name: '粘贴节点' })
   await expect(paste).toBeEnabled()
   const countBeforePaste = await page.locator('.canvas-node-card').count()
