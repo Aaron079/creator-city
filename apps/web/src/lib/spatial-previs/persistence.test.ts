@@ -172,4 +172,37 @@ describe('spatial previs persistence', () => {
       assert.equal(parseSpatialPrevisMetadata({ spatialPrevis }), null)
     }
   })
+
+  test('returns null for reversed beats and actor keyframes outside persisted duration', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1', durationSec: 30 })
+    const invalidTimelines = [
+      {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          beats: state.masterTake.beats.map((beat) => ({ ...beat, startSec: 20, endSec: 10 })),
+        },
+      },
+      {
+        ...state,
+        masterTake: {
+          ...state.masterTake,
+          actorTracks: [{
+            id: 'actor-track',
+            anchorId: 'actor-anchor',
+            keyframes: [{
+              id: 'actor-frame',
+              timeSec: 31,
+              position: { x: 0, y: 0, z: 0 },
+              action: 'walk',
+            }],
+          }],
+        },
+      },
+    ]
+
+    for (const spatialPrevis of invalidTimelines) {
+      assert.equal(parseSpatialPrevisMetadata({ spatialPrevis }), null)
+    }
+  })
 })

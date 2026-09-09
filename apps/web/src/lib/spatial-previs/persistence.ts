@@ -129,18 +129,30 @@ function beats(value: unknown): SpatialPrevisBeat[] | null {
   return items
 }
 
-function timelineIsExecutable(cameraTrack: CameraTrack, beats: SpatialPrevisBeat[], durationSec: number) {
+function timelineIsExecutable(
+  cameraTrack: CameraTrack,
+  actorTracks: ActorTrack[],
+  beats: SpatialPrevisBeat[],
+  durationSec: number,
+) {
   if (
     durationSec < MIN_DURATION_SEC
     || durationSec > MAX_DURATION_SEC
     || cameraTrack.keyframes.length === 0
     || cameraTrack.keyframes.some((keyframe) => keyframe.timeSec < 0 || keyframe.timeSec > durationSec)
+    || actorTracks.some((track) => track.keyframes.some(
+      (keyframe) => keyframe.timeSec < 0 || keyframe.timeSec > durationSec,
+    ))
   ) {
     return false
   }
 
   return beats.every((beat) => {
-    if (beat.startSec < 0 || beat.startSec > durationSec || beat.endSec < 0 || beat.endSec > durationSec) {
+    if (
+      beat.startSec < 0
+      || beat.startSec > beat.endSec
+      || beat.endSec > durationSec
+    ) {
       return false
     }
     const midpoint = (beat.startSec + beat.endSec) / 2
@@ -190,7 +202,7 @@ function state(value: unknown): SpatialPrevisState | null {
     || !parsedActorTracks
     || !parsedCameraTrack
     || !parsedBeats
-    || !timelineIsExecutable(parsedCameraTrack, parsedBeats, durationSec)
+    || !timelineIsExecutable(parsedCameraTrack, parsedActorTracks, parsedBeats, durationSec)
   ) {
     return null
   }
