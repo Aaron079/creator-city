@@ -6,8 +6,15 @@ const workflowId = 'e2e-spatial-previs-workflow'
 const initialServerVersion = '2026-09-09T00:00:00.000Z'
 const reloadedServerVersion = '2026-09-09T00:02:00.000Z'
 const fixture = getSafePreviewFixture(process.env)
+const spatialPrevisViewport = process.env.PLAYWRIGHT_SPATIAL_VIEWPORT === 'mobile'
+  ? { width: 390, height: 844 }
+  : undefined
+const isMobileSpatialPrevisViewport = spatialPrevisViewport !== undefined
 
-test.use({ storageState: fixture.ready ? fixture.storageState : undefined })
+test.use({
+  storageState: fixture.ready ? fixture.storageState : undefined,
+  ...(spatialPrevisViewport ? { viewport: spatialPrevisViewport } : {}),
+})
 
 type SpatialPrevisPayload = {
   version?: unknown
@@ -253,14 +260,18 @@ test('spatial previs remains clickable above a floating review, receives wheel, 
   expect(canvasApi.ensureCount()).toBeGreaterThanOrEqual(1)
   await expect(page).toHaveURL(new RegExp(`/create\\?projectId=${projectId}$`))
 
-  const review = await openFloatingMediaReview(page)
-  const reviewZIndex = await review.evaluate((element) => Number(getComputedStyle(element).zIndex))
-  expect(reviewZIndex).toBeGreaterThanOrEqual(2700)
+  const review = isMobileSpatialPrevisViewport ? null : await openFloatingMediaReview(page)
+  const reviewZIndex = review
+    ? await review.evaluate((element) => Number(getComputedStyle(element).zIndex))
+    : 0
+  if (review) expect(reviewZIndex).toBeGreaterThanOrEqual(2700)
 
   const viewport = await openSpatialPrevis(page)
   const overlay = page.locator('[data-spatial-previs-overlay="true"]')
   await expect(overlay).toHaveCSS('z-index', '3000')
-  expect(await overlay.evaluate((element) => Number(getComputedStyle(element).zIndex))).toBeGreaterThan(reviewZIndex)
+  if (review) {
+    expect(await overlay.evaluate((element) => Number(getComputedStyle(element).zIndex))).toBeGreaterThan(reviewZIndex)
+  }
 
   const sceneCanvas = viewport.locator('canvas').first()
   await expect(sceneCanvas).toBeVisible()
@@ -287,6 +298,9 @@ test('spatial previs remains clickable above a floating review, receives wheel, 
   await expect(viewport.getByLabel('跟拍')).toBeDisabled()
   await expect(page.getByRole('tab', { name: '连续走位' })).toBeDisabled()
   await expect(page.getByLabel('相机位置 X')).toHaveAttribute('readonly', '')
+  await expect(page.getByRole('button', { name: '关闭' })).toBeDisabled()
+  await overlay.click({ position: { x: 4, y: 4 } })
+  await expect(overlay).toBeVisible()
   expect(canvasApi.saveRequests).toHaveLength(1)
   expect(canvasApi.saveRequests[0]?.workflowMetadata?.spatialPrevis?.version).toBe(1)
   expect(canvasApi.saveRequests[0]?.workflowMetadata?.spatialPrevis?.masterTake?.cameraTrack?.keyframes?.[0]?.intent).toBe('follow')

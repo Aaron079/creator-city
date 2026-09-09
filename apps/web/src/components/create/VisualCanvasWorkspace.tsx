@@ -2805,6 +2805,7 @@ export function VisualCanvasWorkspace({
   const initStartedRef = useRef('')
   const initAbortRef = useRef<AbortController | null>(null)
   const saveAbortRef = useRef<AbortController | null>(null)
+  const spatialPrevisSaveInFlightRef = useRef(false)
   const generationAbortControllersRef = useRef<Map<string, AbortController>>(new Map())
   const activeGenerationNodeIdsRef = useRef<Set<string>>(new Set())
   const generationCanvasIdentityRef = useRef('')
@@ -3183,6 +3184,7 @@ export function VisualCanvasWorkspace({
   }, [])
 
   const closeCanvasPanel = useCallback(() => {
+    if (spatialPrevisSaveInFlightRef.current) return
     resetCanvasModalStates()
   }, [resetCanvasModalStates])
 
@@ -3194,6 +3196,7 @@ export function VisualCanvasWorkspace({
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const openCanvasPanel = useCallback((id: CanvasModalId, payload?: { nodeId?: string }) => {
+    if (spatialPrevisSaveInFlightRef.current) return
     dismissInspectorForOverlay()
     resetCanvasModalStates()
     setActiveCanvasModal(id)
@@ -4020,7 +4023,7 @@ export function VisualCanvasWorkspace({
   // The persistence path is intentionally not connected to a panel until a later task.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleSaveSpatialPrevis = useCallback(async (next: SpatialPrevisState): Promise<'success' | 'failed' | 'conflict'> => {
-    if (!projectId || !workflowId) return 'failed'
+    if (!projectId || !workflowId || spatialPrevisSaveInFlightRef.current) return 'failed'
     const snapshot = getCanvasSnapshot()
     const entityPayload = buildCanvasEntitySavePayload({
       nodes: snapshot.nodes,
@@ -4038,6 +4041,7 @@ export function VisualCanvasWorkspace({
     const submittedEdgeRevisions = new Map(
       entityPayload.edges.map((edge) => [edge.id, dirtyEdgeRevisionRef.current.get(edge.id)]),
     )
+    spatialPrevisSaveInFlightRef.current = true
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/canvas`, {
         method: 'PUT',
@@ -4085,6 +4089,8 @@ export function VisualCanvasWorkspace({
       return 'success'
     } catch {
       return 'failed'
+    } finally {
+      spatialPrevisSaveInFlightRef.current = false
     }
   }, [flushLocalSnapshot, projectId, workflowId, getCanvasSnapshot])
 

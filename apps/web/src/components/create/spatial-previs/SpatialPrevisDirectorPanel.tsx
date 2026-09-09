@@ -155,6 +155,7 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onReload, onC
       summary={`${state.masterTake.id} · ${state.masterTake.durationSec}s`}
       primaryLabel="保存预演"
       busy={isBusy}
+      closeDisabled={isBusy}
       allowNestedWheel
       onPrimary={() => { void handleSave() }}
       onClose={onClose}

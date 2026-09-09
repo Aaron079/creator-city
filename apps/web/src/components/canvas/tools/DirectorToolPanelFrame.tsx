@@ -29,6 +29,7 @@ type DirectorToolPanelFrameProps = {
   onClear?(): void
   clearLabel?: string
   onClose(): void
+  closeDisabled?: boolean
   children: ReactNode
   ariaLabel?: string
   bodyClassName?: string
@@ -77,6 +78,7 @@ export function DirectorToolPanelFrame({
   onClear,
   clearLabel,
   onClose,
+  closeDisabled = false,
   children,
   ariaLabel,
   bodyClassName,
@@ -107,8 +109,9 @@ export function DirectorToolPanelFrame({
         <button
           type="button"
           aria-label="关闭"
+          disabled={closeDisabled}
           onClick={onClose}
-          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/50 transition hover:bg-white/[0.08] hover:text-white/80"
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-white/50 transition hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-35"
         >
           <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
             <path d="M4 4l8 8M12 4l-8 8" />
@@ -181,7 +184,8 @@ export function DirectorToolPanelFrame({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/70 transition hover:bg-white/10"
+            disabled={closeDisabled}
+            className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-white/70 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
           >
             取消
           </button>
