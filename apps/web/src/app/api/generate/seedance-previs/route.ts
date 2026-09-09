@@ -1,13 +1,15 @@
 import { randomUUID } from 'crypto'
 import type { Prisma } from '@prisma/client'
-import { NextResponse } from 'next/server'
 import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { generateSeedancePrevisVideo, type SeedancePrevisVideoInput, type SeedanceVideoResult } from '@/lib/providers/china/volcengine'
 import { adviseSeedanceDelivery } from '@/lib/seedance-previs/advisory'
 import { resolveSeedanceCapability, type SeedanceEntitlement } from '@/lib/seedance-previs/capabilities'
-import { appendSeedancePrevisDeliveryMetadata } from '@/lib/seedance-previs/deliveryPersistence'
+import {
+  appendSeedancePrevisDeliveryMetadata,
+  updateSeedancePrevisDeliverySegmentResults,
+} from '@/lib/seedance-previs/deliveryPersistence'
 import { buildSeedanceTakePackage, type DeliveryMode, type JsonValue } from '@/lib/seedance-previs/package'
 import { partitionMasterTake } from '@/lib/seedance-previs/partition'
 import { parseSpatialPrevisMetadata } from '@/lib/spatial-previs/persistence'
@@ -38,11 +40,32 @@ type WorkflowRecord = {
 
 type RouteUser = { id: string }
 
+type GenerationJobInput = {
+  userId: string
+  projectId: string
+  workflowId: string
+  masterTakeId: string
+  prompt: string
+  model: string
+  deliveryId: string
+}
+
+type GenerationJobUpdate = {
+  status: 'QUEUED' | 'SUCCEEDED' | 'FAILED'
+  providerJobId?: string
+  errorMessage?: string
+  output?: Record<string, JsonValue>
+}
+
 export type SeedancePrevisRouteDependencies = {
   getCurrentUser: () => Promise<RouteUser | null>
   findWorkflow: (projectId: string, workflowId: string, userId: string) => Promise<WorkflowRecord | null>
   updateWorkflowMetadata: (workflowId: string, metadata: Record<string, unknown>) => Promise<void>
   resolveEntitlement: (user: RouteUser) => SeedanceEntitlement
+  resolveModel: (submittedModel: string) => string
+  platformDispatchEnabled: () => boolean
+  createGenerationJob: (input: GenerationJobInput) => Promise<{ id: string } | null>
+  updateGenerationJob: (generationJobId: string, update: GenerationJobUpdate) => Promise<void>
   generate: (input: SeedancePrevisVideoInput) => Promise<SeedanceVideoResult>
   createDeliveryId: () => string
 }
@@ -139,6 +162,42 @@ const dependencies: SeedancePrevisRouteDependencies = {
     })
   },
   resolveEntitlement: serverEntitlement,
+  resolveModel: (submittedModel) => process.env.VOLCENGINE_SEEDANCE_MODEL?.trim() || submittedModel,
+  platformDispatchEnabled: () => (
+    process.env.ENABLE_PLATFORM_VIDEO_GENERATION === 'true'
+    && process.env.ENABLE_SEEDANCE_PREVIS_DELIVERY === 'true'
+  ),
+  createGenerationJob: async (input) => db.generationJob.create({
+    data: {
+      userId: input.userId,
+      projectId: input.projectId,
+      nodeId: input.masterTakeId,
+      providerId: 'volcengine-seedance-video',
+      provider: 'volcengine-seedance-video',
+      nodeType: 'video',
+      kind: 'video',
+      status: 'QUEUED',
+      prompt: input.prompt,
+      input: serializable({
+        workflowId: input.workflowId,
+        masterTakeId: input.masterTakeId,
+        model: input.model,
+        deliveryId: input.deliveryId,
+      }) as Prisma.InputJsonValue,
+    },
+    select: { id: true },
+  }).catch(() => null),
+  updateGenerationJob: async (generationJobId, update) => {
+    await db.generationJob.update({
+      where: { id: generationJobId },
+      data: {
+        status: update.status,
+        ...(update.providerJobId ? { providerJobId: update.providerJobId } : {}),
+        ...(update.errorMessage ? { errorMessage: update.errorMessage } : {}),
+        ...(update.output ? { output: update.output as Prisma.InputJsonValue } : {}),
+      },
+    })
+  },
   generate: generateSeedancePrevisVideo,
   createDeliveryId: () => `seedance-previs-${randomUUID()}`,
 }
@@ -157,6 +216,13 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
   return async function POST(request: Request) {
     const user = await deps.getCurrentUser()
     if (!user) return jsonError('UNAUTHORIZED', '请先登录后再提交空间预演。', 401)
+    if (!deps.platformDispatchEnabled()) {
+      return jsonError(
+        'VIDEO_GENERATION_NOT_READY',
+        '空间预演的平台视频生成尚未开放。请联系管理员开启受控交付权限。',
+        403,
+      )
+    }
 
     let rawBody: unknown
     try {
@@ -166,6 +232,8 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
     }
     const body = parseBody(rawBody)
     if (!body) return jsonError('VALIDATION_FAILED', '空间预演提交参数无效。', 400)
+    const model = requiredString(deps.resolveModel(body.model))
+    if (!model) return jsonError('PROVIDER_NOT_CONFIGURED', 'Seedance Model 未配置。', 503)
 
     try {
       const workflow = await deps.findWorkflow(body.projectId, body.workflowId, user.id)
@@ -177,7 +245,7 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
       }
 
       const capability = resolveSeedanceCapability({
-        model: body.model,
+        model,
         entryPoint: 'ark',
         entitlement: deps.resolveEntitlement(user),
       })
@@ -231,8 +299,29 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
       const duration = firstSegment
         ? firstSegment.endSec - firstSegment.startSec
         : takePackage.durationSec
-      const result = await deps.generate({
-        prompt: body.prompt ?? takePackage.direction,
+      const prompt = body.prompt ?? takePackage.direction
+      const generationJob = await deps.createGenerationJob({
+        userId: user.id,
+        projectId: body.projectId,
+        workflowId: body.workflowId,
+        masterTakeId: previs.masterTake.id,
+        prompt,
+        model,
+        deliveryId,
+      })
+      if (!generationJob) {
+        const failedMetadata = updateSeedancePrevisDeliverySegmentResults(nextMetadata, deliveryId, [
+          { ...segmentResults[0]!, status: 'failed', errorCode: 'GENERATION_JOB_CREATE_FAILED' },
+          ...segmentResults.slice(1),
+        ])
+        await deps.updateWorkflowMetadata(workflow.id, failedMetadata)
+        return jsonError('GENERATION_JOB_CREATE_FAILED', '视频任务创建失败，请稍后重试。', 503, { deliveryId })
+      }
+
+      let result: SeedanceVideoResult
+      try {
+        result = await deps.generate({
+          prompt,
         imageUrl: body.imageUrl,
         referenceImages: body.referenceImages,
         referenceVideos: body.referenceVideos,
@@ -242,14 +331,47 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
         resolution: body.resolution,
         continuation: Boolean(chain && chain.segments.length > 1),
         capability,
-        model: body.model,
+        model,
         projectId: body.projectId,
         workflowId: body.workflowId,
-      })
+        })
+      } catch (error) {
+        const message = safeErrorMessage(error, 'Seedance 预演请求未能发送。')
+        const failedMetadata = updateSeedancePrevisDeliverySegmentResults(nextMetadata, deliveryId, [
+          { ...segmentResults[0]!, status: 'failed', errorCode: 'SEEDANCE_PREVIS_DISPATCH_FAILED' },
+          ...segmentResults.slice(1),
+        ])
+        await deps.updateWorkflowMetadata(workflow.id, failedMetadata)
+        await deps.updateGenerationJob(generationJob.id, { status: 'FAILED', errorMessage: message })
+        return jsonError('SEEDANCE_PREVIS_DISPATCH_FAILED', message, 502, { deliveryId })
+      }
 
       if (!result.success) {
+        const failedMetadata = updateSeedancePrevisDeliverySegmentResults(nextMetadata, deliveryId, [
+          { ...segmentResults[0]!, status: 'failed', errorCode: result.errorCode },
+          ...segmentResults.slice(1),
+        ])
+        await deps.updateWorkflowMetadata(workflow.id, failedMetadata)
+        await deps.updateGenerationJob(generationJob.id, {
+          status: 'FAILED',
+          errorMessage: result.message,
+          output: serializable(result),
+        })
         return jsonError(result.errorCode, result.message, 502, { deliveryId, requestedMode: body.requestedMode, deliveryMode })
       }
+      const completedSegment = result.async
+        ? { ...segmentResults[0]!, status: 'submitted', providerTaskId: result.taskId, generationJobId: generationJob.id }
+        : { ...segmentResults[0]!, status: 'succeeded', videoUrl: result.videoUrl, generationJobId: generationJob.id }
+      const completedMetadata = updateSeedancePrevisDeliverySegmentResults(nextMetadata, deliveryId, [
+        completedSegment,
+        ...segmentResults.slice(1),
+      ])
+      await deps.updateWorkflowMetadata(workflow.id, completedMetadata)
+      await deps.updateGenerationJob(generationJob.id, {
+        status: result.async ? 'QUEUED' : 'SUCCEEDED',
+        ...(result.async ? { providerJobId: result.taskId } : {}),
+        output: serializable(result),
+      })
       return jsonOk({
         deliveryId,
         requestedMode: body.requestedMode,

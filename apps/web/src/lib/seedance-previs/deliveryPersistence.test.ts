@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   appendSeedancePrevisDeliveryMetadata,
   parseSeedancePrevisDeliveries,
+  updateSeedancePrevisDeliverySegmentResults,
 } from './deliveryPersistence'
 
 test('keeps delivery metadata isolated from the spatial previs snapshot', () => {
@@ -90,6 +91,22 @@ test('preserves valid prior deliveries while appending the next delivery', () =>
   const deliveries = parseSeedancePrevisDeliveries(next)
   assert.ok(deliveries)
   assert.deepEqual(deliveries.items.map((delivery) => delivery.deliveryId), ['delivery-1', 'delivery-2'])
+})
+
+test('records the provider result against only the dispatched delivery segment', () => {
+  const existingMetadata = appendSeedancePrevisDeliveryMetadata({}, {
+    deliveryId: 'delivery-1',
+    masterTakeId: 'take-1',
+    segmentResults: [{ segmentId: 'take-1:segment-1', status: 'submitting' }],
+  })
+
+  const next = updateSeedancePrevisDeliverySegmentResults(existingMetadata, 'delivery-1', [
+    { segmentId: 'take-1:segment-1', status: 'submitted', providerTaskId: 'task-1' },
+  ])
+
+  assert.deepEqual(parseSeedancePrevisDeliveries(next)?.items[0]?.segmentResults, [
+    { segmentId: 'take-1:segment-1', status: 'submitted', providerTaskId: 'task-1' },
+  ])
 })
 
 test('parses only complete version-one delivery metadata records', () => {

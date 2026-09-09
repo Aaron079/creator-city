@@ -211,3 +211,29 @@ export function appendSeedancePrevisDeliveryMetadata(
     },
   }
 }
+
+export function updateSeedancePrevisDeliverySegmentResults(
+  existingMetadata: unknown,
+  deliveryId: string,
+  nextSegmentResults: readonly SeedancePrevisSegmentReceipt[],
+): Record<string, JsonValue> {
+  if (!isIdentifier(deliveryId) || !isJsonRecord(existingMetadata)) {
+    throw new TypeError('INVALID_SEEDANCE_PREVIS_DELIVERY_METADATA')
+  }
+  const existingDeliveries = parseSeedancePrevisDeliveries(existingMetadata)
+  const receipts = segmentResults(nextSegmentResults)
+  if (!existingDeliveries || !receipts) throw new TypeError('INVALID_SEEDANCE_PREVIS_DELIVERY')
+  if (!existingDeliveries.items.some((item) => item.deliveryId === deliveryId)) {
+    throw new TypeError('SEEDANCE_PREVIS_DELIVERY_NOT_FOUND')
+  }
+
+  return {
+    ...existingMetadata,
+    [DELIVERY_METADATA_KEY]: {
+      version: SEEDANCE_PREVIS_DELIVERIES_VERSION,
+      items: existingDeliveries.items.map((item) => (
+        item.deliveryId === deliveryId ? { ...item, segmentResults: receipts } : item
+      )),
+    },
+  }
+}

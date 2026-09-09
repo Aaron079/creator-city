@@ -10,6 +10,7 @@ type Harness = {
   calls: SeedancePrevisVideoInput[]
   metadata: Record<string, unknown>
   persisted: Record<string, unknown> | null
+  generationJobUpdates: Array<{ id: string; status: string; providerJobId?: string }>
 }
 
 function request(body: Record<string, unknown>) {
@@ -20,7 +21,7 @@ function request(body: Record<string, unknown>) {
   })
 }
 
-function createHarness(input: { durationSec?: number; entitlement?: 'standard' | 'long-take-beta' } = {}): Harness {
+function createHarness(input: { durationSec?: number; entitlement?: 'standard' | 'long-take-beta'; model?: string } = {}): Harness {
   const previs = normalizeSpatialPrevis({
     projectId: 'project-1',
     durationSec: input.durationSec ?? 60,
@@ -29,6 +30,7 @@ function createHarness(input: { durationSec?: number; entitlement?: 'standard' |
   })
   const metadata = spatialPrevisMetadata({ unrelated: 'keep' }, previs)
   const calls: SeedancePrevisVideoInput[] = []
+  const generationJobUpdates: Array<{ id: string; status: string; providerJobId?: string }> = []
   let persisted: Record<string, unknown> | null = null
   const result: SeedanceVideoResult = {
     success: true,
@@ -46,6 +48,10 @@ function createHarness(input: { durationSec?: number; entitlement?: 'standard' |
       findWorkflow: async () => ({ id: 'workflow-1', projectId: 'project-1', metadataJson: metadata }),
       updateWorkflowMetadata: async (_workflowId, nextMetadata) => { persisted = nextMetadata },
       resolveEntitlement: () => input.entitlement ?? 'standard',
+      resolveModel: () => input.model ?? 'seedance-2.5',
+      platformDispatchEnabled: () => true,
+      createGenerationJob: async () => ({ id: 'generation-job-1' }),
+      updateGenerationJob: async (id, update) => { generationJobUpdates.push({ id, status: update.status, providerJobId: update.providerJobId }) },
       generate: async (generationInput) => {
         calls.push(generationInput)
         return result
@@ -55,6 +61,7 @@ function createHarness(input: { durationSec?: number; entitlement?: 'standard' |
     calls,
     metadata,
     get persisted() { return persisted },
+    generationJobUpdates,
   }
 }
 
@@ -83,6 +90,26 @@ test('rejects an unacknowledged continuity chain before persistence or adapter d
   assert.equal(harness.calls.length, 0)
 })
 
+test('keeps platform dispatch default-denied before any workflow or provider action', async () => {
+  const post = createSeedancePrevisPostHandler({
+    getCurrentUser: async () => ({ id: 'user-1' }),
+    platformDispatchEnabled: () => false,
+  })
+  const response = await post(request(body()))
+
+  assert.equal(response.status, 403)
+  assert.equal((await response.json()).errorCode, 'VIDEO_GENERATION_NOT_READY')
+})
+
+test('uses the server-resolved model instead of the submitted model string', async () => {
+  const harness = createHarness({ durationSec: 30, model: 'dreamina-seedance-2-0-260128' })
+  const response = await harness.post(request(body({ model: 'seedance-2.5' })))
+
+  assert.equal(response.status, 200)
+  assert.equal(harness.calls[0]?.model, 'dreamina-seedance-2-0-260128')
+  assert.equal(harness.calls[0]?.capability.model, 'dreamina-seedance-2-0-260128')
+})
+
 test('keeps a selected direct delivery direct and preserves unrelated workflow metadata', async () => {
   const harness = createHarness({ durationSec: 30 })
   const response = await harness.post(request(body({ prompt: 'Follow the actor through the entry.' })))
@@ -97,6 +124,7 @@ test('keeps a selected direct delivery direct and preserves unrelated workflow m
   assert.deepEqual(harness.persisted?.spatialPrevis, harness.metadata.spatialPrevis)
   const deliveries = harness.persisted?.seedancePrevisDeliveries as { items: Array<{ package: { deliveryMode: string } }> }
   assert.equal(deliveries.items[0]?.package.deliveryMode, 'direct')
+  assert.deepEqual(harness.generationJobUpdates, [{ id: 'generation-job-1', status: 'QUEUED', providerJobId: 'task-1' }])
 })
 
 test('uses server entitlement and queues only the first confirmed continuity segment', async () => {
@@ -117,8 +145,9 @@ test('uses server entitlement and queues only the first confirmed continuity seg
   assert.equal(harness.calls[0]?.continuation, true)
   assert.equal(harness.calls[0]?.capability.entitlement, 'standard')
   const deliveries = harness.persisted?.seedancePrevisDeliveries as {
-    items: Array<{ segmentResults: Array<{ status: string }>; package: { chain: { segments: unknown[] } } }>
+    items: Array<{ segmentResults: Array<{ status: string; providerTaskId?: string }>; package: { chain: { segments: unknown[] } } }>
   }
-  assert.deepEqual(deliveries.items[0]?.segmentResults.map((segment) => segment.status), ['submitting', 'queued'])
+  assert.deepEqual(deliveries.items[0]?.segmentResults.map((segment) => segment.status), ['submitted', 'queued'])
+  assert.equal(deliveries.items[0]?.segmentResults[0]?.providerTaskId, 'task-1')
   assert.equal(deliveries.items[0]?.package.chain.segments.length, 2)
 })
