@@ -27,6 +27,7 @@ import {
   resizeNodeRect,
   type CanvasResizeHandle,
 } from '@/components/create/canvas/canvasResizeGeometry'
+import { prioritizeMediaReview } from '@/components/create/canvas/mediaReviewStack'
 import { CanvasPromptBox, type CanvasPromptFooterItem } from '@/components/create/CanvasPromptBox'
 import { CanvasToolDock } from '@/components/create/CanvasToolDock'
 import { CanvasCommentsPanel, type CanvasComment } from '@/components/create/CanvasCommentsPanel'
@@ -5305,11 +5306,11 @@ export function VisualCanvasWorkspace({
   }, [])
 
   const focusMediaReviewWindow = useCallback((id: string) => {
-    mediaReviewZRef.current += 1
-    const nextZ = mediaReviewZRef.current
-    setMediaReviewWindows((current) => current.map((review) => (
-      review.id === id ? { ...review, zIndex: nextZ } : review
-    )))
+    setMediaReviewWindows((current) => {
+      const stack = prioritizeMediaReview(current, id, mediaReviewZRef.current + 1)
+      mediaReviewZRef.current = stack.nextZIndex
+      return stack.items
+    })
   }, [])
 
   const moveMediaReviewWindow = useCallback((id: string, x: number, y: number) => {
@@ -8065,29 +8066,30 @@ export function VisualCanvasWorkspace({
         x: hasRightSpace ? rightX : leftX,
         y: nodeScreenY + Math.max(0, (nodeScreenHeight - initial.height) / 2),
       })
-      mediaReviewZRef.current += 1
       const reviewId = `${node.id}-${type}`
       setActivePreviewNodeId(null)
       setActivePreviewType(null)
       setMediaReviewWindows((current) => {
         const existing = current.find((review) => review.id === reviewId)
-        if (existing) {
-          return current.map((review) => (
+        const nextWindows = existing
+          ? current.map((review) => (
             review.id === reviewId
-              ? { ...review, ...positioned, zIndex: mediaReviewZRef.current }
+              ? { ...review, ...positioned }
               : review
           ))
-        }
-        return [
-          ...current,
-          {
-            id: reviewId,
-            nodeId: node.id,
-            type,
-            ...positioned,
-            zIndex: mediaReviewZRef.current,
-          },
-        ]
+          : [
+              ...current,
+              {
+                id: reviewId,
+                nodeId: node.id,
+                type,
+                ...positioned,
+                zIndex: 0,
+              },
+            ]
+        const stack = prioritizeMediaReview(nextWindows, reviewId, mediaReviewZRef.current + 1)
+        mediaReviewZRef.current = stack.nextZIndex
+        return stack.items
       })
       setTextEditorDraft('')
       setTextEditorCopied(false)
