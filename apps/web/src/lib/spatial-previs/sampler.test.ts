@@ -81,14 +81,16 @@ describe('camera sampling', () => {
     ))
   })
 
-  test('clamps duplicate end timestamps to the latest duplicate', () => {
+  test('returns the latest duplicate at the exact end timestamp and clamps afterward', () => {
     const latest = keyframe('latest', 10, { x: 10, y: 5, z: -2 }, { x: 3, y: 4, z: -1 }, 60, 'dolly')
-
-    assert.deepEqual(sampleCamera([
+    const keyframes = [
       keyframe('start', 0, { x: 0, y: 1, z: 8 }, { x: 0, y: 1, z: 0 }, 24, 'static'),
       keyframe('early', 10, { x: 8, y: 4, z: 0 }, { x: 2, y: 3, z: 1 }, 50, 'push'),
       latest,
-    ], 12), latest)
+    ]
+
+    assert.deepEqual(sampleCamera(keyframes, 10), latest)
+    assert.deepEqual(sampleCamera(keyframes, 12), latest)
   })
 
   test('sorts a copy of the camera track without mutating it', () => {
