@@ -56,7 +56,9 @@ import {
   parseSpatialPrevisMetadata,
   spatialPrevisMetadata,
 } from '@/lib/spatial-previs/persistence'
+import { normalizeSpatialPrevis } from '@/lib/spatial-previs/normalize'
 import type { SpatialPrevisState } from '@/lib/spatial-previs/types'
+import { SpatialPrevisDirectorPanel } from '@/components/create/spatial-previs/SpatialPrevisDirectorPanel'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { CharacterBiblePanel } from '@/components/create/CharacterBiblePanel'
 import { SceneBiblePanel } from '@/components/create/SceneBiblePanel'
@@ -2680,8 +2682,8 @@ export function VisualCanvasWorkspace({
   const [isShotListBuilderOpen, setIsShotListBuilderOpen] = useState(false)
   const [isShotSequencerOpen, setIsShotSequencerOpen] = useState(false)
   const [cloudShotSequence, setCloudShotSequence] = useState<ShotSequenceState | null>(null)
-  // Confirmed experience impact: none.
-  const [, setSpatialPrevis] = useState<SpatialPrevisState | null>(null)
+  const [spatialPrevis, setSpatialPrevis] = useState<SpatialPrevisState | null>(null)
+  const [isSpatialPrevisOpen, setIsSpatialPrevisOpen] = useState(false)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [isCharacterBibleOpen, setIsCharacterBibleOpen] = useState(false)
   const [isSceneBibleOpen, setIsSceneBibleOpen] = useState(false)
@@ -3156,6 +3158,7 @@ export function VisualCanvasWorkspace({
     setIsKeyframeExtractorOpen(false)
     setIsShotListBuilderOpen(false)
     setIsShotSequencerOpen(false)
+    setIsSpatialPrevisOpen(false)
     setIsContinuityCheckerOpen(false)
     setIsCharacterBibleOpen(false)
     setIsSceneBibleOpen(false)
@@ -3201,6 +3204,10 @@ export function VisualCanvasWorkspace({
       case 'keyframe-extractor': setIsKeyframeExtractorOpen(true); break
       case 'shot-list-builder':  setIsShotListBuilderOpen(true); break
       case 'shot-sequencer':     setIsShotSequencerOpen(true); break
+      case 'spatial-previs':
+        setSpatialPrevis((current) => current ?? normalizeSpatialPrevis({ projectId }))
+        setIsSpatialPrevisOpen(true)
+        break
       case 'continuity-checker': setIsContinuityCheckerOpen(true); break
       case 'character-bible':    setIsCharacterBibleOpen(true); break
       case 'scene-bible':        setIsSceneBibleOpen(true); break
@@ -3222,7 +3229,7 @@ export function VisualCanvasWorkspace({
         }
         break
     }
-  }, [dismissInspectorForOverlay, resetCanvasModalStates])
+  }, [dismissInspectorForOverlay, projectId, resetCanvasModalStates])
 
   const openGenerationDialog = useCallback(
     (nodeId: string) => { openCanvasPanel('generation', { nodeId }) },
@@ -11291,6 +11298,7 @@ export function VisualCanvasWorkspace({
           else if (tool === 'character-bible') openCanvasPanel('character-bible')
           else if (tool === 'scene-bible') openCanvasPanel('scene-bible')
           else if (tool === 'shot-sequencer') openCanvasPanel('shot-sequencer')
+          else if (tool === 'spatial-previs') openCanvasPanel('spatial-previs')
         }}
         onOpenPromptTool={(tool) => {
           if (tool === 'batch-rewriter') openCanvasPanel('batch-rewriter')
@@ -11383,6 +11391,7 @@ export function VisualCanvasWorkspace({
     || isKeyframeExtractorOpen
     || isShotListBuilderOpen
     || isShotSequencerOpen
+    || isSpatialPrevisOpen
     || isContinuityCheckerOpen
     || isCharacterBibleOpen
     || isSceneBibleOpen
@@ -11708,6 +11717,27 @@ export function VisualCanvasWorkspace({
           }}
           onClose={() => closeCanvasPanel()}
         />
+      ) : null}
+
+      {/*
+        // Confirmed experience impact: none
+      */}
+      {isSpatialPrevisOpen && saveStatus !== 'opening' && spatialPrevis ? (
+        <div
+          className="fixed inset-0 z-[1199] flex items-end justify-center bg-black/25 sm:items-center"
+          role="presentation"
+          data-no-node-drag="true"
+          onPointerDown={(event) => { event.stopPropagation(); closeCanvasPanel() }}
+          onClick={(event) => event.stopPropagation()}
+          onWheel={(event) => event.stopPropagation()}
+          onWheelCapture={(event) => event.stopPropagation()}
+        >
+          <SpatialPrevisDirectorPanel
+            initialState={spatialPrevis}
+            onSave={handleSaveSpatialPrevis}
+            onClose={() => closeCanvasPanel()}
+          />
+        </div>
       ) : null}
 
       {isContinuityCheckerOpen && saveStatus !== 'opening' ? (

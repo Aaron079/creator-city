@@ -34,6 +34,7 @@ export type CanvasModalId =
   | 'continuity-checker'
   | 'batch-rewriter'
   | 'shot-sequencer'
+  | 'spatial-previs'
   | 'remove-background'
   | 'hd-reconstruction'
   | 'storyboard-reference-extractor'

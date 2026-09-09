@@ -62,6 +62,7 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
   const [currentTimeSec, setCurrentTimeSec] = useState(() => clampSpatialPrevisTime(0, initialState.masterTake.durationSec))
   const [beatError, setBeatError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const saveGuard = useRef(createSpatialPrevisSaveGuard())
   const tabId = useId()
@@ -107,8 +108,10 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
     if (saveGuard.current.isPending()) return
     setIsSaving(true)
     setSaveError(null)
+    setSaveSuccess(null)
     const result = await saveGuard.current.save(state, onSave)
     setIsSaving(false)
+    if (result === 'success') setSaveSuccess('预演已保存')
     if (result === 'failed') setSaveError('保存预演失败。')
   }
 
@@ -171,6 +174,7 @@ export function SpatialPrevisDirectorPanel({ initialState, onSave, onClose }: Sp
 
         {beatError ? <p role="alert" className="text-[11px] text-amber-200/80">{beatError}</p> : null}
         {saveError ? <p role="alert" className="text-[11px] text-amber-200/80">{saveError}</p> : null}
+        {saveSuccess ? <p role="status" className="text-[11px] text-emerald-200/80">{saveSuccess}</p> : null}
 
         <section aria-label="覆盖风险" className="border-t border-white/[0.08] pt-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">覆盖风险</p>

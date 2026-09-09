@@ -20,7 +20,7 @@ interface CanvasToolDockProps {
   onSetAddMenuOpen: (open: boolean) => void
   hasActiveGenerations: boolean
   onStopAllGenerations: () => void
-  onOpenDirectorTool: (tool: 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'shot-sequencer') => void
+  onOpenDirectorTool: (tool: 'shot-list-builder' | 'continuity-checker' | 'character-bible' | 'scene-bible' | 'shot-sequencer' | 'spatial-previs') => void
   onOpenPromptTool: (tool: 'batch-rewriter') => void
 }
 
@@ -183,6 +183,14 @@ export function CanvasToolDock({
                   >
                     <span className="text-[13px]">🎞</span>
                     <span>镜头编排器</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-indigo-300/80 transition hover:bg-indigo-500/[0.06] hover:text-indigo-200"
+                    onClick={() => { setOpenMenu(null); onOpenDirectorTool('spatial-previs') }}
+                  >
+                    <span className="text-[13px]">3D</span>
+                    <span>空间预演</span>
                   </button>
                 </motion.div>
               ) : null}
