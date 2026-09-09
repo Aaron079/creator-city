@@ -37,7 +37,7 @@ test('opens spatial previs through the modal coordinator with a non-persisted fi
   const mountSource = sourceBetween(workspaceSource, "{isSpatialPrevisOpen && saveStatus !== 'opening'", '{isContinuityCheckerOpen')
   assert.match(
     mountSource,
-    /className="fixed inset-0 z-\[1199\] flex items-end justify-center bg-black\/25 sm:items-center"/,
+    /className="fixed inset-0 z-\[2601\] flex items-end justify-center bg-black\/25 sm:items-center"/,
   )
   assert.match(mountSource, /data-no-node-drag="true"/)
   assert.match(mountSource, /initialState=\{spatialPrevis\}/)

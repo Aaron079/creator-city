@@ -11724,7 +11724,7 @@ export function VisualCanvasWorkspace({
       */}
       {isSpatialPrevisOpen && saveStatus !== 'opening' && spatialPrevis ? (
         <div
-          className="fixed inset-0 z-[1199] flex items-end justify-center bg-black/25 sm:items-center"
+          className="fixed inset-0 z-[2601] flex items-end justify-center bg-black/25 sm:items-center"
           role="presentation"
           data-no-node-drag="true"
           onPointerDown={(event) => { event.stopPropagation(); closeCanvasPanel() }}
