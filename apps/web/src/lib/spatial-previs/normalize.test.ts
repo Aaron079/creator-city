@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { applyBeatPatch, normalizeSpatialPrevis } from './normalize'
-import type { SpatialPrevisScene } from './types'
+import type { AspectRatio, SpatialPrevisScene } from './types'
 
 // @ts-expect-error verified coverage only permits full camera freedom
 const incompatibleCoverage: SpatialPrevisScene['coverage'] = {
@@ -10,6 +10,11 @@ const incompatibleCoverage: SpatialPrevisScene['coverage'] = {
 }
 
 void incompatibleCoverage
+
+// @ts-expect-error spatial previs supports only canonical export ratios
+const unsupportedAspectRatio: AspectRatio = '4:3'
+
+void unsupportedAspectRatio
 
 describe('spatial previs normalization', () => {
   test('applies a beat patch to the existing shared camera track', () => {
@@ -65,6 +70,71 @@ describe('spatial previs normalization', () => {
       mode: 'constrained',
       cameraFreedom: 'corridor-only',
     })
+  })
+
+  test('initializes the default Entry beat label', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+
+    assert.equal(state.masterTake.beats[0]?.label, 'Entry')
+  })
+
+  test('preserves an allowed aspect ratio', () => {
+    const state = normalizeSpatialPrevis({
+      projectId: 'project-1',
+      aspectRatio: '9:16',
+    })
+
+    assert.equal(state.masterTake.aspectRatio, '9:16')
+  })
+
+  test('patches a camera keyframe at a decimal beat midpoint', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const beat = state.masterTake.beats[0]
+    assert.ok(beat)
+    const decimalState = {
+      ...state,
+      masterTake: {
+        ...state.masterTake,
+        beats: [{ ...beat, startSec: 0.1, endSec: 0.3 }],
+        cameraTrack: {
+          ...state.masterTake.cameraTrack,
+          keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.id === 'camera-mid'
+            ? { ...keyframe, timeSec: 0.20000000000000004 }
+            : keyframe),
+        },
+      },
+    }
+
+    const patched = applyBeatPatch(decimalState, beat.id, {
+      position: { x: 2, y: 3, z: 4 },
+      target: { x: 0, y: 1, z: 0 },
+    })
+
+    assert.deepEqual(patched.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.id === 'camera-mid')?.position, { x: 2, y: 3, z: 4 })
+  })
+
+  test('rejects duplicate camera keyframes at a beat midpoint', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const midpointKeyframe = state.masterTake.cameraTrack.keyframes[1]
+    assert.ok(midpointKeyframe)
+    const duplicateState = {
+      ...state,
+      masterTake: {
+        ...state.masterTake,
+        cameraTrack: {
+          ...state.masterTake.cameraTrack,
+          keyframes: [...state.masterTake.cameraTrack.keyframes, { ...midpointKeyframe, id: 'camera-mid-duplicate' }],
+        },
+      },
+    }
+
+    assert.throws(
+      () => applyBeatPatch(duplicateState, 'beat-entry', {
+        position: { x: 2, y: 3, z: 4 },
+        target: { x: 0, y: 1, z: 0 },
+      }),
+      /Ambiguous camera keyframes at midpoint for beat: beat-entry/,
+    )
   })
 
   test('defaults and clamps duration without mutating the source input', () => {

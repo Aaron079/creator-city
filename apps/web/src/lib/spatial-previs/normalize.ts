@@ -10,6 +10,7 @@ import type {
 const DEFAULT_DURATION_SEC = 30
 const MIN_DURATION_SEC = 5
 const MAX_DURATION_SEC = 180
+const MIDPOINT_EPSILON = 1e-6
 const DEFAULT_POSITION = { x: 0, y: 1.6, z: 8 }
 const DEFAULT_TARGET = { x: 0, y: 1.6, z: 0 }
 
@@ -63,7 +64,7 @@ export function normalizeSpatialPrevis(input: SpatialPrevisInput): SpatialPrevis
       aspectRatio: input.aspectRatio ?? '16:9',
       actorTracks: [],
       cameraTrack: createCameraTrack(durationSec),
-      beats: [{ id: 'beat-entry', startSec: 0, endSec: durationSec }],
+      beats: [{ id: 'beat-entry', label: 'Entry', startSec: 0, endSec: durationSec }],
     },
     editorMode: input.editorMode ?? 'continuous',
     updatedAt: input.updatedAt ?? new Date().toISOString(),
@@ -75,18 +76,21 @@ export function applyBeatPatch(state: SpatialPrevisState, beatId: string, patch:
   if (!beat) throw new Error(`Unknown spatial previs beat: ${beatId}`)
 
   const midpoint = (beat.startSec + beat.endSec) / 2
-  let updated = false
+  const matchingKeyframes = state.masterTake.cameraTrack.keyframes.filter(
+    (keyframe) => Math.abs(keyframe.timeSec - midpoint) <= MIDPOINT_EPSILON,
+  )
+  if (matchingKeyframes.length === 0) throw new Error(`No camera keyframe at midpoint for beat: ${beatId}`)
+  if (matchingKeyframes.length > 1) throw new Error(`Ambiguous camera keyframes at midpoint for beat: ${beatId}`)
+
+  const [matchingKeyframe] = matchingKeyframes
   const keyframes = state.masterTake.cameraTrack.keyframes.map((keyframe) => {
-    if (keyframe.timeSec !== midpoint) return keyframe
-    updated = true
+    if (keyframe !== matchingKeyframe) return keyframe
     return {
       ...keyframe,
       position: { ...patch.position },
       target: { ...patch.target },
     }
   })
-
-  if (!updated) throw new Error(`No camera keyframe at midpoint for beat: ${beatId}`)
 
   return {
     ...state,

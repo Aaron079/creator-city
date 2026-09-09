@@ -8,6 +8,8 @@ export type CoverageMode = 'verified' | 'constrained' | 'unavailable'
 
 export type SpatialPrevisMode = 'continuous' | 'beats'
 
+export type AspectRatio = '16:9' | '9:16' | '1:1'
+
 export type SpatialPrevisSourceMode = 'single-image-exterior' | 'multi-view' | 'video-scan' | 'manual'
 
 export type CameraFreedom = 'corridor-only' | 'full' | 'disabled'
@@ -43,6 +45,7 @@ export type ActorTrack = {
 
 export type SpatialPrevisBeat = {
   id: string
+  label: string
   startSec: number
   endSec: number
 }
@@ -50,7 +53,7 @@ export type SpatialPrevisBeat = {
 export type MasterTake = {
   id: string
   durationSec: number
-  aspectRatio: string
+  aspectRatio: AspectRatio
   actorTracks: ActorTrack[]
   cameraTrack: CameraTrack
   beats: SpatialPrevisBeat[]
@@ -79,7 +82,7 @@ export type SpatialPrevisInput = {
   projectId: string
   sourceMode?: SpatialPrevisSourceMode
   durationSec?: number
-  aspectRatio?: string
+  aspectRatio?: AspectRatio
   editorMode?: SpatialPrevisMode
   updatedAt?: string
 }
