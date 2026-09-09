@@ -10,7 +10,7 @@ export type SpatialPrevisMode = 'continuous' | 'beats'
 
 export type SpatialPrevisSourceMode = 'single-image-exterior' | 'multi-view' | 'video-scan' | 'manual'
 
-export type CameraFreedom = 'corridor-only' | 'full'
+export type CameraFreedom = 'corridor-only' | 'full' | 'disabled'
 
 export type CameraIntent = 'push' | 'pull' | 'pan-tilt' | 'dolly' | 'follow' | 'crane' | 'static'
 
@@ -23,6 +23,19 @@ export type CameraKeyframe = {
   intent: CameraIntent
 }
 
+export type ActorKeyframe = {
+  id: string
+  timeSec: number
+  position: Vec3
+  action: string
+}
+
+export type ActorTrack = {
+  id: string
+  anchorId: string
+  keyframes: ActorKeyframe[]
+}
+
 export type SpatialPrevisBeat = {
   id: string
   startSec: number
@@ -33,18 +46,20 @@ export type MasterTake = {
   id: string
   durationSec: number
   aspectRatio: string
-  actorTracks: string[]
+  actorTracks: ActorTrack[]
   cameraTrack: CameraKeyframe[]
   beats: SpatialPrevisBeat[]
 }
 
 export type SpatialPrevisScene = {
   sourceMode: SpatialPrevisSourceMode
-  coverage: {
-    mode: CoverageMode
-    cameraFreedom: CameraFreedom
-  }
+  coverage: SpatialCoverage
 }
+
+export type SpatialCoverage =
+  | { mode: 'verified'; cameraFreedom: 'full' }
+  | { mode: 'constrained'; cameraFreedom: 'corridor-only' }
+  | { mode: 'unavailable'; cameraFreedom: 'disabled' }
 
 export type SpatialPrevisState = {
   version: 1

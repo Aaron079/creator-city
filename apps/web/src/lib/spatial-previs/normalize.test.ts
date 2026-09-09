@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { applyBeatPatch, normalizeSpatialPrevis } from './normalize'
+import type { SpatialPrevisScene } from './types'
+
+// @ts-expect-error verified coverage only permits full camera freedom
+const incompatibleCoverage: SpatialPrevisScene['coverage'] = {
+  mode: 'verified',
+  cameraFreedom: 'corridor-only',
+}
+
+void incompatibleCoverage
 
 describe('spatial previs normalization', () => {
   test('applies a beat patch to the existing shared camera track', () => {
@@ -25,13 +34,32 @@ describe('spatial previs normalization', () => {
     assert.deepEqual(state.masterTake.cameraTrack.find((item) => item.timeSec === midpoint)?.position, { x: 0, y: 1.6, z: 8 })
   })
 
-  test('constrains a single-image exterior scene to its camera corridor', () => {
-    const state = normalizeSpatialPrevis({
+  test('maps scene source coverage to its supported camera freedom', () => {
+    assert.deepEqual(normalizeSpatialPrevis({
+      projectId: 'project-1',
+      sourceMode: 'manual',
+    }).scene.coverage, {
+      mode: 'constrained',
+      cameraFreedom: 'corridor-only',
+    })
+    assert.deepEqual(normalizeSpatialPrevis({
+      projectId: 'project-1',
+      sourceMode: 'multi-view',
+    }).scene.coverage, {
+      mode: 'verified',
+      cameraFreedom: 'full',
+    })
+    assert.deepEqual(normalizeSpatialPrevis({
+      projectId: 'project-1',
+      sourceMode: 'video-scan',
+    }).scene.coverage, {
+      mode: 'verified',
+      cameraFreedom: 'full',
+    })
+    assert.deepEqual(normalizeSpatialPrevis({
       projectId: 'project-1',
       sourceMode: 'single-image-exterior',
-    })
-
-    assert.deepEqual(state.scene.coverage, {
+    }).scene.coverage, {
       mode: 'constrained',
       cameraFreedom: 'corridor-only',
     })
