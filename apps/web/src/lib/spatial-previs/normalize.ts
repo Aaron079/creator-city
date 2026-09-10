@@ -54,6 +54,31 @@ function createCameraTrack(durationSec: number): CameraTrack {
   }
 }
 
+export function addDefaultActorTrack(state: SpatialPrevisState): SpatialPrevisState {
+  const actorNumber = state.masterTake.actorTracks.length + 1
+  const durationSec = state.masterTake.durationSec
+  const midpoint = durationSec / 2
+
+  return {
+    ...state,
+    masterTake: {
+      ...state.masterTake,
+      actorTracks: [
+        ...state.masterTake.actorTracks,
+        {
+          id: `actor-track-${actorNumber}`,
+          anchorId: `actor-${actorNumber}`,
+          keyframes: [
+            { id: `actor-${actorNumber}-start`, timeSec: 0, position: { x: -2, y: 0, z: 1 }, action: 'idle' },
+            { id: `actor-${actorNumber}-mid`, timeSec: midpoint, position: { x: 0, y: 0, z: 0 }, action: 'walk' },
+            { id: `actor-${actorNumber}-end`, timeSec: durationSec, position: { x: 2, y: 0, z: -1 }, action: 'walk' },
+          ],
+        },
+      ],
+    },
+  }
+}
+
 export function normalizeSpatialPrevis(input: SpatialPrevisInput): SpatialPrevisState {
   const durationSec = normalizeDuration(input.durationSec)
   const sourceMode = input.sourceMode ?? 'manual'

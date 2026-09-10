@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { applyBeatPatch, normalizeSpatialPrevis } from './normalize'
+import { addDefaultActorTrack, applyBeatPatch, normalizeSpatialPrevis } from './normalize'
 import type { AspectRatio, SpatialPrevisScene } from './types'
 
 // @ts-expect-error verified coverage only permits full camera freedom
@@ -92,6 +92,24 @@ describe('spatial previs normalization', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
 
     assert.equal(state.masterTake.beats[0]?.label, 'Entry')
+  })
+
+  test('adds an editable actor route without mutating the current previs state', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1', durationSec: 10 })
+
+    const next = addDefaultActorTrack(state)
+
+    assert.equal(state.masterTake.actorTracks.length, 0)
+    assert.equal(next.masterTake.actorTracks.length, 1)
+    assert.deepEqual(next.masterTake.actorTracks[0], {
+      id: 'actor-track-1',
+      anchorId: 'actor-1',
+      keyframes: [
+        { id: 'actor-1-start', timeSec: 0, position: { x: -2, y: 0, z: 1 }, action: 'idle' },
+        { id: 'actor-1-mid', timeSec: 5, position: { x: 0, y: 0, z: 0 }, action: 'walk' },
+        { id: 'actor-1-end', timeSec: 10, position: { x: 2, y: 0, z: -1 }, action: 'walk' },
+      ],
+    })
   })
 
   test('preserves an allowed aspect ratio', () => {

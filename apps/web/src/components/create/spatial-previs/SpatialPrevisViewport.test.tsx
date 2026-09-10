@@ -1024,6 +1024,15 @@ describe('SpatialPrevisViewport', () => {
     assert.match(markup, /value="actor-track-support"/)
   })
 
+  test('offers a compact add-person control when the previs has no actor track', () => {
+    const markup = renderToStaticMarkup(
+      createElement(SpatialPrevisViewport, { state: stateWithoutActors(), currentTimeSec: 6, onChange: () => undefined }),
+    )
+
+    assert.match(markup, /aria-label="添加人物"/)
+    assert.match(markup, />添加人物</)
+  })
+
   test('renders accessible selected-keyframe nudge buttons and disables them without an exact keyframe', () => {
     const markup = renderToStaticMarkup(
       createElement(SpatialPrevisViewport, { state, currentTimeSec: 6, onChange: () => undefined }),

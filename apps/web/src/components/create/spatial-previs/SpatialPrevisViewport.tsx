@@ -5,6 +5,7 @@ import { Line } from '@react-three/drei/core/Line'
 import { OrbitControls } from '@react-three/drei/core/OrbitControls'
 import { PerspectiveCamera as DreiPerspectiveCamera } from '@react-three/drei/core/PerspectiveCamera'
 import { Html } from '@react-three/drei/web/Html'
+import { UserPlus } from 'lucide-react'
 import * as React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Plane, Vector3 } from 'three'
@@ -15,6 +16,7 @@ import {
   applyCameraTargetDrag,
   applyObjectHeightDrag,
 } from '@/lib/spatial-previs/direct-manipulation'
+import { addDefaultActorTrack } from '@/lib/spatial-previs/normalize'
 import type {
   ActorTrack,
   CameraKeyframe,
@@ -751,6 +753,16 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
     setCursor: setDirectCursor,
   }), [beginDirectDrag, endDirectDrag, moveDirectDrag, setDirectCursor])
 
+  const addActor = useCallback(() => {
+    if (disabled) return
+    const next = addDefaultActorTrack(state)
+    const nextActor = next.masterTake.actorTracks.at(-1)
+    if (!nextActor) return
+    setSelectedActorTrackId(nextActor.id)
+    setSelection('actor')
+    onChange(next)
+  }, [disabled, onChange, state])
+
   return (
     <section data-spatial-previs-viewport="true" className="flex min-h-[470px] w-full flex-col overflow-hidden rounded-lg border border-white/12 bg-[#0b1014] text-white shadow-xl">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-3 py-2.5">
@@ -770,6 +782,16 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
               ))}
             </select>
           ) : null}
+          <button
+            type="button"
+            aria-label="添加人物"
+            disabled={disabled}
+            onClick={addActor}
+            className="inline-flex items-center gap-1 rounded-md border border-white/12 bg-white/[0.025] px-2 py-1 text-[11px] font-medium text-white/60 transition hover:border-cyan-200/35 hover:bg-cyan-200/[0.09] hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            <UserPlus size={13} aria-hidden="true" />
+            添加人物
+          </button>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="inline-flex overflow-hidden rounded-md border border-white/12" role="group" aria-label="直接操控对象">
