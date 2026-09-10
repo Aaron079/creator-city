@@ -56,3 +56,13 @@ test('keeps an explicit spatial save conflict non-destructive and reloads only f
   assert.match(reloadSource, /setSpatialPrevis\(next\)/)
   assert.match(reloadSource, /setSpatialPrevisPanelRevision\(\(current\) => current \+ 1\)/)
 })
+
+test('keeps the spatial previs overlay non-closing so the guarded panel close button is the single close path', () => {
+  const mountSource = sourceBetween(
+    "{isSpatialPrevisOpen && saveStatus !== 'opening'",
+    '{isContinuityCheckerOpen',
+  )
+
+  assert.match(mountSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/)
+  assert.equal((mountSource.match(/closeCanvasPanel\(\)/g) ?? []).length, 1)
+})

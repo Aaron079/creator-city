@@ -11893,7 +11893,7 @@ export function VisualCanvasWorkspace({
           role="presentation"
           data-spatial-previs-overlay="true"
           data-no-node-drag="true"
-          onPointerDown={(event) => { event.stopPropagation(); closeCanvasPanel() }}
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
         >
