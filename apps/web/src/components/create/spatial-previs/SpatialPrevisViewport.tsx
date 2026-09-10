@@ -1,6 +1,6 @@
 'use client'
 
-import { Canvas, type ThreeEvent } from '@react-three/fiber'
+import { Canvas, type ThreeEvent, useThree } from '@react-three/fiber'
 import { Line } from '@react-three/drei/core/Line'
 import { OrbitControls } from '@react-three/drei/core/OrbitControls'
 import { PerspectiveCamera as DreiPerspectiveCamera } from '@react-three/drei/core/PerspectiveCamera'
@@ -22,7 +22,7 @@ import type {
   Vec3,
   WhiteboxEntity,
 } from '@/lib/spatial-previs/types'
-import { sampleCamera } from '@/lib/spatial-previs/sampler'
+import { sampleActor, sampleCamera } from '@/lib/spatial-previs/sampler'
 import { SpatialCameraControlStrip } from './SpatialCameraControlStrip'
 
 const KEYFRAME_EPSILON = 1e-6
@@ -119,7 +119,7 @@ function exactKeyframe<T extends { timeSec: number }>(keyframes: T[], timeSec: n
 }
 
 function initialActorPosition(track: ActorTrack, currentTimeSec: number) {
-  return exactKeyframe(track.keyframes, currentTimeSec)?.position ?? track.keyframes[0]?.position ?? { x: 0, y: 0, z: 0 }
+  return track.keyframes.length > 0 ? sampleActor(track, currentTimeSec).position : { x: 0, y: 0, z: 0 }
 }
 
 function nudgeDelta(axis: SpatialNudgeAxis): Vec3 {
@@ -394,19 +394,34 @@ function WorldAnchorMarker({ anchor }: { anchor: WorldAnchor }) {
 }
 
 function pointerHandlers(kind: DirectDragKind, startY: number, bindings: DirectDragBindings): DirectPointerHandlers {
+  const finish = (event: ThreeEvent<PointerEvent>) => bindings.end(event)
+
   return {
     onPointerDown: (event) => {
       bindings.onDragStateChange(true)
       bindings.begin(kind, event, startY)
     },
     onPointerMove: (event) => bindings.move(kind, event),
-    onPointerUp: (event) => {
-      bindings.end(event)
-      bindings.onDragStateChange(false)
-    },
+    onPointerUp: finish,
     onPointerOver: () => bindings.setCursor(kind === 'actor-height' || kind === 'camera-height' ? 'ns-resize' : kind === 'camera-target' ? 'crosshair' : 'grab'),
     onPointerOut: () => bindings.setCursor('grab'),
   }
+}
+
+function DirectDragCancellationGuard({ onCancel }: { onCancel: (pointerId: number) => void }) {
+  const canvas = useThree((state) => state.gl.domElement)
+
+  useEffect(() => {
+    const cancel = (event: PointerEvent) => onCancel(event.pointerId)
+    canvas.addEventListener('pointercancel', cancel)
+    canvas.addEventListener('lostpointercapture', cancel)
+    return () => {
+      canvas.removeEventListener('pointercancel', cancel)
+      canvas.removeEventListener('lostpointercapture', cancel)
+    }
+  }, [canvas, onCancel])
+
+  return null
 }
 
 function DirectGroundDrag({
@@ -586,6 +601,7 @@ function WorldCanvas(props: {
   isObjectDragging: boolean
   cursor: 'grab' | 'grabbing' | 'ns-resize' | 'crosshair'
   directDragBindings: DirectDragBindings
+  cancelDirectDrag: (pointerId: number) => void
 }) {
   return (
     <Canvas
@@ -596,6 +612,7 @@ function WorldCanvas(props: {
       className="absolute inset-0 h-full w-full"
       style={{ position: 'absolute', inset: 0, cursor: props.cursor }}
     >
+      <DirectDragCancellationGuard onCancel={props.cancelDirectDrag} />
       <SpatialPrevisWorldGeometry {...props} showOverviewGuides />
       <OrbitControls enabled={!props.interactionDisabled && !props.isObjectDragging} makeDefault enableDamping target={WORLD_CAMERA_TARGET} maxPolarAngle={Math.PI * 0.48} />
     </Canvas>
@@ -706,16 +723,25 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
     onChange(applyCameraTargetDrag(state, currentTimeSec, { x: point.x, y: drag.startY, z: point.z }))
   }, [currentTimeSec, onChange, state])
 
+  const finishDirectDrag = useCallback((pointerId: number, target?: { releasePointerCapture?: (pointerId: number) => void }) => {
+    const drag = directDragRef.current
+    if (!drag || drag.pointerId !== pointerId) return
+    directDragRef.current = null
+    setIsObjectDragging(false)
+    setWorldCursor('grab')
+    target?.releasePointerCapture?.(pointerId)
+  }, [])
+
   const endDirectDrag = useCallback((event: ThreeEvent<PointerEvent>) => {
     const drag = directDragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
     event.stopPropagation()
-    const target = event.target as unknown as { releasePointerCapture?: (pointerId: number) => void }
-    target.releasePointerCapture?.(event.pointerId)
-    directDragRef.current = null
-    setIsObjectDragging(false)
-    setWorldCursor('grab')
-  }, [])
+    finishDirectDrag(event.pointerId, event.target as unknown as { releasePointerCapture?: (pointerId: number) => void })
+  }, [finishDirectDrag])
+
+  const cancelDirectDrag = useCallback((pointerId: number) => {
+    finishDirectDrag(pointerId)
+  }, [finishDirectDrag])
 
   const directDragBindings = useMemo<DirectDragBindings>(() => ({
     begin: beginDirectDrag,
@@ -788,6 +814,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
               isObjectDragging={isObjectDragging}
               cursor={worldCursor}
               directDragBindings={directDragBindings}
+              cancelDirectDrag={cancelDirectDrag}
             />
           ) : <div className="h-full w-full" aria-hidden="true" />}
         </div>

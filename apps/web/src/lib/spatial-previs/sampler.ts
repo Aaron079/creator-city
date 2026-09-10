@@ -1,4 +1,4 @@
-import type { CameraKeyframe, Vec3 } from './types'
+import type { ActorKeyframe, ActorTrack, CameraKeyframe, Vec3 } from './types'
 
 function interpolateVec3(start: Vec3, end: Vec3, progress: number): Vec3 {
   return {
@@ -13,6 +13,40 @@ function cloneKeyframe(keyframe: CameraKeyframe): CameraKeyframe {
     ...keyframe,
     position: { ...keyframe.position },
     target: { ...keyframe.target },
+  }
+}
+
+function cloneActorKeyframe(keyframe: ActorKeyframe): ActorKeyframe {
+  return {
+    ...keyframe,
+    position: { ...keyframe.position },
+  }
+}
+
+export function sampleActor(track: ActorTrack, timeSec: number): ActorKeyframe {
+  const keyframes = track.keyframes
+    .map((keyframe, index) => ({ keyframe, index }))
+    .sort((left, right) => left.keyframe.timeSec - right.keyframe.timeSec || left.index - right.index)
+    .map(({ keyframe }) => keyframe)
+  const first = keyframes[0]
+  const last = keyframes.at(-1)
+  if (!first || !last) throw new Error(`Cannot sample an empty actor track: ${track.id}`)
+  if (timeSec < first.timeSec) return cloneActorKeyframe(first)
+  if (timeSec >= last.timeSec) return cloneActorKeyframe(last)
+
+  let startIndex = keyframes.length - 1
+  while (keyframes[startIndex]!.timeSec > timeSec) startIndex -= 1
+
+  const start = keyframes[startIndex]
+  const end = keyframes[startIndex + 1]
+  if (!start || !end) throw new Error(`Cannot sample actor track segment: ${track.id}`)
+  if (start.timeSec === timeSec) return cloneActorKeyframe(start)
+
+  const progress = (timeSec - start.timeSec) / (end.timeSec - start.timeSec)
+  return {
+    ...cloneActorKeyframe(start),
+    timeSec,
+    position: interpolateVec3(start.position, end.position, progress),
   }
 }
 

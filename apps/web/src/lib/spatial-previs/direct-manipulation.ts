@@ -1,5 +1,5 @@
-import { sampleCamera } from './sampler'
-import type { ActorKeyframe, ActorTrack, CameraKeyframe, SpatialPrevisState, Vec3 } from './types'
+import { sampleActor, sampleCamera } from './sampler'
+import type { ActorKeyframe, CameraKeyframe, SpatialPrevisState, Vec3 } from './types'
 
 const FACING_METADATA = /\s*\|\s*facing:\{.*\}$/
 
@@ -16,44 +16,6 @@ function exactKeyframe<T extends { timeSec: number }>(keyframes: T[], timeSec: n
   }
 
   return match
-}
-
-function cloneActorKeyframe(keyframe: ActorKeyframe): ActorKeyframe {
-  return {
-    ...keyframe,
-    position: { ...keyframe.position },
-  }
-}
-
-function sampleActor(track: ActorTrack, timeSec: number): ActorKeyframe {
-  const keyframes = track.keyframes
-    .map((keyframe, index) => ({ keyframe, index }))
-    .sort((left, right) => left.keyframe.timeSec - right.keyframe.timeSec || left.index - right.index)
-    .map(({ keyframe }) => keyframe)
-  const first = keyframes[0]
-  const last = keyframes.at(-1)
-  if (!first || !last) throw new Error(`Cannot sample an empty actor track: ${track.id}`)
-  if (timeSec < first.timeSec) return cloneActorKeyframe(first)
-  if (timeSec >= last.timeSec) return cloneActorKeyframe(last)
-
-  let startIndex = keyframes.length - 1
-  while (keyframes[startIndex]!.timeSec > timeSec) startIndex -= 1
-
-  const start = keyframes[startIndex]
-  const end = keyframes[startIndex + 1]
-  if (!start || !end) throw new Error(`Cannot sample actor track segment: ${track.id}`)
-  if (start.timeSec === timeSec) return cloneActorKeyframe(start)
-
-  const progress = (timeSec - start.timeSec) / (end.timeSec - start.timeSec)
-  return {
-    ...cloneActorKeyframe(start),
-    timeSec,
-    position: {
-      x: start.position.x + (end.position.x - start.position.x) * progress,
-      y: start.position.y + (end.position.y - start.position.y) * progress,
-      z: start.position.z + (end.position.z - start.position.z) * progress,
-    },
-  }
 }
 
 function ensureActorKeyframeAt(

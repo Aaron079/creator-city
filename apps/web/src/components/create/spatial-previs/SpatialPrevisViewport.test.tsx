@@ -767,6 +767,43 @@ test('raises the selected actor through an actual overview-canvas pointer drag',
   }
 })
 
+test('releases an actual overview pointer drag when the browser cancels it', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    await mountRenderedViewport(page, stateWithWhitebox(), 2, false)
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+    const actorStart = worldPointInCanvas({ x: 0, y: 0.5, z: -1 }, overviewCanvas)
+    const canvas = page.locator('[data-spatial-previs-viewport="true"] canvas').first()
+
+    await page.mouse.move(actorStart.x, actorStart.y)
+    await page.mouse.down()
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas')
+      return canvas && getComputedStyle(canvas.parentElement ?? canvas).cursor === 'grabbing'
+    })
+    await canvas.evaluate((element, point) => {
+      element.dispatchEvent(new PointerEvent('pointercancel', {
+        bubbles: true,
+        cancelable: true,
+        clientX: point.x,
+        clientY: point.y,
+        pointerId: 1,
+      }))
+    }, actorStart)
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas')
+      return canvas && getComputedStyle(canvas.parentElement ?? canvas).cursor === 'grab'
+    })
+  } finally {
+    await page.mouse.up().catch(() => undefined)
+    await page.close()
+  }
+})
+
 test('moves the selected physical camera over the overview ground with a pointer drag', async () => {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -907,6 +944,9 @@ describe('SpatialPrevisViewport', () => {
     assert.match(viewportSource, /function VerticalDragGuide/)
     assert.match(viewportSource, /function CameraTargetDragHandle/)
     assert.match(viewportSource, /function pointerHandlers/)
+    assert.match(viewportSource, /function DirectDragCancellationGuard/)
+    assert.match(viewportSource, /addEventListener\('pointercancel'/)
+    assert.match(viewportSource, /addEventListener\('lostpointercapture'/)
     assert.match(viewportSource, /spatialDirectHandle: 'vertical'/)
     assert.match(viewportSource, /spatialDirectHandle: 'camera-target'/)
     assert.match(viewportSource, /event\.ray\.intersectPlane/)

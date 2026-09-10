@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { sampleCamera } from './sampler'
-import type { CameraKeyframe } from './types'
+import { sampleActor, sampleCamera } from './sampler'
+import type { ActorTrack, CameraKeyframe } from './types'
 
 function keyframe(
   id: string,
@@ -139,5 +139,27 @@ describe('camera sampling', () => {
 
   test('rejects an empty camera track', () => {
     assert.throws(() => sampleCamera([], 0), /Cannot sample an empty camera track/)
+  })
+})
+
+describe('actor sampling', () => {
+  test('interpolates between blocking keyframes without mutating the track', () => {
+    const track: ActorTrack = {
+      id: 'actor-1',
+      anchorId: 'performer-1',
+      keyframes: [
+        { id: 'start', timeSec: 0, position: { x: -2, y: 0, z: 1 }, action: 'enter' },
+        { id: 'end', timeSec: 6, position: { x: 0, y: 1, z: -1 }, action: 'turn' },
+      ],
+    }
+    const source = structuredClone(track)
+
+    assert.deepEqual(sampleActor(track, 3), {
+      id: 'start',
+      timeSec: 3,
+      position: { x: -1, y: 0.5, z: 0 },
+      action: 'enter',
+    })
+    assert.deepEqual(track, source)
   })
 })
