@@ -36,39 +36,69 @@ function entity(
   }
 }
 
-function floorFor(reference: SpatialSceneReference): WhiteboxEntity {
-  return entity(reference, `floor-${reference.id}`, 'floor', { ...FLOOR.position }, { ...FLOOR.size })
+function floorFor(
+  reference: SpatialSceneReference,
+  index: number,
+  proxies: readonly WhiteboxEntity[],
+): WhiteboxEntity {
+  const minX = Math.min(
+    FLOOR.position.x - FLOOR.size.x / 2,
+    ...proxies.map((proxy) => proxy.position.x - proxy.size.x / 2),
+  )
+  const maxX = Math.max(
+    FLOOR.position.x + FLOOR.size.x / 2,
+    ...proxies.map((proxy) => proxy.position.x + proxy.size.x / 2),
+  )
+  const minZ = Math.min(
+    FLOOR.position.z - FLOOR.size.z / 2,
+    ...proxies.map((proxy) => proxy.position.z - proxy.size.z / 2),
+  )
+  const maxZ = Math.max(
+    FLOOR.position.z + FLOOR.size.z / 2,
+    ...proxies.map((proxy) => proxy.position.z + proxy.size.z / 2),
+  )
+
+  return entity(reference, `floor-${reference.id}-${index}`, 'floor', {
+    ...FLOOR.position,
+    x: (minX + maxX) / 2,
+    z: (minZ + maxZ) / 2,
+  }, {
+    ...FLOOR.size,
+    x: maxX - minX,
+    z: maxZ - minZ,
+  })
 }
 
 function referencePlaneFor(reference: SpatialSceneReference, index: number): WhiteboxEntity {
-  return entity(reference, `reference-plane-${reference.id}`, 'referencePlane', {
+  return entity(reference, `reference-plane-${reference.id}-${index}`, 'referencePlane', {
     ...REFERENCE_PLANE.position,
     x: REFERENCE_PLANE.position.x + index * REFERENCE_OFFSET_X,
   }, { ...REFERENCE_PLANE.size })
 }
 
 function volumeFor(reference: SpatialSceneReference, index: number): WhiteboxEntity {
-  return entity(reference, `volume-${reference.id}`, 'volume', {
+  return entity(reference, `volume-${reference.id}-${index}`, 'volume', {
     ...VOLUME.position,
     x: VOLUME.position.x + index * REFERENCE_OFFSET_X,
   }, { ...VOLUME.size })
 }
 
 function wallFor(reference: SpatialSceneReference, index: number): WhiteboxEntity {
-  return entity(reference, `wall-${reference.id}`, 'wall', {
+  return entity(reference, `wall-${reference.id}-${index}`, 'wall', {
     ...WALL.position,
     x: WALL.position.x + index * REFERENCE_OFFSET_X,
   }, { ...WALL.size })
 }
 
 export function buildWhiteboxDraft(references: readonly SpatialSceneReference[]) {
+  const proxies = references.flatMap((reference, index) => [
+    referencePlaneFor(reference, index),
+    volumeFor(reference, index),
+    wallFor(reference, index),
+  ])
+
   return {
-    entities: references.flatMap((reference, index) => [
-      index === 0 ? floorFor(reference) : null,
-      referencePlaneFor(reference, index),
-      volumeFor(reference, index),
-      wallFor(reference, index),
-    ].filter((item): item is WhiteboxEntity => item !== null)),
+    entities: references.length === 0 ? [] : [floorFor(references[0]!, 0, proxies), ...proxies],
   }
 }
 
@@ -76,12 +106,14 @@ export function replaceWhiteboxDraft(
   state: SpatialPrevisState,
   references: SpatialSceneReference[],
 ): SpatialPrevisState {
+  const nextReferences = references.map((reference) => ({ ...reference }))
+
   return {
     ...state,
     scene: {
       ...state.scene,
-      references,
-      whitebox: buildWhiteboxDraft(references),
+      references: nextReferences,
+      whitebox: buildWhiteboxDraft(nextReferences),
     },
   }
 }

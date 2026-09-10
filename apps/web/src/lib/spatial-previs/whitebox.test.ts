@@ -33,7 +33,7 @@ describe('spatial previs whitebox drafts', () => {
     assert.deepEqual(draft, {
       entities: [
         {
-          id: 'floor-reference-street',
+          id: 'floor-reference-street-0',
           kind: 'floor',
           position: { x: 0, y: -0.05, z: 0 },
           rotationY: 0,
@@ -41,7 +41,7 @@ describe('spatial previs whitebox drafts', () => {
           sourceAssetIds: ['asset-street'],
         },
         {
-          id: 'reference-plane-reference-street',
+          id: 'reference-plane-reference-street-0',
           kind: 'referencePlane',
           position: { x: 0, y: 2, z: -4 },
           rotationY: 0,
@@ -49,7 +49,7 @@ describe('spatial previs whitebox drafts', () => {
           sourceAssetIds: ['asset-street'],
         },
         {
-          id: 'volume-reference-street',
+          id: 'volume-reference-street-0',
           kind: 'volume',
           position: { x: 0, y: 1.5, z: 1 },
           rotationY: 0,
@@ -57,7 +57,7 @@ describe('spatial previs whitebox drafts', () => {
           sourceAssetIds: ['asset-street'],
         },
         {
-          id: 'wall-reference-street',
+          id: 'wall-reference-street-0',
           kind: 'wall',
           position: { x: 3, y: 1.5, z: 1 },
           rotationY: 0,
@@ -90,6 +90,58 @@ describe('spatial previs whitebox drafts', () => {
       ],
     )
     assert.deepEqual(draft.entities.slice(4).map((entity) => entity.position.x), [8, 8, 11])
+  })
+
+  test('builds unique indexed entity ids for duplicate reference ids', () => {
+    const duplicateReferences = references.map((reference) => ({ ...reference, id: 'reference-duplicate' }))
+
+    const entityIds = buildWhiteboxDraft(duplicateReferences).entities.map((entity) => entity.id)
+
+    assert.deepEqual(entityIds, [
+      'floor-reference-duplicate-0',
+      'reference-plane-reference-duplicate-0',
+      'volume-reference-duplicate-0',
+      'wall-reference-duplicate-0',
+      'reference-plane-reference-duplicate-1',
+      'volume-reference-duplicate-1',
+      'wall-reference-duplicate-1',
+    ])
+    assert.equal(new Set(entityIds).size, entityIds.length)
+  })
+
+  test('isolates a draft from post-call reference mutations', () => {
+    const inputReferences = structuredClone([references[1]!])
+    const expectedReferences = structuredClone(inputReferences)
+    const next = replaceWhiteboxDraft(normalizeSpatialPrevis({ projectId: 'project-1' }), inputReferences)
+
+    inputReferences[0]!.assetId = 'asset-mutated'
+    inputReferences.push(references[0]!)
+
+    assert.notEqual(next.scene.references, inputReferences)
+    assert.deepEqual(next.scene.references, expectedReferences)
+    assert.deepEqual(next.scene.whitebox, buildWhiteboxDraft(expectedReferences))
+  })
+
+  test('expands floor bounds to cover every proxy for three references', () => {
+    const draft = buildWhiteboxDraft([
+      ...references,
+      { ...references[0]!, id: 'reference-third', assetId: 'asset-third' },
+    ])
+    const floor = draft.entities.find((entity) => entity.kind === 'floor')!
+    const proxies = draft.entities.filter((entity) => entity.kind !== 'floor')
+    const floorMinX = floor.position.x - floor.size.x / 2
+    const floorMaxX = floor.position.x + floor.size.x / 2
+    const floorMinZ = floor.position.z - floor.size.z / 2
+    const floorMaxZ = floor.position.z + floor.size.z / 2
+    const proxyMinX = Math.min(...proxies.map((entity) => entity.position.x - entity.size.x / 2))
+    const proxyMaxX = Math.max(...proxies.map((entity) => entity.position.x + entity.size.x / 2))
+    const proxyMinZ = Math.min(...proxies.map((entity) => entity.position.z - entity.size.z / 2))
+    const proxyMaxZ = Math.max(...proxies.map((entity) => entity.position.z + entity.size.z / 2))
+
+    assert.ok(floorMinX <= proxyMinX)
+    assert.ok(floorMaxX >= proxyMaxX)
+    assert.ok(floorMinZ <= proxyMinZ)
+    assert.ok(floorMaxZ >= proxyMaxZ)
   })
 
   test('replaces only scene references and whitebox data without mutating state', () => {
