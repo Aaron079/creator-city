@@ -486,10 +486,19 @@ Expected: all locked-experience suites pass without changed layout assertions.
 Check: add image and video references through + Scene assets; generate a whitebox;
 drag actor, camera, camera target, and vertical guide at three playhead positions;
 verify the live camera changes; create a neutral delivery node; trigger a test-only
-download; verify Save-to-assets with a mocked response. Do not dispatch to a
-provider or persist to a creator's actual asset library.
+download; verify Save-to-assets with a mocked response. This local QA pass does
+not dispatch to a provider or persist to a creator's actual asset library.
 
-- [ ] **Step 5: Commit verification-only fixes if needed and report scope.**
+- [ ] **Step 5: Run the controlled Seedance acceptance test after all local QA passes.**
+
+Use one pre-existing asset-library reference. Read the live provider capability
+and account route, then present the exact 5- or 10-second duration and estimated
+credit use for immediate founder confirmation. Submit one delivery only when the
+provider actually offers the selected short duration. Do not silently choose 30
+seconds or a longer fallback. If no 5- or 10-second route is available, record
+the limitation and stop without submitting.
+
+- [ ] **Step 6: Commit verification-only fixes if needed and report scope.**
 
 ~~~
 git status --short
@@ -498,4 +507,3 @@ git log --oneline -10
 
 Include Confirmed experience impact: none in the delivery summary and list any
 verification that could not be run.
-

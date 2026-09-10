@@ -151,6 +151,20 @@ current behavior does not change.
 6. Manual preview QA uses an isolated test project and does not submit an
    external generation or write a creator's actual library record.
 
+## Controlled Seedance Acceptance Test
+
+After local and preview QA pass, use a pre-existing asset-library image or
+video reference to exercise one real Seedance delivery. The test is limited to
+an explicitly available 5- or 10-second duration; it must never silently fall
+back to 30 seconds or a longer take. Immediately before submission, present
+the selected duration, account/billing route, and estimated credit use for
+founder confirmation. If the active capability, account, or provider does not
+offer a 5- or 10-second duration, report that limitation and do not submit.
+
+This is a controlled acceptance test, not a default behavior: it does not
+change the normal provider-neutral delivery node or automatically dispatch any
+creator's work.
+
 ## Acceptance Criteria
 
 - A creator can enter scene references from the top `+ Scene assets` affordance
