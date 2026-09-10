@@ -4,6 +4,24 @@ export type Vec3 = {
   z: number
 }
 
+export type SpatialSceneReference = {
+  id: string
+  assetId: string
+  title: string
+  mediaType: 'image' | 'video'
+  url: string
+  source: 'project' | 'upload'
+}
+
+export type WhiteboxEntity = {
+  id: string
+  kind: 'floor' | 'wall' | 'opening' | 'volume' | 'furniture' | 'referencePlane'
+  position: Vec3
+  rotationY: number
+  size: Vec3
+  sourceAssetIds: string[]
+}
+
 export type CoverageMode = 'verified' | 'constrained' | 'unavailable'
 
 export type SpatialPrevisMode = 'continuous' | 'beats'
@@ -62,6 +80,8 @@ export type MasterTake = {
 export type SpatialPrevisScene = {
   sourceMode: SpatialPrevisSourceMode
   coverage: SpatialCoverage
+  references: SpatialSceneReference[]
+  whitebox: { entities: WhiteboxEntity[] }
 }
 
 export type CoverageCorridor = {
@@ -75,7 +95,7 @@ export type SpatialCoverage =
   | { mode: 'unavailable'; cameraFreedom: 'disabled' }
 
 export type SpatialPrevisState = {
-  version: 1
+  version: 2
   projectId: string
   scene: SpatialPrevisScene
   masterTake: MasterTake
