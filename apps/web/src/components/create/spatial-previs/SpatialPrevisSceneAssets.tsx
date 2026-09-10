@@ -86,6 +86,7 @@ export function SpatialPrevisSceneAssets({
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const activeReference = references[0]
 
   useEffect(() => {
     if (!isOpen || !projectId) return
@@ -166,8 +167,17 @@ export function SpatialPrevisSceneAssets({
         onClick={() => setIsOpen((current) => !current)}
         className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.035] px-2 py-1.5 text-[11px] font-medium text-white/78 transition hover:border-indigo-200/35 hover:bg-indigo-300/[0.1] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
       >
-        <Plus size={13} aria-hidden="true" />
-        Scene assets
+        {activeReference ? (
+          <>
+            <span className="max-w-32 truncate">{activeReference.title}</span>
+            <span>{references.length} assets</span>
+          </>
+        ) : (
+          <>
+            <Plus size={13} aria-hidden="true" />
+            Scene assets
+          </>
+        )}
       </button>
 
       <div hidden={!isOpen} className="mt-2 space-y-2">

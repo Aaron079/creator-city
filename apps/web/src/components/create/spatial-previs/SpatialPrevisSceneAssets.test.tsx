@@ -38,6 +38,35 @@ test('renders one compact scene-assets entry instead of a persistent asset panel
   assert.doesNotMatch(markup, /项目素材\s*<\/h2>/)
 })
 
+test('summarizes the first selected scene asset and asset count in its compact control', () => {
+  const markup = renderToStaticMarkup(createElement(SpatialPrevisSceneAssets, {
+    ...props,
+    references: [
+      {
+        id: 'scene-project-01',
+        assetId: 'asset-01',
+        title: 'Rain-soaked alley',
+        mediaType: 'image',
+        url: '/api/assets/asset-01/file',
+        source: 'project',
+      },
+      {
+        id: 'scene-project-02',
+        assetId: 'asset-02',
+        title: 'Close-up reference',
+        mediaType: 'video',
+        url: '/api/assets/asset-02/file',
+        source: 'project',
+      },
+    ],
+  }))
+  const compactControl = markup.match(/<button[^>]*aria-label="添加场景资产"[^>]*>([\s\S]*?)<\/button>/)?.[1] ?? ''
+
+  assert.match(compactControl, /Rain-soaked alley/)
+  assert.match(compactControl, /2 assets/)
+  assert.doesNotMatch(compactControl, /Scene assets|Close-up reference/)
+})
+
 test('maps safe project media assets and updates selected references without duplicates', () => {
   const reference = spatialSceneReferenceFromProjectAsset({
     id: 'asset-video-01',
