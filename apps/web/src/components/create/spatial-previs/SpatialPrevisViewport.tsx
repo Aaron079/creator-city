@@ -435,7 +435,7 @@ function VerticalDragGuide({
   return (
     <group position={tuple(position)}>
       <Line points={[[0, 0.05, 0], [0, 1.55, 0]]} color="#67e8f9" lineWidth={1} transparent opacity={0.78} />
-      <mesh position={[0, 1.55, 0]} {...pointerHandlers(kind, position.y, bindings)}>
+      <mesh position={[0, 1.55, 0]} userData={{ spatialDirectHandle: 'vertical' }} {...pointerHandlers(kind, position.y, bindings)}>
         <cylinderGeometry args={[0.075, 0.075, 0.28, 16]} />
         <meshBasicMaterial color="#67e8f9" transparent opacity={0.86} />
       </mesh>
@@ -445,7 +445,7 @@ function VerticalDragGuide({
 
 function CameraTargetDragHandle({ position, bindings }: { position: Vec3; bindings: DirectDragBindings }) {
   return (
-    <group position={tuple(position)} {...pointerHandlers('camera-target', position.y, bindings)}>
+    <group position={tuple(position)} userData={{ spatialDirectHandle: 'camera-target' }} {...pointerHandlers('camera-target', position.y, bindings)}>
       <TargetRing position={{ x: 0, y: 0, z: 0 }} selected />
       <mesh>
         <sphereGeometry args={[0.28, 16, 12]} />

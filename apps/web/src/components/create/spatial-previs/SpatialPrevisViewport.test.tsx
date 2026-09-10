@@ -732,6 +732,148 @@ test('moves the selected whitebox actor through an actual overview-canvas pointe
   }
 })
 
+test('raises the selected actor through an actual overview-canvas pointer drag', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithWhitebox()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+
+    const actorGuide = worldPointInCanvas({ x: 0, y: 1.55, z: -1 }, overviewCanvas)
+    await page.mouse.move(actorGuide.x, actorGuide.y)
+    await page.mouse.down()
+    await page.mouse.move(actorGuide.x, actorGuide.y - 52, { steps: 4 })
+    await page.mouse.up()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const changedActor = changed.masterTake.actorTracks[0]?.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    const originalActor = interactiveState.masterTake.actorTracks[0]?.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    assert.ok(changedActor)
+    assert.ok(originalActor)
+    assert.equal(changedActor.position.x, originalActor.position.x)
+    assert.equal(changedActor.position.z, originalActor.position.z)
+    assert.ok(changedActor.position.y > originalActor.position.y)
+    assert.deepEqual(changed.masterTake.cameraTrack, interactiveState.masterTake.cameraTrack)
+  } finally {
+    await page.close()
+  }
+})
+
+test('moves the selected physical camera over the overview ground with a pointer drag', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithWhitebox()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    await page.getByRole('button', { name: '相机', exact: true }).click()
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+
+    const cameraBody = worldPointInCanvas({ x: 0, y: 1.98, z: 4.98 }, overviewCanvas)
+    const cameraDestination = worldPointInCanvas({ x: 1.8, y: 0, z: 2.5 }, overviewCanvas)
+    await page.mouse.move(cameraBody.x, cameraBody.y)
+    await page.mouse.down()
+    await page.mouse.move(cameraDestination.x, cameraDestination.y, { steps: 5 })
+    await page.mouse.up()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const changedCamera = changed.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    const originalCamera = interactiveState.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    assert.ok(changedCamera)
+    assert.ok(originalCamera)
+    assert.notDeepEqual(changedCamera.position, originalCamera.position)
+    assert.equal(changedCamera.position.y, originalCamera.position.y)
+    assert.deepEqual(changedCamera.target, originalCamera.target)
+    assert.equal(changedCamera.intent, originalCamera.intent)
+    assertOtherCameraFramesUnchanged(changed, interactiveState)
+  } finally {
+    await page.close()
+  }
+})
+
+test('raises the selected physical camera with an overview-canvas pointer drag', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithWhitebox()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    await page.getByRole('button', { name: '相机', exact: true }).click()
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+
+    const cameraGuide = worldPointInCanvas({ x: 0, y: 3.35, z: 5 }, overviewCanvas)
+    await page.mouse.move(cameraGuide.x, cameraGuide.y)
+    await page.mouse.down()
+    await page.mouse.move(cameraGuide.x, cameraGuide.y - 52, { steps: 4 })
+    await page.mouse.up()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const changedCamera = changed.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    const originalCamera = interactiveState.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    assert.ok(changedCamera)
+    assert.ok(originalCamera)
+    assert.equal(changedCamera.position.x, originalCamera.position.x)
+    assert.equal(changedCamera.position.z, originalCamera.position.z)
+    assert.ok(changedCamera.position.y > originalCamera.position.y)
+    assert.deepEqual(changedCamera.target, originalCamera.target)
+    assert.equal(changedCamera.intent, originalCamera.intent)
+    assertOtherCameraFramesUnchanged(changed, interactiveState)
+  } finally {
+    await page.close()
+  }
+})
+
+test('moves the selected camera target through an actual overview-canvas pointer drag', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithWhitebox()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    await page.getByRole('button', { name: '目标', exact: true }).click()
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+
+    const targetStart = worldPointInCanvas({ x: 0, y: 1, z: -1 }, overviewCanvas)
+    const targetDestination = worldPointInCanvas({ x: 1.8, y: 0, z: -2.4 }, overviewCanvas)
+    await page.mouse.move(targetStart.x, targetStart.y)
+    await page.mouse.down()
+    await page.mouse.move(targetDestination.x, targetDestination.y, { steps: 5 })
+    await page.mouse.up()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const changedCamera = changed.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    const originalCamera = interactiveState.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    assert.ok(changedCamera)
+    assert.ok(originalCamera)
+    assert.notDeepEqual(changedCamera.target, originalCamera.target)
+    assert.equal(changedCamera.target.y, originalCamera.target.y)
+    assert.deepEqual(changedCamera.position, originalCamera.position)
+    assert.equal(changedCamera.focalLengthMm, originalCamera.focalLengthMm)
+    assert.equal(changedCamera.intent, 'pan-tilt')
+    assertOtherCameraFramesUnchanged(changed, interactiveState)
+  } finally {
+    await page.close()
+  }
+})
+
 function assertOtherCameraFramesUnchanged(next: SpatialPrevisState, source: SpatialPrevisState) {
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[0], source.masterTake.cameraTrack.keyframes[0])
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[2], source.masterTake.cameraTrack.keyframes[2])
@@ -752,6 +894,11 @@ describe('SpatialPrevisViewport', () => {
     assert.doesNotMatch(viewportSource, /TransformControls/)
     assert.match(viewportSource, /function DirectGroundDrag/)
     assert.match(viewportSource, /function VerticalDragGuide/)
+    assert.match(viewportSource, /function CameraTargetDragHandle/)
+    assert.match(viewportSource, /function pointerHandlers/)
+    assert.match(viewportSource, /spatialDirectHandle: 'vertical'/)
+    assert.match(viewportSource, /spatialDirectHandle: 'camera-target'/)
+    assert.match(viewportSource, /event\.ray\.intersectPlane/)
     assert.match(viewportSource, /applyActorGroundDrag/)
     assert.match(viewportSource, /applyCameraDollyDrag/)
     assert.match(viewportSource, /applyCameraTargetDrag/)

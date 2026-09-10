@@ -355,8 +355,8 @@ git commit -m "feat: add direct spatial keyframe manipulation"
 ~~~
 test('uses pointer affordances instead of permanent transform-control squares', () => {
   assert.doesNotMatch(viewportSource, /<TransformControls/)
-  assert.match(viewportSource, /data-spatial-direct-handle="vertical"/)
-  assert.match(viewportSource, /data-spatial-direct-handle="camera-target"/)
+  assert.match(viewportSource, /spatialDirectHandle: 'vertical'/)
+  assert.match(viewportSource, /spatialDirectHandle: 'camera-target'/)
 })
 ~~~
 
@@ -379,8 +379,10 @@ Expected: FAIL while TransformControls exists.
 
 Raycast body drags to the ground plane. Guides exist only while selected and
 use grab, grabbing, ns-resize, and crosshair cursors. No permanent square
-handles are allowed. Disable OrbitControls only while an object drag is active.
-Route completed drags through Task 6 functions.
+handles are allowed. Use Three `userData` for direct-handle identity rather than
+DOM `data-*` sentinels, which are prohibited on Three primitives by the viewport
+contract. Disable OrbitControls only while an object drag is active. Route
+completed drags through Task 6 functions.
 
 - [ ] **Step 4: Run viewport and direct-manipulation tests.**
 
