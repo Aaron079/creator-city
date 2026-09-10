@@ -1,14 +1,20 @@
 'use client'
 
-import { Canvas } from '@react-three/fiber'
+import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { Line } from '@react-three/drei/core/Line'
 import { OrbitControls } from '@react-three/drei/core/OrbitControls'
 import { PerspectiveCamera as DreiPerspectiveCamera } from '@react-three/drei/core/PerspectiveCamera'
-import { TransformControls } from '@react-three/drei/core/TransformControls'
 import { Html } from '@react-three/drei/web/Html'
 import * as React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Group, PerspectiveCamera as ThreePerspectiveCamera } from 'three'
+import { Plane, Vector3 } from 'three'
+import type { PerspectiveCamera as ThreePerspectiveCamera } from 'three'
+import {
+  applyActorGroundDrag,
+  applyCameraDollyDrag,
+  applyCameraTargetDrag,
+  applyObjectHeightDrag,
+} from '@/lib/spatial-previs/direct-manipulation'
 import type {
   ActorTrack,
   CameraKeyframe,
@@ -31,6 +37,7 @@ const WHITEBOX_COLORS: Record<WhiteboxEntity['kind'], string> = {
   furniture: '#9a6149',
   referencePlane: '#5b7c99',
 }
+const GROUND_PLANE = new Plane(new Vector3(0, 1, 0), 0)
 
 type TransformSelection = 'actor' | 'camera' | 'target'
 
@@ -58,6 +65,32 @@ type WorldAnchor = {
   color: string
 }
 
+type DirectDragKind = 'actor-ground' | 'camera-ground' | 'actor-height' | 'camera-height' | 'camera-target'
+
+type DirectDragBindings = {
+  begin: (kind: DirectDragKind, event: ThreeEvent<PointerEvent>, startY: number) => void
+  move: (kind: DirectDragKind, event: ThreeEvent<PointerEvent>) => void
+  end: (event: ThreeEvent<PointerEvent>) => void
+  onDragStateChange: (active: boolean) => void
+  setCursor: (cursor: 'grab' | 'grabbing' | 'ns-resize' | 'crosshair') => void
+}
+
+type DirectPointerHandlers = {
+  onPointerDown?: (event: ThreeEvent<PointerEvent>) => void
+  onPointerMove?: (event: ThreeEvent<PointerEvent>) => void
+  onPointerUp?: (event: ThreeEvent<PointerEvent>) => void
+  onPointerOver?: (event: ThreeEvent<PointerEvent>) => void
+  onPointerOut?: () => void
+}
+
+type ActiveDirectDrag = {
+  kind: DirectDragKind
+  pointerId: number
+  startClientY: number
+  startY: number
+  actorTrackId: string
+}
+
 type SpatialPrevisViewportProps = {
   state: SpatialPrevisState
   currentTimeSec: number
@@ -74,10 +107,6 @@ type SpatialNudgeInput = {
 
 function tuple(vector: Vec3): [number, number, number] {
   return [vector.x, vector.y, vector.z]
-}
-
-function positionFromGroup(group: Group): Vec3 {
-  return { x: group.position.x, y: group.position.y, z: group.position.z }
 }
 
 function formatNumber(value: number) {
@@ -221,7 +250,13 @@ function WhiteboxEntityMesh({ entity }: { entity: WhiteboxEntity }) {
   )
 }
 
-function ActorProxy({ position, selected }: { position: Vec3; selected: boolean }) {
+function ActorProxy({
+  position,
+  selected,
+}: {
+  position: Vec3
+  selected: boolean
+}) {
   const bodyColor = selected ? '#a5f3fc' : '#7dd3fc'
   const limbColor = selected ? '#67e8f9' : '#38bdf8'
 
@@ -268,7 +303,15 @@ function cameraRigRotation(position: Vec3, target: Vec3): [number, number, numbe
   ]
 }
 
-function CameraRigMarker({ position, target, selected }: { position: Vec3; target: Vec3; selected: boolean }) {
+function CameraRigMarker({
+  position,
+  target,
+  selected,
+}: {
+  position: Vec3
+  target: Vec3
+  selected: boolean
+}) {
   const color = selected ? '#facc15' : '#f59e0b'
   return (
     <group position={tuple(position)} rotation={cameraRigRotation(position, target)}>
@@ -350,37 +393,65 @@ function WorldAnchorMarker({ anchor }: { anchor: WorldAnchor }) {
   )
 }
 
-function TransformableProxy({
-  selection,
-  position,
-  target,
-  enabled,
-  onObjectChange,
-}: {
-  selection: TransformSelection
-  position: Vec3
-  target?: Vec3
-  enabled: boolean
-  onObjectChange: (position: Vec3) => void
-}) {
-  const objectRef = useRef<Group>(null)
+function pointerHandlers(kind: DirectDragKind, startY: number, bindings: DirectDragBindings): DirectPointerHandlers {
+  return {
+    onPointerDown: (event) => {
+      bindings.onDragStateChange(true)
+      bindings.begin(kind, event, startY)
+    },
+    onPointerMove: (event) => bindings.move(kind, event),
+    onPointerUp: (event) => {
+      bindings.end(event)
+      bindings.onDragStateChange(false)
+    },
+    onPointerOver: () => bindings.setCursor(kind === 'actor-height' || kind === 'camera-height' ? 'ns-resize' : kind === 'camera-target' ? 'crosshair' : 'grab'),
+    onPointerOut: () => bindings.setCursor('grab'),
+  }
+}
 
+function DirectGroundDrag({
+  kind,
+  position,
+  bindings,
+  children,
+}: {
+  kind: 'actor-ground' | 'camera-ground'
+  position: Vec3
+  bindings: DirectDragBindings
+  children: React.ReactNode
+}) {
+  return <group {...pointerHandlers(kind, position.y, bindings)}>{children}</group>
+}
+
+function VerticalDragGuide({
+  position,
+  bindings,
+  kind,
+}: {
+  position: Vec3
+  bindings: DirectDragBindings
+  kind: 'actor-height' | 'camera-height'
+}) {
   return (
-    <TransformControls
-      enabled={enabled}
-      mode="translate"
-      space="world"
-      translationSnap={0.05}
-      onObjectChange={() => {
-        if (objectRef.current) onObjectChange(positionFromGroup(objectRef.current))
-      }}
-    >
-      <group ref={objectRef} position={tuple(position)}>
-        {selection === 'actor' ? <ActorProxy position={{ x: 0, y: 0, z: 0 }} selected /> : null}
-        {selection === 'camera' && target ? <CameraRigMarker position={{ x: 0, y: 0, z: 0 }} target={{ x: target.x - position.x, y: target.y - position.y, z: target.z - position.z }} selected /> : null}
-        {selection === 'target' ? <TargetRing position={{ x: 0, y: 0, z: 0 }} selected /> : null}
-      </group>
-    </TransformControls>
+    <group position={tuple(position)}>
+      <Line points={[[0, 0.05, 0], [0, 1.55, 0]]} color="#67e8f9" lineWidth={1} transparent opacity={0.78} />
+      <mesh position={[0, 1.55, 0]} {...pointerHandlers(kind, position.y, bindings)}>
+        <cylinderGeometry args={[0.075, 0.075, 0.28, 16]} />
+        <meshBasicMaterial color="#67e8f9" transparent opacity={0.86} />
+      </mesh>
+    </group>
+  )
+}
+
+function CameraTargetDragHandle({ position, bindings }: { position: Vec3; bindings: DirectDragBindings }) {
+  return (
+    <group position={tuple(position)} {...pointerHandlers('camera-target', position.y, bindings)}>
+      <TargetRing position={{ x: 0, y: 0, z: 0 }} selected />
+      <mesh>
+        <sphereGeometry args={[0.28, 16, 12]} />
+        <meshBasicMaterial transparent opacity={0.001} />
+      </mesh>
+    </group>
   )
 }
 
@@ -423,7 +494,7 @@ export function SpatialPrevisWorldGeometry({
   selection,
   selectedActorTrack,
   manipulationEnabled,
-  onObjectChange,
+  directDragBindings,
   showOverviewGuides = false,
   showCameraRig = true,
 }: {
@@ -433,7 +504,7 @@ export function SpatialPrevisWorldGeometry({
   selection?: TransformSelection
   selectedActorTrack?: ActorTrack
   manipulationEnabled?: boolean
-  onObjectChange?: (position: Vec3) => void
+  directDragBindings?: DirectDragBindings
   showOverviewGuides?: boolean
   showCameraRig?: boolean
 }) {
@@ -462,16 +533,19 @@ export function SpatialPrevisWorldGeometry({
 
       {state.masterTake.actorTracks.map((track) => {
         const isSelected = selection === 'actor' && selectedActorTrack === track
-        const canTransform = Boolean(isSelected && manipulationEnabled && exactKeyframe(track.keyframes, currentTimeSec))
+        const canDirectManipulate = Boolean(isSelected && manipulationEnabled && directDragBindings)
         const position = initialActorPosition(track, currentTimeSec)
         return (
           <group key={track.id}>
             {showOverviewGuides && track.keyframes.length > 1 ? (
               <Line points={track.keyframes.map((keyframe) => tuple(keyframe.position))} color="#38bdf8" lineWidth={1.5} transparent opacity={0.48} />
             ) : null}
-            {isSelected && canTransform && onObjectChange ? (
-              <TransformableProxy selection="actor" position={position} enabled onObjectChange={onObjectChange} />
+            {canDirectManipulate ? (
+              <DirectGroundDrag kind="actor-ground" position={position} bindings={directDragBindings!}>
+                <ActorProxy position={position} selected />
+              </DirectGroundDrag>
             ) : <ActorProxy position={position} selected={isSelected} />}
+            {canDirectManipulate ? <VerticalDragGuide position={position} bindings={directDragBindings!} kind="actor-height" /> : null}
           </group>
         )
       })}
@@ -480,14 +554,21 @@ export function SpatialPrevisWorldGeometry({
       {showOverviewGuides && sampledCamera ? <Line points={[tuple(sampledCamera.position), tuple(sampledCamera.target)]} color="#f59e0b" lineWidth={1} dashed dashScale={6} gapSize={0.25} /> : null}
 
       {showCameraRig && sampledCamera ? (
-        selection === 'camera' && manipulationEnabled && onObjectChange ? (
-          <TransformableProxy selection="camera" position={sampledCamera.position} target={sampledCamera.target} enabled onObjectChange={onObjectChange} />
-        ) : <CameraRigMarker position={sampledCamera.position} target={sampledCamera.target} selected={selection === 'camera'} />
+        <>
+          {selection === 'camera' && manipulationEnabled && directDragBindings ? (
+            <DirectGroundDrag kind="camera-ground" position={sampledCamera.position} bindings={directDragBindings}>
+              <CameraRigMarker position={sampledCamera.position} target={sampledCamera.target} selected />
+            </DirectGroundDrag>
+          ) : <CameraRigMarker position={sampledCamera.position} target={sampledCamera.target} selected={selection === 'camera'} />}
+          {selection === 'camera' && manipulationEnabled && directDragBindings ? (
+            <VerticalDragGuide position={sampledCamera.position} bindings={directDragBindings} kind="camera-height" />
+          ) : null}
+        </>
       ) : null}
 
       {showOverviewGuides && sampledCamera ? (
-        selection === 'target' && manipulationEnabled && onObjectChange ? (
-          <TransformableProxy selection="target" position={sampledCamera.target} enabled onObjectChange={onObjectChange} />
+        selection === 'target' && manipulationEnabled && directDragBindings ? (
+          <CameraTargetDragHandle position={sampledCamera.target} bindings={directDragBindings} />
         ) : <TargetRing position={sampledCamera.target} selected={selection === 'target'} />
       ) : null}
     </>
@@ -502,7 +583,9 @@ function WorldCanvas(props: {
   selectedActorTrack: ActorTrack | undefined
   manipulationEnabled: boolean
   interactionDisabled: boolean
-  onObjectChange: (position: Vec3) => void
+  isObjectDragging: boolean
+  cursor: 'grab' | 'grabbing' | 'ns-resize' | 'crosshair'
+  directDragBindings: DirectDragBindings
 }) {
   return (
     <Canvas
@@ -511,10 +594,10 @@ function WorldCanvas(props: {
       dpr={[1, 1.5]}
       gl={{ antialias: true }}
       className="absolute inset-0 h-full w-full"
-      style={{ position: 'absolute', inset: 0 }}
+      style={{ position: 'absolute', inset: 0, cursor: props.cursor }}
     >
       <SpatialPrevisWorldGeometry {...props} showOverviewGuides />
-      <OrbitControls enabled={!props.interactionDisabled} makeDefault enableDamping target={WORLD_CAMERA_TARGET} maxPolarAngle={Math.PI * 0.48} />
+      <OrbitControls enabled={!props.interactionDisabled && !props.isObjectDragging} makeDefault enableDamping target={WORLD_CAMERA_TARGET} maxPolarAngle={Math.PI * 0.48} />
     </Canvas>
   )
 }
@@ -551,6 +634,9 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
   const [mounted, setMounted] = useState(false)
   const [selection, setSelection] = useState<TransformSelection>(state.masterTake.actorTracks.length > 0 ? 'actor' : 'camera')
   const [selectedActorTrackId, setSelectedActorTrackId] = useState(state.masterTake.actorTracks[0]?.id ?? '')
+  const [isObjectDragging, setIsObjectDragging] = useState(false)
+  const [worldCursor, setWorldCursor] = useState<'grab' | 'grabbing' | 'ns-resize' | 'crosshair'>('grab')
+  const directDragRef = useRef<ActiveDirectDrag | null>(null)
   const selectedActorTrack = state.masterTake.actorTracks.find((track) => track.id === selectedActorTrackId)
   const sampledCamera = state.masterTake.cameraTrack.keyframes.length > 0
     ? sampleCamera(state.masterTake.cameraTrack.keyframes, currentTimeSec)
@@ -558,10 +644,10 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
   const exactCamera = exactKeyframe(state.masterTake.cameraTrack.keyframes, currentTimeSec)
   const exactActor = selectedActorTrack ? exactKeyframe(selectedActorTrack.keyframes, currentTimeSec) : null
   const selectionHasKeyframe = selection === 'actor' ? Boolean(exactActor) : Boolean(exactCamera)
-  const manipulationEnabled = !disabled && selectionHasKeyframe
+  const manipulationEnabled = !disabled
   const disabledReason = disabled
     ? '正在保存预演，编辑已锁定'
-    : selectionHasKeyframe ? undefined : '当前时间没有可编辑的关键帧'
+    : selectionHasKeyframe ? undefined : '当前时间：新关键帧'
 
   useEffect(() => {
     setMounted(true)
@@ -573,17 +659,71 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
     if (selection === 'actor' && state.masterTake.actorTracks.length === 0) setSelection('camera')
   }, [selectedActorTrack, selection, state.masterTake.actorTracks])
 
-  const handleObjectChange = useCallback((position: Vec3) => {
+  const setDirectCursor = useCallback((cursor: 'grab' | 'grabbing' | 'ns-resize' | 'crosshair') => {
+    if (directDragRef.current && cursor !== 'grabbing') return
+    setWorldCursor(cursor)
+  }, [])
+
+  const beginDirectDrag = useCallback((kind: DirectDragKind, event: ThreeEvent<PointerEvent>, startY: number) => {
     if (disabled) return
-    if (selection === 'actor') {
-      const next = updateSpatialActorPosition(state, selectedActorTrackId, currentTimeSec, position)
-      if (next !== state) onChange(next)
+    event.stopPropagation()
+    const target = event.target as unknown as { setPointerCapture?: (pointerId: number) => void }
+    target.setPointerCapture?.(event.pointerId)
+    directDragRef.current = {
+      kind,
+      pointerId: event.pointerId,
+      startClientY: event.clientY,
+      startY,
+      actorTrackId: selectedActorTrackId,
+    }
+    setIsObjectDragging(true)
+    setWorldCursor('grabbing')
+  }, [disabled, selectedActorTrackId])
+
+  const moveDirectDrag = useCallback((kind: DirectDragKind, event: ThreeEvent<PointerEvent>) => {
+    const drag = directDragRef.current
+    if (!drag || drag.kind !== kind || drag.pointerId !== event.pointerId) return
+    event.stopPropagation()
+
+    if (kind === 'actor-height' || kind === 'camera-height') {
+      const y = drag.startY + (drag.startClientY - event.clientY) * 0.018
+      onChange(applyObjectHeightDrag(state, kind === 'actor-height' ? 'actor' : 'camera', currentTimeSec, y, drag.actorTrackId))
       return
     }
 
-    if (!exactCamera) return
-    onChange(replaceCameraKeyframe(state, exactCamera, selection === 'camera' ? { position } : { target: position }))
-  }, [currentTimeSec, disabled, exactCamera, onChange, selectedActorTrackId, selection, state])
+    const point = event.ray.intersectPlane(GROUND_PLANE, new Vector3())
+    if (!point) return
+    if (kind === 'actor-ground') {
+      onChange(applyActorGroundDrag(state, drag.actorTrackId, currentTimeSec, { x: point.x, z: point.z }))
+      return
+    }
+
+    if (kind === 'camera-ground') {
+      onChange(applyCameraDollyDrag(state, currentTimeSec, { x: point.x, y: drag.startY, z: point.z }))
+      return
+    }
+
+    onChange(applyCameraTargetDrag(state, currentTimeSec, { x: point.x, y: drag.startY, z: point.z }))
+  }, [currentTimeSec, onChange, state])
+
+  const endDirectDrag = useCallback((event: ThreeEvent<PointerEvent>) => {
+    const drag = directDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    event.stopPropagation()
+    const target = event.target as unknown as { releasePointerCapture?: (pointerId: number) => void }
+    target.releasePointerCapture?.(event.pointerId)
+    directDragRef.current = null
+    setIsObjectDragging(false)
+    setWorldCursor('grab')
+  }, [])
+
+  const directDragBindings = useMemo<DirectDragBindings>(() => ({
+    begin: beginDirectDrag,
+    move: moveDirectDrag,
+    end: endDirectDrag,
+    onDragStateChange: setIsObjectDragging,
+    setCursor: setDirectCursor,
+  }), [beginDirectDrag, endDirectDrag, moveDirectDrag, setDirectCursor])
 
   return (
     <section data-spatial-previs-viewport="true" className="flex min-h-[470px] w-full flex-col overflow-hidden rounded-lg border border-white/12 bg-[#0b1014] text-white shadow-xl">
@@ -628,7 +768,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
             currentTimeSec={currentTimeSec}
             selection={selection}
             actorTrackId={selectedActorTrackId}
-            disabled={disabled || !manipulationEnabled}
+            disabled={disabled || !selectionHasKeyframe}
             onChange={onChange}
           />
         </div>
@@ -645,7 +785,9 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
               selectedActorTrack={selectedActorTrack}
               manipulationEnabled={manipulationEnabled}
               interactionDisabled={disabled}
-              onObjectChange={handleObjectChange}
+              isObjectDragging={isObjectDragging}
+              cursor={worldCursor}
+              directDragBindings={directDragBindings}
             />
           ) : <div className="h-full w-full" aria-hidden="true" />}
         </div>
@@ -665,7 +807,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
           <span className="rounded bg-black/35 px-1.5 py-1">X</span>
           <span className="rounded bg-black/35 px-1.5 py-1">Y</span>
           <span className="rounded bg-black/35 px-1.5 py-1">Z</span>
-          <span className="truncate">{disabledReason ?? '拖动控制器调整当前关键帧'}</span>
+          <span className="truncate">{disabledReason ?? `当前：${TRANSFORM_SELECTION_LABELS[selection]}`}</span>
         </div>
       </div>
 

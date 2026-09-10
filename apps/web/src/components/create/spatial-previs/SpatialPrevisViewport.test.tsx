@@ -688,6 +688,16 @@ describe('SpatialPrevisViewport', () => {
     assert.doesNotMatch(viewportSource, /<Line\b[^>]*data-spatial/)
   })
 
+  test('uses pointer-first spatial blocking instead of persistent transform-control squares', () => {
+    assert.doesNotMatch(viewportSource, /TransformControls/)
+    assert.match(viewportSource, /function DirectGroundDrag/)
+    assert.match(viewportSource, /function VerticalDragGuide/)
+    assert.match(viewportSource, /applyActorGroundDrag/)
+    assert.match(viewportSource, /applyCameraDollyDrag/)
+    assert.match(viewportSource, /applyCameraTargetDrag/)
+    assert.match(viewportSource, /onDragStateChange/)
+  })
+
   test('keeps the physical camera rig out of the live preview world', () => {
     assert.match(
       viewportSource,
