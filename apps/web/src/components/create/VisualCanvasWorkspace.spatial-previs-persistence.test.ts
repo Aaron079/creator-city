@@ -78,6 +78,7 @@ test('creates and exports neutral spatial previs delivery packages without submi
   )
 
   assert.match(deliveryNodeSource, /createNode\('text'/)
+  assert.doesNotMatch(deliveryNodeSource, /const node = createNode\(/)
   assert.match(deliveryNodeSource, /metadataJson:\s*\{\s*previsDelivery:/)
   assert.match(deliveryNodeSource, /new Blob\(/)
   assert.match(deliveryNodeSource, /URL\.createObjectURL/)

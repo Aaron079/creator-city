@@ -722,6 +722,7 @@ test('moves the selected whitebox actor through an actual overview-canvas pointe
     assert.ok(originalActor)
     assert.notDeepEqual(changedActor.position, originalActor.position)
     assert.equal(changedActor.position.y, originalActor.position.y)
+    assertOtherActorFramesUnchanged(changed, interactiveState, 'actor-track-lead')
     assert.deepEqual(changed.masterTake.cameraTrack, interactiveState.masterTake.cameraTrack)
     assert.equal(
       await page.locator('[data-spatial-previs-viewport="true"] canvas').first().evaluate((canvas) => getComputedStyle(canvas.parentElement ?? canvas).cursor),
@@ -759,6 +760,7 @@ test('raises the selected actor through an actual overview-canvas pointer drag',
     assert.equal(changedActor.position.x, originalActor.position.x)
     assert.equal(changedActor.position.z, originalActor.position.z)
     assert.ok(changedActor.position.y > originalActor.position.y)
+    assertOtherActorFramesUnchanged(changed, interactiveState, 'actor-track-lead')
     assert.deepEqual(changed.masterTake.cameraTrack, interactiveState.masterTake.cameraTrack)
   } finally {
     await page.close()
@@ -877,6 +879,15 @@ test('moves the selected camera target through an actual overview-canvas pointer
 function assertOtherCameraFramesUnchanged(next: SpatialPrevisState, source: SpatialPrevisState) {
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[0], source.masterTake.cameraTrack.keyframes[0])
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[2], source.masterTake.cameraTrack.keyframes[2])
+}
+
+function assertOtherActorFramesUnchanged(next: SpatialPrevisState, source: SpatialPrevisState, actorTrackId: string) {
+  const nextTrack = next.masterTake.actorTracks.find((track) => track.id === actorTrackId)
+  const sourceTrack = source.masterTake.actorTracks.find((track) => track.id === actorTrackId)
+  assert.ok(nextTrack)
+  assert.ok(sourceTrack)
+  assert.deepEqual(nextTrack.keyframes[0], sourceTrack.keyframes[0])
+  assert.deepEqual(nextTrack.keyframes[2], sourceTrack.keyframes[2])
 }
 
 describe('SpatialPrevisViewport', () => {

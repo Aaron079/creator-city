@@ -5738,7 +5738,7 @@ export function VisualCanvasWorkspace({
   }, [canvasPan.x, canvasPan.y, canvasZoom, commitEdges, commitNodes, nodes, promptStage])
 
   const handleCreateSpatialPrevisDeliveryNode = useCallback((delivery: PrevisDeliveryPackage) => {
-    const node = createNode('text', {
+    createNode('text', {
       title: '三维预演交付',
       prompt: '三维预演交付包已创建，可下载 JSON 或保存到素材库。',
       model: 'spatial-previs-delivery',
