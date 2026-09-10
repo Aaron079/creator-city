@@ -1,7 +1,6 @@
 import { sampleCamera } from './sampler'
 import type { ActorKeyframe, ActorTrack, CameraKeyframe, SpatialPrevisState, Vec3 } from './types'
 
-const KEYFRAME_EPSILON = 1e-6
 const FACING_METADATA = /\s*\|\s*facing:\{.*\}$/
 
 type StateKeyframe<T> = {
@@ -13,7 +12,7 @@ function exactKeyframe<T extends { timeSec: number }>(keyframes: T[], timeSec: n
   let match: T | null = null
 
   for (const keyframe of keyframes) {
-    if (Math.abs(keyframe.timeSec - timeSec) <= KEYFRAME_EPSILON) match = keyframe
+    if (keyframe.timeSec === timeSec) match = keyframe
   }
 
   return match
@@ -133,14 +132,6 @@ function updateCameraKeyframe(
   }
 }
 
-function distanceBetween(left: Vec3, right: Vec3) {
-  return Math.hypot(left.x - right.x, left.y - right.y, left.z - right.z)
-}
-
-function isSamePosition(left: Vec3, right: Vec3) {
-  return left.x === right.x && left.y === right.y && left.z === right.z
-}
-
 function actionWithFacingTarget(action: string, target: Vec3) {
   return `${action.replace(FACING_METADATA, '')} | facing:${JSON.stringify(target)}`
 }
@@ -207,7 +198,6 @@ export function applyObjectHeightDrag(
   return updateCameraKeyframe(state, timeSec, (keyframe) => ({
     ...keyframe,
     position: { ...keyframe.position, y },
-    intent: 'crane',
   }))
 }
 
@@ -240,16 +230,8 @@ export function applyCameraDollyDrag(
   timeSec: number,
   position: Vec3,
 ): SpatialPrevisState {
-  return updateCameraKeyframe(state, timeSec, (keyframe) => {
-    if (isSamePosition(position, keyframe.position)) return keyframe
-
-    const currentDistance = distanceBetween(keyframe.position, keyframe.target)
-    const nextDistance = distanceBetween(position, keyframe.target)
-
-    return {
-      ...keyframe,
-      position: { ...position },
-      intent: nextDistance < currentDistance ? 'push' : nextDistance > currentDistance ? 'pull' : 'dolly',
-    }
-  })
+  return updateCameraKeyframe(state, timeSec, (keyframe) => ({
+    ...keyframe,
+    position: { ...position },
+  }))
 }

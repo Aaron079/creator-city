@@ -100,7 +100,14 @@ function roundedVector(vector: Vec3): Vec3 {
 
 function roundedFrame(frame: ActorKeyframe | CameraKeyframe | undefined) {
   if (!frame) return frame
-  if ('target' in frame) return { ...frame, position: roundedVector(frame.position), target: roundedVector(frame.target) }
+  if ('target' in frame) {
+    return {
+      ...frame,
+      position: roundedVector(frame.position),
+      target: roundedVector(frame.target),
+      focalLengthMm: Number(frame.focalLengthMm.toFixed(5)),
+    }
+  }
   return { ...frame, position: roundedVector(frame.position) }
 }
 
@@ -197,7 +204,7 @@ describe('direct spatial keyframe manipulation', () => {
     assert.deepEqual(next.masterTake.actorTracks, state.masterTake.actorTracks)
   })
 
-  test('writes camera vertical, dolly, and pull motions as idempotent current-time frames', () => {
+  test('writes camera vertical and dolly positions without rewriting the existing motion intent', () => {
     const state = fixture()
 
     const raised = applyObjectHeightDrag(state, 'camera', CURRENT_TIME_SEC, 5)
@@ -205,10 +212,10 @@ describe('direct spatial keyframe manipulation', () => {
     const pulled = applyCameraDollyDrag(pushed, CURRENT_TIME_SEC, { x: 12, y: 5, z: 12 })
     const repeated = applyCameraDollyDrag(pulled, CURRENT_TIME_SEC, { x: 12, y: 5, z: 12 })
 
-    assert.equal(cameraFrameAt(raised)?.intent, 'crane')
+    assert.equal(cameraFrameAt(raised)?.intent, 'dolly')
     assert.equal(cameraFrameAt(raised)?.focalLengthMm, 34.92)
-    assert.equal(cameraFrameAt(pushed)?.intent, 'push')
-    assert.equal(cameraFrameAt(pulled)?.intent, 'pull')
+    assert.equal(cameraFrameAt(pushed)?.intent, 'dolly')
+    assert.equal(cameraFrameAt(pulled)?.intent, 'dolly')
     assert.equal(pulled.masterTake.cameraTrack.keyframes.length, 3)
     assert.deepEqual(repeated, pulled)
     assert.deepEqual(
@@ -218,5 +225,39 @@ describe('direct spatial keyframe manipulation', () => {
     assert.deepEqual(pulled.masterTake.actorTracks, state.masterTake.actorTracks)
     assert.deepEqual(pulled.masterTake.beats, state.masterTake.beats)
     assert.deepEqual(pulled.scene.whitebox, state.scene.whitebox)
+  })
+
+  test('creates an exact current-time frame instead of mutating a nearby floating-point timestamp', () => {
+    const state = fixture()
+    const nearbyCameraFrame: CameraKeyframe = {
+      id: 'camera-nearby',
+      timeSec: CURRENT_TIME_SEC + 0.0000005,
+      position: { x: 3, y: 4, z: 5 },
+      target: { x: 1, y: 2, z: 3 },
+      focalLengthMm: 42,
+      intent: 'follow',
+    }
+    const withNearbyFrame: SpatialPrevisState = {
+      ...state,
+      masterTake: {
+        ...state.masterTake,
+        cameraTrack: {
+          ...state.masterTake.cameraTrack,
+          keyframes: [...state.masterTake.cameraTrack.keyframes, nearbyCameraFrame],
+        },
+      },
+    }
+
+    const next = applyCameraTargetDrag(withNearbyFrame, CURRENT_TIME_SEC, { x: 8, y: 3, z: -1 })
+
+    assert.deepEqual(roundedFrame(cameraFrameAt(next)), {
+      id: 'camera-main@4.2',
+      timeSec: CURRENT_TIME_SEC,
+      position: { x: 3, y: 4, z: 5 },
+      target: { x: 8, y: 3, z: -1 },
+      focalLengthMm: 42,
+      intent: 'pan-tilt',
+    })
+    assert.deepEqual(next.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.id === nearbyCameraFrame.id), nearbyCameraFrame)
   })
 })
