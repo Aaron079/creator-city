@@ -8,7 +8,9 @@ import { buildSeedanceTakePackage } from '@/lib/seedance-previs/package'
 import type { SeedanceDeliveryReceipt } from '@/lib/seedance-previs/receipts'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { applyBeatPatch } from '@/lib/spatial-previs/normalize'
-import type { BeatPatch, SpatialPrevisMode, SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
+import type { BeatPatch, SpatialPrevisMode, SpatialPrevisState, SpatialSceneReference, Vec3 } from '@/lib/spatial-previs/types'
+import { replaceWhiteboxDraft } from '@/lib/spatial-previs/whitebox'
+import { SpatialPrevisSceneAssets } from './SpatialPrevisSceneAssets'
 import { SpatialPrevisTimeline, clampSpatialPrevisTime } from './SpatialPrevisTimeline'
 import { SpatialPrevisViewport } from './SpatialPrevisViewport'
 import {
@@ -37,6 +39,7 @@ export type SpatialPrevisDirectorPanelProps = {
   onDeliverToSeedance?: (input: SeedancePrevisDeliveryRequest) => Promise<SeedancePrevisDeliveryResult>
   seedanceReceipts?: readonly SeedanceDeliveryReceipt[]
   onRetrySeedanceSegment?: (input: SeedanceChainRetryRequest) => Promise<SeedancePrevisDeliveryResult>
+  onUploadSceneAsset?: (file: File) => Promise<SpatialSceneReference>
   onClose: () => void
 }
 
@@ -116,6 +119,7 @@ export function SpatialPrevisDirectorPanel({
   onDeliverToSeedance,
   seedanceReceipts = [],
   onRetrySeedanceSegment,
+  onUploadSceneAsset,
   onClose,
 }: SpatialPrevisDirectorPanelProps) {
   const [state, setState] = useState(initialState)
@@ -177,6 +181,10 @@ export function SpatialPrevisDirectorPanel({
   const handleCurrentTimeChange = (timeSec: number) => {
     if (!canMutateSpatialPrevisEditor(isBusy)) return
     setCurrentTimeSec(clampSpatialPrevisTime(timeSec, state.masterTake.durationSec))
+  }
+
+  const handleSceneReferencesChange = (references: SpatialSceneReference[]) => {
+    handleStateChange(replaceWhiteboxDraft(state, references))
   }
 
   const handleBeatPatch = (beatId: string, patch: { position: Vec3; target: Vec3 }) => {
@@ -257,6 +265,16 @@ export function SpatialPrevisDirectorPanel({
       bodyClassName="min-h-0 flex-1 space-y-3 overflow-y-auto p-4"
     >
       <section data-master-take-id={state.masterTake.id} aria-busy={isBusy} className="space-y-3">
+        <SpatialPrevisSceneAssets
+          projectId={initialState.projectId}
+          references={state.scene.references}
+          disabled={isBusy}
+          onReferencesChange={handleSceneReferencesChange}
+          onUpload={async (file) => {
+            if (!onUploadSceneAsset) throw new Error('场景资产上传不可用。')
+            return onUploadSceneAsset(file)
+          }}
+        />
         <div className="inline-flex overflow-hidden rounded-md border border-white/12" role="tablist" aria-label="预演编辑模式">
           <button
             type="button"

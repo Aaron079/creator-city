@@ -58,7 +58,8 @@ import {
   spatialPrevisMetadata,
 } from '@/lib/spatial-previs/persistence'
 import { normalizeSpatialPrevis } from '@/lib/spatial-previs/normalize'
-import type { SpatialPrevisState } from '@/lib/spatial-previs/types'
+import type { SpatialPrevisState, SpatialSceneReference } from '@/lib/spatial-previs/types'
+import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import { parseSeedancePrevisDeliveries } from '@/lib/seedance-previs/deliveryPersistence'
 import { receiptFromDelivery, type SeedanceDeliveryReceipt } from '@/lib/seedance-previs/receipts'
 import {
@@ -4135,6 +4136,34 @@ export function VisualCanvasWorkspace({
       return 'failed'
     }
   }, [projectId])
+
+  const handleUploadSpatialSceneAsset = useCallback(async (file: File): Promise<SpatialSceneReference> => {
+    if (!projectId) throw new Error('项目不可用。')
+
+    const validation = validateLocalMediaFile(file)
+    if (!validation.ok) throw new Error(validation.error.message)
+    const mediaType = getLocalImportKind(file)
+    if (!mediaType) throw new Error('仅支持图片或视频素材。')
+
+    const asset = await uploadAssetWithTimeout(
+      buildUploadFormData(file, projectId, workflowId ?? undefined, undefined, mediaType),
+    )
+    const assetId = asset.id.trim()
+    const url = getLocalImportDisplayUrl(asset).trim()
+    const title = (asset.name || file.name).trim() || '未命名场景资产'
+    if (!assetId || !isRenderableMediaUrl(url).ok) {
+      throw new Error('上传的素材无法用于场景预演。')
+    }
+
+    return {
+      id: `scene-upload-${assetId}`,
+      assetId,
+      title,
+      mediaType,
+      url,
+      source: 'upload',
+    }
+  }, [projectId, workflowId])
 
   const refreshSeedanceReceipts = useCallback(async () => {
     if (!projectId) return
@@ -11876,6 +11905,7 @@ export function VisualCanvasWorkspace({
             onDeliverToSeedance={handleDeliverSpatialPrevisToSeedance}
             seedanceReceipts={seedanceReceipts}
             onRetrySeedanceSegment={handleRetrySeedanceSegment}
+            onUploadSceneAsset={handleUploadSpatialSceneAsset}
             onClose={() => closeCanvasPanel()}
           />
         </div>
