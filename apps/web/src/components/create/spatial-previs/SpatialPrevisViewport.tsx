@@ -14,6 +14,7 @@ import type {
   CameraKeyframe,
   SpatialPrevisState,
   Vec3,
+  WhiteboxEntity,
 } from '@/lib/spatial-previs/types'
 import { sampleCamera } from '@/lib/spatial-previs/sampler'
 import { SpatialCameraControlStrip } from './SpatialCameraControlStrip'
@@ -22,6 +23,14 @@ const KEYFRAME_EPSILON = 1e-6
 const NUDGE_DELTA = 0.1
 const WORLD_CAMERA_POSITION: [number, number, number] = [10, 8, 12]
 const WORLD_CAMERA_TARGET: [number, number, number] = [0, 1, 0]
+const WHITEBOX_COLORS: Record<WhiteboxEntity['kind'], string> = {
+  floor: '#475569',
+  wall: '#64748b',
+  opening: '#d4a72c',
+  volume: '#58735f',
+  furniture: '#9a6149',
+  referencePlane: '#5b7c99',
+}
 
 type TransformSelection = 'actor' | 'camera' | 'target'
 
@@ -198,33 +207,110 @@ export function dispatchSpatialNudge({
   if (next !== state) onChange(next)
 }
 
+function WhiteboxEntityMesh({ entity }: { entity: WhiteboxEntity }) {
+  return (
+    <mesh
+      castShadow
+      receiveShadow
+      position={tuple(entity.position)}
+      rotation={[0, entity.rotationY, 0]}
+    >
+      <boxGeometry args={[entity.size.x, entity.size.y, entity.size.z]} />
+      <meshStandardMaterial color={WHITEBOX_COLORS[entity.kind]} roughness={0.82} metalness={0.04} />
+    </mesh>
+  )
+}
+
 function ActorProxy({ position, selected }: { position: Vec3; selected: boolean }) {
+  const bodyColor = selected ? '#a5f3fc' : '#7dd3fc'
+  const limbColor = selected ? '#67e8f9' : '#38bdf8'
+
   return (
     <group position={tuple(position)}>
-      <mesh castShadow>
-        <capsuleGeometry args={[0.25, 0.9, 6, 10]} />
-        <meshStandardMaterial color={selected ? '#a5f3fc' : '#7dd3fc'} emissive={selected ? '#155e75' : '#082f49'} roughness={0.5} />
+      <mesh castShadow position={[0, 0.5, 0]}>
+        <capsuleGeometry args={[0.23, 0.62, 6, 10]} />
+        <meshStandardMaterial color={bodyColor} emissive={selected ? '#155e75' : '#082f49'} roughness={0.5} />
+      </mesh>
+      <mesh castShadow position={[0, 1.25, 0]}>
+        <sphereGeometry args={[0.19, 16, 12]} />
+        <meshStandardMaterial color="#d6eff7" roughness={0.62} />
+      </mesh>
+      <mesh castShadow position={[-0.31, 0.55, 0]} rotation={[0, 0, 0.42]}>
+        <capsuleGeometry args={[0.07, 0.52, 4, 8]} />
+        <meshStandardMaterial color={limbColor} roughness={0.56} />
+      </mesh>
+      <mesh castShadow position={[0.31, 0.55, 0]} rotation={[0, 0, -0.42]}>
+        <capsuleGeometry args={[0.07, 0.52, 4, 8]} />
+        <meshStandardMaterial color={limbColor} roughness={0.56} />
+      </mesh>
+      <mesh castShadow position={[-0.13, -0.42, 0]}>
+        <capsuleGeometry args={[0.09, 0.42, 4, 8]} />
+        <meshStandardMaterial color={limbColor} roughness={0.56} />
+      </mesh>
+      <mesh castShadow position={[0.13, -0.42, 0]}>
+        <capsuleGeometry args={[0.09, 0.42, 4, 8]} />
+        <meshStandardMaterial color={limbColor} roughness={0.56} />
       </mesh>
       <mesh position={[0, -0.67, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[0.34, 0.44, 24]} />
-        <meshBasicMaterial color={selected ? '#67e8f9' : '#38bdf8'} transparent opacity={0.8} side={2} />
+        <meshBasicMaterial color={limbColor} transparent opacity={0.8} side={2} />
       </mesh>
     </group>
   )
 }
 
-function CameraRigMarker({ position, selected }: { position: Vec3; selected: boolean }) {
+function cameraRigRotation(position: Vec3, target: Vec3): [number, number, number] {
+  const horizontalDistance = Math.hypot(target.x - position.x, target.z - position.z)
+  return [
+    Math.atan2(target.y - position.y, horizontalDistance || 0.001),
+    Math.atan2(position.x - target.x, position.z - target.z),
+    0,
+  ]
+}
+
+function CameraRigMarker({ position, target, selected }: { position: Vec3; target: Vec3; selected: boolean }) {
   const color = selected ? '#facc15' : '#f59e0b'
   return (
-    <group position={tuple(position)}>
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.48, 0.88, 4]} />
-        <meshStandardMaterial color={color} emissive="#713f12" roughness={0.45} wireframe />
+    <group position={tuple(position)} rotation={cameraRigRotation(position, target)}>
+      <mesh castShadow position={[0, 0.18, 0]}>
+        <boxGeometry args={[0.8, 0.46, 0.56]} />
+        <meshStandardMaterial color={color} emissive="#713f12" roughness={0.45} />
       </mesh>
-      <mesh position={[0, 0.14, 0]}>
-        <boxGeometry args={[0.32, 0.23, 0.3]} />
-        <meshStandardMaterial color={color} emissive="#713f12" roughness={0.4} />
+      <mesh castShadow position={[0, 0.18, -0.55]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.2, 0.2, 0.42, 20]} />
+        <meshStandardMaterial color="#1f2937" metalness={0.45} roughness={0.32} />
       </mesh>
+      <mesh position={[0, 0.18, -0.78]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.14, 0.14, 0.02, 20]} />
+        <meshStandardMaterial color="#7dd3fc" emissive="#0e7490" roughness={0.18} metalness={0.2} />
+      </mesh>
+      <mesh castShadow position={[0, -0.12, 0.1]}>
+        <sphereGeometry args={[0.13, 12, 12]} />
+        <meshStandardMaterial color="#334155" roughness={0.38} metalness={0.35} />
+      </mesh>
+      <mesh castShadow position={[-0.26, -0.52, 0.25]} rotation={[-0.42, 0, -0.45]}>
+        <cylinderGeometry args={[0.035, 0.035, 0.88, 8]} />
+        <meshStandardMaterial color="#475569" roughness={0.42} metalness={0.32} />
+      </mesh>
+      <mesh castShadow position={[0.26, -0.52, 0.25]} rotation={[-0.42, 0, 0.45]}>
+        <cylinderGeometry args={[0.035, 0.035, 0.88, 8]} />
+        <meshStandardMaterial color="#475569" roughness={0.42} metalness={0.32} />
+      </mesh>
+      <mesh castShadow position={[0, -0.5, 0.46]} rotation={[0.48, 0, 0]}>
+        <cylinderGeometry args={[0.035, 0.035, 0.86, 8]} />
+        <meshStandardMaterial color="#475569" roughness={0.42} metalness={0.32} />
+      </mesh>
+      <Line
+        points={[
+          [0, 0.18, -0.8], [-0.62, 0.68, -3], [0.62, 0.68, -3], [0, 0.18, -0.8],
+          [0.62, -0.32, -3], [-0.62, -0.32, -3], [0, 0.18, -0.8], [-0.62, 0.68, -3],
+          [-0.62, -0.32, -3], [0.62, -0.32, -3], [0.62, 0.68, -3],
+        ]}
+        color="#fcd34d"
+        lineWidth={1}
+        transparent
+        opacity={0.72}
+      />
     </group>
   )
 }
@@ -267,11 +353,13 @@ function WorldAnchorMarker({ anchor }: { anchor: WorldAnchor }) {
 function TransformableProxy({
   selection,
   position,
+  target,
   enabled,
   onObjectChange,
 }: {
   selection: TransformSelection
   position: Vec3
+  target?: Vec3
   enabled: boolean
   onObjectChange: (position: Vec3) => void
 }) {
@@ -289,7 +377,7 @@ function TransformableProxy({
     >
       <group ref={objectRef} position={tuple(position)}>
         {selection === 'actor' ? <ActorProxy position={{ x: 0, y: 0, z: 0 }} selected /> : null}
-        {selection === 'camera' ? <CameraRigMarker position={{ x: 0, y: 0, z: 0 }} selected /> : null}
+        {selection === 'camera' && target ? <CameraRigMarker position={{ x: 0, y: 0, z: 0 }} target={{ x: target.x - position.x, y: target.y - position.y, z: target.z - position.z }} selected /> : null}
         {selection === 'target' ? <TargetRing position={{ x: 0, y: 0, z: 0 }} selected /> : null}
       </group>
     </TransformControls>
@@ -336,6 +424,7 @@ function WorldGeometry({
   selectedActorTrack,
   manipulationEnabled,
   onObjectChange,
+  showOverviewGuides = false,
 }: {
   state: SpatialPrevisState
   currentTimeSec: number
@@ -344,6 +433,7 @@ function WorldGeometry({
   selectedActorTrack?: ActorTrack
   manipulationEnabled?: boolean
   onObjectChange?: (position: Vec3) => void
+  showOverviewGuides?: boolean
 }) {
   const cameraPath = useMemo(
     () => state.masterTake.cameraTrack.keyframes.map((keyframe) => tuple(keyframe.position)),
@@ -361,8 +451,12 @@ function WorldGeometry({
       <ambientLight intensity={0.7} />
       <directionalLight castShadow intensity={1.15} position={[7, 10, 6]} color="#dbeafe" />
       <gridHelper args={[24, 24, '#476475', '#1a2a35']} position={[0, -0.72, 0]} />
-      <axesHelper args={[2.4]} position={[-10, -0.69, -10]} />
-      {anchors.map((anchor) => <WorldAnchorMarker key={anchor.id} anchor={anchor} />)}
+      {showOverviewGuides ? <axesHelper args={[2.4]} position={[-10, -0.69, -10]} /> : null}
+      {showOverviewGuides ? anchors.map((anchor) => <WorldAnchorMarker key={anchor.id} anchor={anchor} />) : null}
+      <group>
+        {/* Reference imagery is represented as conservative editor-unit proxy geometry. */}
+        {state.scene.whitebox.entities.map((entity) => <WhiteboxEntityMesh key={entity.id} entity={entity} />)}
+      </group>
 
       {state.masterTake.actorTracks.map((track) => {
         const isSelected = selection === 'actor' && selectedActorTrack === track
@@ -370,7 +464,7 @@ function WorldGeometry({
         const position = initialActorPosition(track, currentTimeSec)
         return (
           <group key={track.id}>
-            {track.keyframes.length > 1 ? (
+            {showOverviewGuides && track.keyframes.length > 1 ? (
               <Line points={track.keyframes.map((keyframe) => tuple(keyframe.position))} color="#38bdf8" lineWidth={1.5} transparent opacity={0.48} />
             ) : null}
             {isSelected && canTransform && onObjectChange ? (
@@ -380,16 +474,16 @@ function WorldGeometry({
         )
       })}
 
-      {cameraPath.length > 1 ? <Line points={cameraPath} color="#fbbf24" lineWidth={1.5} transparent opacity={0.68} /> : null}
-      {sampledCamera ? <Line points={[tuple(sampledCamera.position), tuple(sampledCamera.target)]} color="#f59e0b" lineWidth={1} dashed dashScale={6} gapSize={0.25} /> : null}
+      {showOverviewGuides && cameraPath.length > 1 ? <Line points={cameraPath} color="#fbbf24" lineWidth={1.5} transparent opacity={0.68} /> : null}
+      {showOverviewGuides && sampledCamera ? <Line points={[tuple(sampledCamera.position), tuple(sampledCamera.target)]} color="#f59e0b" lineWidth={1} dashed dashScale={6} gapSize={0.25} /> : null}
 
       {sampledCamera ? (
         selection === 'camera' && manipulationEnabled && onObjectChange ? (
-          <TransformableProxy selection="camera" position={sampledCamera.position} enabled onObjectChange={onObjectChange} />
-        ) : <CameraRigMarker position={sampledCamera.position} selected={selection === 'camera'} />
+          <TransformableProxy selection="camera" position={sampledCamera.position} target={sampledCamera.target} enabled onObjectChange={onObjectChange} />
+        ) : <CameraRigMarker position={sampledCamera.position} target={sampledCamera.target} selected={selection === 'camera'} />
       ) : null}
 
-      {sampledCamera ? (
+      {showOverviewGuides && sampledCamera ? (
         selection === 'target' && manipulationEnabled && onObjectChange ? (
           <TransformableProxy selection="target" position={sampledCamera.target} enabled onObjectChange={onObjectChange} />
         ) : <TargetRing position={sampledCamera.target} selected={selection === 'target'} />
@@ -417,7 +511,7 @@ function WorldCanvas(props: {
       className="absolute inset-0 h-full w-full"
       style={{ position: 'absolute', inset: 0 }}
     >
-      <WorldGeometry {...props} />
+      <WorldGeometry {...props} showOverviewGuides />
       <OrbitControls enabled={!props.interactionDisabled} makeDefault enableDamping target={WORLD_CAMERA_TARGET} maxPolarAngle={Math.PI * 0.48} />
     </Canvas>
   )
@@ -539,20 +633,25 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
       </header>
 
       <div className="relative min-h-[390px] flex-1 bg-[#071015]">
-        {mounted ? (
-          <WorldCanvas
-            state={state}
-            currentTimeSec={currentTimeSec}
-            sampledCamera={sampledCamera}
-            selection={selection}
-            selectedActorTrack={selectedActorTrack}
-            manipulationEnabled={manipulationEnabled}
-            interactionDisabled={disabled}
-            onObjectChange={handleObjectChange}
-          />
-        ) : <div className="h-full w-full" aria-hidden="true" />}
+        <div data-spatial-whitebox-world="true" data-spatial-camera-rig={sampledCamera ? 'true' : undefined} className="absolute inset-0">
+          {mounted ? (
+            <WorldCanvas
+              state={state}
+              currentTimeSec={currentTimeSec}
+              sampledCamera={sampledCamera}
+              selection={selection}
+              selectedActorTrack={selectedActorTrack}
+              manipulationEnabled={manipulationEnabled}
+              interactionDisabled={disabled}
+              onObjectChange={handleObjectChange}
+            />
+          ) : <div className="h-full w-full" aria-hidden="true" />}
+          <div className="hidden" aria-hidden="true">
+            {state.scene.whitebox.entities.map((entity) => <span key={entity.id} data-spatial-whitebox-entity={entity.kind} />)}
+          </div>
+        </div>
 
-        <aside data-spatial-camera-preview="true" className="absolute bottom-3 right-3 h-36 w-56 overflow-hidden rounded-md border border-white/18 bg-[#080d11] shadow-2xl">
+        <aside data-spatial-camera-preview="true" data-spatial-live-camera="true" className="absolute bottom-3 right-3 h-36 w-56 overflow-hidden rounded-md border border-white/18 bg-[#080d11] shadow-2xl">
           {mounted && sampledCamera ? <LivePreviewCanvas state={state} currentTimeSec={currentTimeSec} sampledCamera={sampledCamera} /> : <div className="h-full w-full" aria-hidden="true" />}
           <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between border-b border-white/10 bg-black/45 px-2 py-1 text-[10px] text-white/72">
             <span>LIVE</span>

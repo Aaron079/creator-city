@@ -70,12 +70,50 @@ function stateWithTwoActors(): SpatialPrevisState {
   }
 }
 
+function stateWithWhitebox(): SpatialPrevisState {
+  return {
+    ...state,
+    scene: {
+      ...state.scene,
+      whitebox: {
+        entities: [
+          { id: 'floor-main', kind: 'floor', position: { x: 0, y: -0.75, z: 0 }, rotationY: 0, size: { x: 16, y: 0.2, z: 12 }, sourceAssetIds: ['reference-1'] },
+          { id: 'wall-back', kind: 'wall', position: { x: 0, y: 2, z: -4 }, rotationY: 0, size: { x: 8, y: 4, z: 0.25 }, sourceAssetIds: ['reference-1'] },
+          { id: 'opening-left', kind: 'opening', position: { x: -3, y: 1.3, z: -3.8 }, rotationY: 0, size: { x: 1.4, y: 2.6, z: 0.16 }, sourceAssetIds: ['reference-1'] },
+          { id: 'volume-stage', kind: 'volume', position: { x: 2, y: 0.5, z: 0 }, rotationY: 0.4, size: { x: 2, y: 1, z: 2 }, sourceAssetIds: ['reference-1'] },
+          { id: 'furniture-table', kind: 'furniture', position: { x: -2, y: 0.45, z: 1 }, rotationY: -0.2, size: { x: 1.6, y: 0.9, z: 0.8 }, sourceAssetIds: ['reference-1'] },
+          { id: 'reference-plane', kind: 'referencePlane', position: { x: 4, y: 2, z: -2 }, rotationY: 0.2, size: { x: 3, y: 2, z: 0.08 }, sourceAssetIds: ['reference-1'] },
+        ],
+      },
+    },
+  }
+}
+
 function assertOtherCameraFramesUnchanged(next: SpatialPrevisState, source: SpatialPrevisState) {
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[0], source.masterTake.cameraTrack.keyframes[0])
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[2], source.masterTake.cameraTrack.keyframes[2])
 }
 
 describe('SpatialPrevisViewport', () => {
+  test('renders solid whitebox entities, actor proxy, and physical camera rig', () => {
+    const markup = renderToStaticMarkup(
+      createElement(SpatialPrevisViewport, { state: stateWithWhitebox(), currentTimeSec: 6, onChange: () => undefined }),
+    )
+
+    assert.match(markup, /data-spatial-whitebox-world="true"/)
+    assert.match(markup, /data-spatial-camera-rig="true"/)
+    assert.match(markup, /data-spatial-live-camera="true"/)
+    for (const kind of ['floor', 'wall', 'opening', 'volume', 'furniture', 'referencePlane']) {
+      assert.match(markup, new RegExp(`data-spatial-whitebox-entity="${kind}"`))
+    }
+  })
+
+  test('keeps spatial markup contracts off Three primitives', () => {
+    assert.doesNotMatch(viewportSource, /<mesh\b[^>]*data-spatial/)
+    assert.doesNotMatch(viewportSource, /<group\b[^>]*data-spatial/)
+    assert.doesNotMatch(viewportSource, /<Line\b[^>]*data-spatial/)
+  })
+
   test('renders the spatial viewport contract and familiar local camera actions', () => {
     const markup = renderToStaticMarkup(
       createElement(SpatialPrevisViewport, { state, currentTimeSec: 6, onChange: () => undefined }),
