@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const COOKIE_NAME = process.env.AUTH_COOKIE_NAME ?? 'creator_city_session'
 
+function getStablePreviewUrl(req: NextRequest): URL | null {
+  if (process.env.VERCEL_ENV !== 'preview') return null
+
+  const branchHost = process.env.VERCEL_BRANCH_URL?.trim().toLowerCase()
+  const requestHost = req.headers.get('host')?.split(':')[0]?.toLowerCase()
+  if (!branchHost || !requestHost || branchHost === requestHost) return null
+
+  const url = req.nextUrl.clone()
+  url.protocol = 'https:'
+  url.host = branchHost
+  return url
+}
+
 const PROTECTED_PREFIXES = [
   '/me',
   '/account',
@@ -35,6 +48,14 @@ export function middleware(req: NextRequest) {
     pathname.includes('.') // static files
   ) {
     return NextResponse.next()
+  }
+
+  // Each Vercel Preview deployment has its own host, so its browser cookies are
+  // isolated. Route page navigations through the branch URL before login, which
+  // stays stable across commits on the same branch.
+  if (req.method === 'GET' && !pathname.startsWith('/api/')) {
+    const stablePreviewUrl = getStablePreviewUrl(req)
+    if (stablePreviewUrl) return NextResponse.redirect(stablePreviewUrl)
   }
 
   if (!isProtected(pathname)) return NextResponse.next()
