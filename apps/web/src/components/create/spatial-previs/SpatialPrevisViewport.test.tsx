@@ -11,6 +11,7 @@ import path from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { chromium, type Browser, type Page } from '@playwright/test'
+import { PerspectiveCamera, Vector3 } from 'three'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { applySpatialCameraAction } from './SpatialCameraControlStrip'
 import { applySpatialNudge, SpatialPrevisViewport } from './SpatialPrevisViewport'
@@ -23,6 +24,7 @@ declare global {
     __spatialPrevisViewportHarness: {
       mount: (state: SpatialPrevisState, disabled?: boolean) => void
       mountRigProof: (state: SpatialPrevisState, showCameraRig: boolean) => void
+      lastChange: () => SpatialPrevisState | null
     }
   }
 }
@@ -207,6 +209,19 @@ type ScreenshotDifference = {
   accumulatedLumaDifference: number
 }
 
+function worldPointInCanvas(point: Vec3, canvas: Rectangle) {
+  const camera = new PerspectiveCamera(48, canvas.width / canvas.height, 0.1, 100)
+  camera.position.set(10, 8, 12)
+  camera.lookAt(0, 1, 0)
+  camera.updateMatrixWorld()
+
+  const projected = new Vector3(point.x, point.y, point.z).project(camera)
+  return {
+    x: canvas.left + ((projected.x + 1) / 2) * canvas.width,
+    y: canvas.top + ((1 - projected.y) / 2) * canvas.height,
+  }
+}
+
 const FEATURE_PIXEL_DELTA = 42
 const FEATURE_LUMA_DELTA = 14
 // Pixel-level floors are measured after a 42-channel/14-luma per-pixel filter, which
@@ -255,6 +270,7 @@ function renderedHarnessSource() {
     import { SpatialPrevisViewport, SpatialPrevisWorldGeometry } from ${JSON.stringify(componentPath)}
 
     let root = null
+    let latestState = null
 
     window.fetch = () => {
       throw new Error('SpatialPrevisViewport harness must not make authenticated API requests')
@@ -270,7 +286,7 @@ function renderedHarnessSource() {
           state,
           currentTimeSec: 6,
           disabled,
-          onChange: () => undefined,
+          onChange: (nextState) => { latestState = nextState },
         }))
       },
       mountRigProof(state, showCameraRig) {
@@ -292,6 +308,9 @@ function renderedHarnessSource() {
             showCameraRig,
           })),
         ))
+      },
+      lastChange() {
+        return latestState
       },
     }
   `
@@ -666,6 +685,47 @@ test('renders the physical camera rig in the overview world only', async () => {
       'overview camera rig visibility toggle',
       FEATURE_RENDER_FLOORS.cameraRigOverview.changedPixels,
       FEATURE_RENDER_FLOORS.cameraRigOverview.accumulatedColorDifference,
+    )
+  } finally {
+    await page.close()
+  }
+})
+
+test('moves the selected whitebox actor through an actual overview-canvas pointer drag', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithWhitebox()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    const evidence = await renderedViewportEvidence(page)
+    const overviewCanvas = evidence.canvases[0]?.rect
+    assert.ok(overviewCanvas)
+
+    const actorStart = worldPointInCanvas({ x: 0, y: 0.5, z: -1 }, overviewCanvas)
+    const actorDestination = worldPointInCanvas({ x: 1.8, y: 0, z: -2.4 }, overviewCanvas)
+    assert.ok(actorStart.x > overviewCanvas.left && actorStart.x < overviewCanvas.right)
+    assert.ok(actorStart.y > overviewCanvas.top && actorStart.y < overviewCanvas.bottom)
+
+    await page.mouse.move(actorStart.x, actorStart.y)
+    await page.mouse.down()
+    await page.mouse.move(actorDestination.x, actorDestination.y, { steps: 5 })
+    await page.mouse.up()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const changedActor = changed.masterTake.actorTracks[0]?.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    const originalActor = interactiveState.masterTake.actorTracks[0]?.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    assert.ok(changedActor)
+    assert.ok(originalActor)
+    assert.notDeepEqual(changedActor.position, originalActor.position)
+    assert.equal(changedActor.position.y, originalActor.position.y)
+    assert.deepEqual(changed.masterTake.cameraTrack, interactiveState.masterTake.cameraTrack)
+    assert.equal(
+      await page.locator('[data-spatial-previs-viewport="true"] canvas').first().evaluate((canvas) => getComputedStyle(canvas.parentElement ?? canvas).cursor),
+      'grab',
     )
   } finally {
     await page.close()
