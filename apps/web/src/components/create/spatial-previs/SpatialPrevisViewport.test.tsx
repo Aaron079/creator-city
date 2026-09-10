@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { describe, test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createElement } from 'react'
@@ -21,7 +21,7 @@ const viewportSource = readFileSync(new URL('./SpatialPrevisViewport.tsx', impor
 declare global {
   interface Window {
     __spatialPrevisViewportHarness: {
-      mount: () => void
+      mount: (state: SpatialPrevisState, disabled?: boolean) => void
     }
   }
 }
@@ -102,6 +102,66 @@ function stateWithWhitebox(): SpatialPrevisState {
   }
 }
 
+function stateWithoutWhitebox(): SpatialPrevisState {
+  const fullWorld = stateWithWhitebox()
+  return {
+    ...fullWorld,
+    scene: {
+      ...fullWorld.scene,
+      whitebox: { entities: [] },
+    },
+  }
+}
+
+function stateWithoutActors(): SpatialPrevisState {
+  const fullWorld = stateWithWhitebox()
+  return {
+    ...fullWorld,
+    masterTake: {
+      ...fullWorld.masterTake,
+      actorTracks: [],
+    },
+  }
+}
+
+function stateWithNearDegenerateCameraGuide(): SpatialPrevisState {
+  const fullWorld = stateWithWhitebox()
+  return {
+    ...fullWorld,
+    masterTake: {
+      ...fullWorld.masterTake,
+      // One frame deliberately eliminates the overview camera-path line. The target is
+      // only 0.035 scene units away, leaving a sub-pixel guide rather than evidence for
+      // the physical camera rig tested below.
+      cameraTrack: {
+        ...fullWorld.masterTake.cameraTrack,
+        keyframes: [{
+          id: 'camera-rig-single-frame',
+          timeSec: 6,
+          position: { x: 0, y: 1.8, z: 5 },
+          target: { x: 0, y: 1.8, z: 4.965 },
+          focalLengthMm: 50,
+          intent: 'static',
+        }],
+      },
+    },
+  }
+}
+
+function stateWithoutCameraRig(): SpatialPrevisState {
+  const rigWorld = stateWithNearDegenerateCameraGuide()
+  return {
+    ...rigWorld,
+    masterTake: {
+      ...rigWorld.masterTake,
+      cameraTrack: {
+        ...rigWorld.masterTake.cameraTrack,
+        keyframes: [],
+      },
+    },
+  }
+}
+
 let browser: Browser | null = null
 let temporaryDirectory = ''
 let bundlePath = ''
@@ -119,7 +179,6 @@ type Rectangle = {
 type RenderedViewportEvidence = {
   viewport: Rectangle
   livePreview: Rectangle
-  hiddenWhiteboxSentinels: number
   canvases: Array<{
     bufferWidth: number
     bufferHeight: number
@@ -131,6 +190,44 @@ type ScreenshotPixelEvidence = {
   colorBuckets: number
   lumaRange: number
   samples: number
+}
+
+type NormalizedScreenshotCrop = {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+type ScreenshotDifference = {
+  comparedPixels: number
+  changedPixels: number
+  accumulatedColorDifference: number
+  accumulatedLumaDifference: number
+}
+
+const FEATURE_PIXEL_DELTA = 42
+const FEATURE_LUMA_DELTA = 14
+// Pixel-level floors are measured after a 42-channel/14-luma per-pixel filter, which
+// excludes routine antialiasing. They sit below the observed solid-geometry deltas but
+// above the contribution of the stable grid/background and the one-pixel guide lines.
+const FEATURE_RENDER_FLOORS = {
+  whiteboxOverview: { changedPixels: 25_000, accumulatedColorDifference: 3_000_000 },
+  whiteboxLive: { changedPixels: 3_500, accumulatedColorDifference: 400_000 },
+  actorOverview: { changedPixels: 1_400, accumulatedColorDifference: 250_000 },
+  actorLive: { changedPixels: 800, accumulatedColorDifference: 150_000 },
+  cameraRigOverview: { changedPixels: 1_000, accumulatedColorDifference: 200_000 },
+}
+
+function assertMaterialRenderDifference(
+  difference: ScreenshotDifference,
+  name: string,
+  minimumChangedPixels: number,
+  minimumAccumulatedColorDifference: number,
+) {
+  const summary = `${name}: ${difference.changedPixels}/${difference.comparedPixels} pixels changed, color delta ${difference.accumulatedColorDifference}, luma delta ${difference.accumulatedLumaDifference}`
+  assert.ok(difference.changedPixels >= minimumChangedPixels, summary)
+  assert.ok(difference.accumulatedColorDifference >= minimumAccumulatedColorDifference, summary)
 }
 
 async function findEsbuildBinary() {
@@ -155,7 +252,6 @@ function renderedHarnessSource() {
     import { createRoot } from 'react-dom/client'
     import { SpatialPrevisViewport } from ${JSON.stringify(componentPath)}
 
-    const state = ${JSON.stringify(stateWithWhitebox())}
     let root = null
 
     window.fetch = () => {
@@ -163,7 +259,7 @@ function renderedHarnessSource() {
     }
 
     window.__spatialPrevisViewportHarness = {
-      mount() {
+      mount(state, disabled = true) {
         root?.unmount()
         const container = document.getElementById('root')
         container.replaceChildren()
@@ -171,7 +267,7 @@ function renderedHarnessSource() {
         root.render(React.createElement(SpatialPrevisViewport, {
           state,
           currentTimeSec: 6,
-          disabled: true,
+          disabled,
           onChange: () => undefined,
         }))
       },
@@ -179,7 +275,7 @@ function renderedHarnessSource() {
   `
 }
 
-async function mountRenderedViewport(page: Page) {
+async function prepareRenderedViewport(page: Page) {
   await page.setContent('<!doctype html><html><head></head><body><div id="root"></div></body></html>')
   await page.addStyleTag({ path: stylesPath })
   await page.addStyleTag({ content: `
@@ -188,11 +284,17 @@ async function mountRenderedViewport(page: Page) {
     #root { width: 100%; min-height: calc(100vh - 24px); }
   ` })
   await page.addScriptTag({ path: bundlePath })
-  await page.evaluate(() => window.__spatialPrevisViewportHarness.mount())
+}
+
+async function mountRenderedViewport(page: Page, state: SpatialPrevisState, expectedCanvases = 2, disabled = true) {
+  await page.evaluate(({ nextState, nextDisabled }) => {
+    window.__spatialPrevisViewportHarness.mount(nextState, nextDisabled)
+  }, { nextState: state, nextDisabled: disabled })
   await page.waitForFunction(() => {
     const canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas'))
-    return canvases.length === 2 && canvases.every((canvas) => canvas.width > 0 && canvas.height > 0 && canvas.getBoundingClientRect().width > 0 && canvas.getBoundingClientRect().height > 0)
-  })
+    return canvases.every((canvas) => canvas.width > 0 && canvas.height > 0 && canvas.getBoundingClientRect().width > 0 && canvas.getBoundingClientRect().height > 0)
+  }, { polling: 'raf' })
+  await page.waitForFunction((count) => document.querySelectorAll('[data-spatial-previs-viewport="true"] canvas').length === count, expectedCanvases)
   await page.waitForTimeout(150)
 }
 
@@ -220,7 +322,6 @@ async function renderedViewportEvidence(page: Page): Promise<RenderedViewportEvi
     return {
       viewport: rectangle(viewport),
       livePreview: rectangle(livePreview),
-      hiddenWhiteboxSentinels: document.querySelectorAll('[data-spatial-whitebox-entity]').length,
       canvases: canvases.map(canvasSummary),
     }
   })()`) as Promise<RenderedViewportEvidence>
@@ -259,6 +360,87 @@ async function screenshotPixelEvidence(page: Page, screenshot: Buffer): Promise<
     }
     return { colorBuckets: colors.size, lumaRange: maxLuma - minLuma, samples }
   })()`) as Promise<ScreenshotPixelEvidence>
+}
+
+async function canvasScreenshots(page: Page, expectedCanvases: number) {
+  const canvases = page.locator('[data-spatial-previs-viewport="true"] canvas')
+  assert.equal(await canvases.count(), expectedCanvases, `expected ${expectedCanvases} WebGL canvases`)
+
+  const screenshots: Buffer[] = []
+  for (let index = 0; index < expectedCanvases; index += 1) {
+    screenshots.push(await canvases.nth(index).screenshot())
+  }
+  return screenshots
+}
+
+async function screenshotPixelDifference(
+  page: Page,
+  baseline: Buffer,
+  variant: Buffer,
+  crop?: NormalizedScreenshotCrop,
+): Promise<ScreenshotDifference> {
+  return page.evaluate(`(async () => {
+    const baseline = ${JSON.stringify(baseline.toString('base64'))}
+    const variant = ${JSON.stringify(variant.toString('base64'))}
+    const crop = ${JSON.stringify(crop)}
+    const featurePixelDelta = ${FEATURE_PIXEL_DELTA}
+    const featureLumaDelta = ${FEATURE_LUMA_DELTA}
+    const decode = async (encoded) => {
+      const image = new Image()
+      image.src = 'data:image/png;base64,' + encoded
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth
+      canvas.height = image.naturalHeight
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context) throw new Error('Unable to decode spatial previs screenshot pixels')
+      context.drawImage(image, 0, 0)
+      return context.getImageData(0, 0, canvas.width, canvas.height)
+    }
+
+    const [baselinePixels, variantPixels] = await Promise.all([decode(baseline), decode(variant)])
+    if (baselinePixels.width !== variantPixels.width || baselinePixels.height !== variantPixels.height) {
+      throw new Error('Spatial previs screenshots have different dimensions: ' + baselinePixels.width + 'x' + baselinePixels.height + ' vs ' + variantPixels.width + 'x' + variantPixels.height)
+    }
+
+    const { width, height } = baselinePixels
+    const left = Math.floor((crop?.left ?? 0) * width)
+    const top = Math.floor((crop?.top ?? 0) * height)
+    const right = Math.ceil((crop?.right ?? 1) * width)
+    const bottom = Math.ceil((crop?.bottom ?? 1) * height)
+    if (left < 0 || top < 0 || right > width || bottom > height || right <= left || bottom <= top) {
+      throw new Error('Spatial previs screenshot crop is outside the canvas')
+    }
+
+    let changedPixels = 0
+    let accumulatedColorDifference = 0
+    let accumulatedLumaDifference = 0
+    for (let y = top; y < bottom; y += 1) {
+      for (let x = left; x < right; x += 1) {
+        const offset = (y * width + x) * 4
+        const redDifference = Math.abs(baselinePixels.data[offset] - variantPixels.data[offset])
+        const greenDifference = Math.abs(baselinePixels.data[offset + 1] - variantPixels.data[offset + 1])
+        const blueDifference = Math.abs(baselinePixels.data[offset + 2] - variantPixels.data[offset + 2])
+        const colorDifference = redDifference + greenDifference + blueDifference
+        const baselineLuma = baselinePixels.data[offset] * 0.2126 + baselinePixels.data[offset + 1] * 0.7152 + baselinePixels.data[offset + 2] * 0.0722
+        const variantLuma = variantPixels.data[offset] * 0.2126 + variantPixels.data[offset + 1] * 0.7152 + variantPixels.data[offset + 2] * 0.0722
+        const lumaDifference = Math.abs(baselineLuma - variantLuma)
+
+        if (colorDifference >= featurePixelDelta || lumaDifference >= featureLumaDelta) {
+          changedPixels += 1
+          accumulatedColorDifference += colorDifference
+          accumulatedLumaDifference += lumaDifference
+        }
+      }
+    }
+
+    return {
+      comparedPixels: (right - left) * (bottom - top),
+      changedPixels,
+      accumulatedColorDifference,
+      accumulatedLumaDifference,
+    }
+  })()`) as Promise<ScreenshotDifference>
 }
 
 test.before(async () => {
@@ -313,9 +495,9 @@ test('renders an actual nonblank overview and live WebGL world at desktop and mo
     page.on('request', (request) => requests.push(request.url()))
 
     try {
-      await mountRenderedViewport(page)
+      await prepareRenderedViewport(page)
+      await mountRenderedViewport(page, stateWithWhitebox())
       const evidence = await renderedViewportEvidence(page)
-      assert.equal(evidence.hiddenWhiteboxSentinels, 0, `${viewportSize.name}: rendered geometry must not rely on hidden DOM sentinels`)
       assert.equal(evidence.canvases.length, 2, `${viewportSize.name}: expected overview and live canvases`)
 
       const [overview, live] = evidence.canvases
@@ -332,12 +514,10 @@ test('renders an actual nonblank overview and live WebGL world at desktop and mo
       assert.ok(live.rect.width >= 160 && live.rect.height >= 96, `${viewportSize.name}: live preview lost its usable overlay framing`)
       assert.ok(live.rect.width < overview.rect.width && live.rect.height < overview.rect.height, `${viewportSize.name}: live preview obscures the overview canvas`)
 
-      const canvasLocators = page.locator('[data-spatial-previs-viewport="true"] canvas')
+      const screenshots = await canvasScreenshots(page, 2)
       for (const [index, name] of ['overview', 'live'].entries()) {
-        const screenshotPath = path.join(temporaryDirectory, `${viewportSize.name}-${name}.png`)
-        const screenshotBuffer = await canvasLocators.nth(index).screenshot({ path: screenshotPath })
-        const screenshot = await stat(screenshotPath)
-        assert.ok(screenshot.size > 1_000, `${viewportSize.name} ${name}: screenshot is trivial`)
+        const screenshotBuffer = screenshots[index]
+        assert.ok(screenshotBuffer)
         const pixels = await screenshotPixelEvidence(page, screenshotBuffer)
         assert.ok(pixels.lumaRange >= 24, `${viewportSize.name} ${name}: visible canvas pixels are too uniform`)
         assert.ok(pixels.colorBuckets >= 12, `${viewportSize.name} ${name}: visible canvas pixels lack scene detail`)
@@ -348,6 +528,95 @@ test('renders an actual nonblank overview and live WebGL world at desktop and mo
     } finally {
       await page.close()
     }
+  }
+})
+
+test('changes actual overview and live WebGL pixels when whitebox or actor geometry is removed', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const browserFailures: string[] = []
+  const requests: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserFailures.push(`console: ${message.text()}`)
+  })
+  page.on('pageerror', (error) => browserFailures.push(`page: ${error.message}`))
+  page.on('request', (request) => requests.push(request.url()))
+
+  try {
+    await prepareRenderedViewport(page)
+    await mountRenderedViewport(page, stateWithWhitebox())
+    const fullWorld = await canvasScreenshots(page, 2)
+
+    await mountRenderedViewport(page, stateWithoutWhitebox())
+    const withoutWhitebox = await canvasScreenshots(page, 2)
+
+    // Hold the local selection at camera in both actor variants so the overview cannot
+    // count the selected-camera color as actor evidence.
+    await mountRenderedViewport(page, stateWithWhitebox(), 2, false)
+    await page.getByRole('button', { name: '相机' }).click()
+    await page.waitForTimeout(150)
+    const actorWorld = await canvasScreenshots(page, 2)
+
+    await mountRenderedViewport(page, stateWithoutActors(), 2, false)
+    const withoutActors = await canvasScreenshots(page, 2)
+
+    const differences = {
+      whiteboxOverview: await screenshotPixelDifference(page, fullWorld[0]!, withoutWhitebox[0]!),
+      whiteboxLive: await screenshotPixelDifference(page, fullWorld[1]!, withoutWhitebox[1]!),
+      actorOverview: await screenshotPixelDifference(page, actorWorld[0]!, withoutActors[0]!),
+      actorLive: await screenshotPixelDifference(page, actorWorld[1]!, withoutActors[1]!),
+    }
+    assertMaterialRenderDifference(differences.whiteboxOverview, 'whitebox overview', FEATURE_RENDER_FLOORS.whiteboxOverview.changedPixels, FEATURE_RENDER_FLOORS.whiteboxOverview.accumulatedColorDifference)
+    assertMaterialRenderDifference(differences.whiteboxLive, 'whitebox live', FEATURE_RENDER_FLOORS.whiteboxLive.changedPixels, FEATURE_RENDER_FLOORS.whiteboxLive.accumulatedColorDifference)
+    assertMaterialRenderDifference(differences.actorOverview, 'actor overview', FEATURE_RENDER_FLOORS.actorOverview.changedPixels, FEATURE_RENDER_FLOORS.actorOverview.accumulatedColorDifference)
+    assertMaterialRenderDifference(differences.actorLive, 'actor live', FEATURE_RENDER_FLOORS.actorLive.changedPixels, FEATURE_RENDER_FLOORS.actorLive.accumulatedColorDifference)
+
+    assert.deepEqual(requests, [], 'feature-evidence harness must not make API requests')
+    assert.deepEqual(browserFailures, [], 'feature-evidence harness reported rendering errors')
+  } finally {
+    await page.close()
+  }
+})
+
+test('changes the overview crop around the physical camera rig against a no-camera baseline', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const browserFailures: string[] = []
+  const requests: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserFailures.push(`console: ${message.text()}`)
+  })
+  page.on('pageerror', (error) => browserFailures.push(`page: ${error.message}`))
+  page.on('request', (request) => requests.push(request.url()))
+
+  try {
+    await prepareRenderedViewport(page)
+    await mountRenderedViewport(page, stateWithNearDegenerateCameraGuide())
+    const withRig = (await canvasScreenshots(page, 2))[0]!
+
+    await mountRenderedViewport(page, stateWithoutCameraRig(), 1)
+    const withoutRig = (await canvasScreenshots(page, 1))[0]!
+
+    // The fixed overview camera projects the rig at (0, 1.8, 5) into this central-left
+    // region. The single-frame state has no camera path and a 0.035-unit target line, so
+    // this crop cannot pass merely because overview guide/path lines changed.
+    const difference = await screenshotPixelDifference(page, withRig, withoutRig, {
+      left: 0.18,
+      top: 0.36,
+      right: 0.58,
+      bottom: 0.78,
+    })
+    assertMaterialRenderDifference(
+      difference,
+      'physical camera rig overview crop',
+      FEATURE_RENDER_FLOORS.cameraRigOverview.changedPixels,
+      FEATURE_RENDER_FLOORS.cameraRigOverview.accumulatedColorDifference,
+    )
+
+    assert.deepEqual(requests, [], 'camera-rig harness must not make API requests')
+    assert.deepEqual(browserFailures, [], 'camera-rig harness reported rendering errors')
+  } finally {
+    await page.close()
   }
 })
 
