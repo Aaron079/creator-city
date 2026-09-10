@@ -58,6 +58,7 @@ import {
   spatialPrevisMetadata,
 } from '@/lib/spatial-previs/persistence'
 import { normalizeSpatialPrevis } from '@/lib/spatial-previs/normalize'
+import type { PrevisDeliveryPackage } from '@/lib/spatial-previs/delivery'
 import type { SpatialPrevisState, SpatialSceneReference } from '@/lib/spatial-previs/types'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import { parseSeedancePrevisDeliveries } from '@/lib/seedance-previs/deliveryPersistence'
@@ -5735,6 +5736,51 @@ export function VisualCanvasWorkspace({
     setPreferredKind(kind)
     return node
   }, [canvasPan.x, canvasPan.y, canvasZoom, commitEdges, commitNodes, nodes, promptStage])
+
+  const handleCreateSpatialPrevisDeliveryNode = useCallback((delivery: PrevisDeliveryPackage) => {
+    const node = createNode('text', {
+      title: '三维预演交付',
+      prompt: '三维预演交付包已创建，可下载 JSON 或保存到素材库。',
+      model: 'spatial-previs-delivery',
+      status: 'done',
+      metadataJson: { previsDelivery: delivery },
+    })
+    flushLocalSnapshot()
+    scheduleCanvasSave(0)
+    showCanvasFeedback('已创建三维预演交付节点。')
+  }, [createNode, flushLocalSnapshot, scheduleCanvasSave, showCanvasFeedback])
+
+  const handleDownloadSpatialPrevisDeliveryPackage = useCallback((delivery: PrevisDeliveryPackage) => {
+    const blob = new Blob([JSON.stringify(delivery, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'spatial-previs-delivery.json'
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
+  }, [])
+
+  const handleSaveSpatialPrevisDeliveryPackageToAssets = useCallback(async (delivery: PrevisDeliveryPackage) => {
+    if (!projectId || !workflowId) throw new Error('请先完成项目同步。')
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/assets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        workflowId,
+        type: 'text',
+        title: '三维预演交付包',
+        dataUrl: JSON.stringify(delivery, null, 2),
+        mimeType: 'application/json',
+        providerId: 'spatial-previs',
+        metadataJson: { previsDelivery: delivery },
+      }),
+    })
+    if (!response.ok) throw new Error('保存到素材库失败。')
+    showCanvasFeedback('三维预演交付包已保存到素材库。')
+  }, [projectId, showCanvasFeedback, workflowId])
 
   const openScriptSegmentation = useCallback((node: VisualCanvasNode) => {
     if (node.kind !== 'text') return
@@ -11906,6 +11952,9 @@ export function VisualCanvasWorkspace({
             seedanceReceipts={seedanceReceipts}
             onRetrySeedanceSegment={handleRetrySeedanceSegment}
             onUploadSceneAsset={handleUploadSpatialSceneAsset}
+            onCreateDeliveryNode={handleCreateSpatialPrevisDeliveryNode}
+            onDownloadDeliveryPackage={handleDownloadSpatialPrevisDeliveryPackage}
+            onSaveDeliveryPackageToAssets={handleSaveSpatialPrevisDeliveryPackageToAssets}
             onClose={() => closeCanvasPanel()}
           />
         </div>

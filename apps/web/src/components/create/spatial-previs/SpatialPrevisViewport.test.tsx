@@ -22,6 +22,7 @@ declare global {
   interface Window {
     __spatialPrevisViewportHarness: {
       mount: (state: SpatialPrevisState, disabled?: boolean) => void
+      mountRigProof: (state: SpatialPrevisState, showCameraRig: boolean) => void
     }
   }
 }
@@ -250,7 +251,8 @@ function renderedHarnessSource() {
   return `
     import * as React from 'react'
     import { createRoot } from 'react-dom/client'
-    import { SpatialPrevisViewport } from ${JSON.stringify(componentPath)}
+    import { Canvas } from '@react-three/fiber'
+    import { SpatialPrevisViewport, SpatialPrevisWorldGeometry } from ${JSON.stringify(componentPath)}
 
     let root = null
 
@@ -271,6 +273,26 @@ function renderedHarnessSource() {
           onChange: () => undefined,
         }))
       },
+      mountRigProof(state, showCameraRig) {
+        root?.unmount()
+        const container = document.getElementById('root')
+        container.replaceChildren()
+        root = createRoot(container)
+        root.render(React.createElement('div', { id: 'spatial-rig-proof-root' },
+          React.createElement(Canvas, {
+            camera: { position: [10, 8, 12], fov: 48, near: 0.1, far: 100 },
+            dpr: [1, 1.5],
+            gl: { antialias: true },
+            style: { width: '100%', height: '100%' },
+          }, React.createElement(SpatialPrevisWorldGeometry, {
+            state,
+            currentTimeSec: 6,
+            sampledCamera: state.masterTake.cameraTrack.keyframes[0],
+            manipulationEnabled: false,
+            showCameraRig,
+          })),
+        ))
+      },
     }
   `
 }
@@ -282,6 +304,7 @@ async function prepareRenderedViewport(page: Page) {
     html, body, #root { min-height: 100%; }
     body { min-width: 0; padding: 12px; }
     #root { width: 100%; min-height: calc(100vh - 24px); }
+    #spatial-rig-proof-root { width: 100%; height: 520px; }
   ` })
   await page.addScriptTag({ path: bundlePath })
 }
@@ -620,6 +643,35 @@ test('changes the overview crop around the physical camera rig against a no-came
   }
 })
 
+test('renders the physical camera rig in the overview world only', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const rigState = stateWithNearDegenerateCameraGuide()
+    await page.evaluate((state) => window.__spatialPrevisViewportHarness.mountRigProof(state, true), rigState)
+    const rigProofCanvas = page.locator('#spatial-rig-proof-root canvas')
+    await rigProofCanvas.waitFor()
+    await page.waitForTimeout(150)
+    const withRig = await rigProofCanvas.screenshot()
+
+    await page.evaluate((state) => window.__spatialPrevisViewportHarness.mountRigProof(state, false), rigState)
+    await rigProofCanvas.waitFor()
+    await page.waitForTimeout(150)
+    const withoutRig = await rigProofCanvas.screenshot()
+    const difference = await screenshotPixelDifference(page, withRig, withoutRig)
+    assertMaterialRenderDifference(
+      difference,
+      'overview camera rig visibility toggle',
+      FEATURE_RENDER_FLOORS.cameraRigOverview.changedPixels,
+      FEATURE_RENDER_FLOORS.cameraRigOverview.accumulatedColorDifference,
+    )
+  } finally {
+    await page.close()
+  }
+})
+
 function assertOtherCameraFramesUnchanged(next: SpatialPrevisState, source: SpatialPrevisState) {
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[0], source.masterTake.cameraTrack.keyframes[0])
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[2], source.masterTake.cameraTrack.keyframes[2])
@@ -634,6 +686,13 @@ describe('SpatialPrevisViewport', () => {
     assert.doesNotMatch(viewportSource, /<mesh\b[^>]*data-spatial/)
     assert.doesNotMatch(viewportSource, /<group\b[^>]*data-spatial/)
     assert.doesNotMatch(viewportSource, /<Line\b[^>]*data-spatial/)
+  })
+
+  test('keeps the physical camera rig out of the live preview world', () => {
+    assert.match(
+      viewportSource,
+      /<SpatialPrevisWorldGeometry\s+state=\{state\}\s+currentTimeSec=\{currentTimeSec\}\s+sampledCamera=\{sampledCamera\}\s+manipulationEnabled=\{false\}\s+showCameraRig=\{false\}\s*\/>/,
+    )
   })
 
   test('renders the spatial viewport contract and familiar local camera actions', () => {

@@ -247,3 +247,23 @@ test('keeps unavailable coverage advisory-only while beat fields remain editable
   assert.match(markup, /aria-label="相机位置 X"/)
   assert.doesNotMatch(markup, /aria-label="相机位置 X"[^>]*disabled=/)
 })
+
+test('renders neutral delivery actions and keeps provider delivery inside an advanced disclosure', () => {
+  const markup = renderToStaticMarkup(createElement(SpatialPrevisDirectorPanel, {
+    initialState: state,
+    onSave: () => undefined,
+    onCreateDeliveryNode: () => undefined,
+    onDownloadDeliveryPackage: () => undefined,
+    onSaveDeliveryPackageToAssets: async () => undefined,
+    onDeliverToSeedance: async () => ({ success: true, message: 'submitted' }),
+    onClose: () => undefined,
+  }))
+  const footerMarkup = markup.slice(markup.lastIndexOf('<footer'))
+
+  assert.match(footerMarkup, /生成预演节点/)
+  assert.match(markup, /下载交付包/)
+  assert.match(markup, /保存到素材库/)
+  assert.match(markup, /<details/)
+  assert.match(markup, /高级交付/)
+  assert.doesNotMatch(footerMarkup, /Seedance|seedance-2\.5|生成到 Seedance/)
+})

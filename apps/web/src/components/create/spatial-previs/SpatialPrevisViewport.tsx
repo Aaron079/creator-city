@@ -416,7 +416,7 @@ function SpatialNudgeControls({
   )
 }
 
-function WorldGeometry({
+export function SpatialPrevisWorldGeometry({
   state,
   currentTimeSec,
   sampledCamera,
@@ -425,6 +425,7 @@ function WorldGeometry({
   manipulationEnabled,
   onObjectChange,
   showOverviewGuides = false,
+  showCameraRig = true,
 }: {
   state: SpatialPrevisState
   currentTimeSec: number
@@ -434,6 +435,7 @@ function WorldGeometry({
   manipulationEnabled?: boolean
   onObjectChange?: (position: Vec3) => void
   showOverviewGuides?: boolean
+  showCameraRig?: boolean
 }) {
   const cameraPath = useMemo(
     () => state.masterTake.cameraTrack.keyframes.map((keyframe) => tuple(keyframe.position)),
@@ -477,7 +479,7 @@ function WorldGeometry({
       {showOverviewGuides && cameraPath.length > 1 ? <Line points={cameraPath} color="#fbbf24" lineWidth={1.5} transparent opacity={0.68} /> : null}
       {showOverviewGuides && sampledCamera ? <Line points={[tuple(sampledCamera.position), tuple(sampledCamera.target)]} color="#f59e0b" lineWidth={1} dashed dashScale={6} gapSize={0.25} /> : null}
 
-      {sampledCamera ? (
+      {showCameraRig && sampledCamera ? (
         selection === 'camera' && manipulationEnabled && onObjectChange ? (
           <TransformableProxy selection="camera" position={sampledCamera.position} target={sampledCamera.target} enabled onObjectChange={onObjectChange} />
         ) : <CameraRigMarker position={sampledCamera.position} target={sampledCamera.target} selected={selection === 'camera'} />
@@ -511,7 +513,7 @@ function WorldCanvas(props: {
       className="absolute inset-0 h-full w-full"
       style={{ position: 'absolute', inset: 0 }}
     >
-      <WorldGeometry {...props} showOverviewGuides />
+      <SpatialPrevisWorldGeometry {...props} showOverviewGuides />
       <OrbitControls enabled={!props.interactionDisabled} makeDefault enableDamping target={WORLD_CAMERA_TARGET} maxPolarAngle={Math.PI * 0.48} />
     </Canvas>
   )
@@ -540,7 +542,7 @@ function LivePreviewCanvas({ state, currentTimeSec, sampledCamera }: {
   return (
     <Canvas dpr={[1, 1.5]} gl={{ antialias: true }} className="h-full w-full">
       <LivePreviewCamera cameraKeyframe={sampledCamera} />
-      <WorldGeometry state={state} currentTimeSec={currentTimeSec} sampledCamera={sampledCamera} manipulationEnabled={false} />
+      <SpatialPrevisWorldGeometry state={state} currentTimeSec={currentTimeSec} sampledCamera={sampledCamera} manipulationEnabled={false} showCameraRig={false} />
     </Canvas>
   )
 }

@@ -66,3 +66,25 @@ test('keeps the spatial previs overlay non-closing so the guarded panel close bu
   assert.match(mountSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/)
   assert.equal((mountSource.match(/closeCanvasPanel\(\)/g) ?? []).length, 1)
 })
+
+test('creates and exports neutral spatial previs delivery packages without submitting a provider generation', () => {
+  const deliveryNodeSource = sourceBetween(
+    'const handleCreateSpatialPrevisDeliveryNode = useCallback',
+    'const openScriptSegmentation = useCallback',
+  )
+  const panelMountSource = sourceBetween(
+    "{isSpatialPrevisOpen && saveStatus !== 'opening'",
+    '{isContinuityCheckerOpen',
+  )
+
+  assert.match(deliveryNodeSource, /createNode\('text'/)
+  assert.match(deliveryNodeSource, /metadataJson:\s*\{\s*previsDelivery:/)
+  assert.match(deliveryNodeSource, /new Blob\(/)
+  assert.match(deliveryNodeSource, /URL\.createObjectURL/)
+  assert.match(deliveryNodeSource, /URL\.revokeObjectURL/)
+  assert.match(deliveryNodeSource, /\/api\/projects\/\$\{encodeURIComponent\(projectId\)\}\/assets/)
+  assert.doesNotMatch(deliveryNodeSource, /\/api\/generate\/seedance-previs/)
+  assert.match(panelMountSource, /onCreateDeliveryNode=\{handleCreateSpatialPrevisDeliveryNode\}/)
+  assert.match(panelMountSource, /onDownloadDeliveryPackage=\{handleDownloadSpatialPrevisDeliveryPackage\}/)
+  assert.match(panelMountSource, /onSaveDeliveryPackageToAssets=\{handleSaveSpatialPrevisDeliveryPackageToAssets\}/)
+})

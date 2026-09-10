@@ -7,6 +7,7 @@ import { resolveSeedanceCapability, type SeedanceCapability } from '@/lib/seedan
 import { buildSeedanceTakePackage } from '@/lib/seedance-previs/package'
 import type { SeedanceDeliveryReceipt } from '@/lib/seedance-previs/receipts'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
+import { buildPrevisDeliveryPackage, type PrevisDeliveryPackage } from '@/lib/spatial-previs/delivery'
 import { applyBeatPatch } from '@/lib/spatial-previs/normalize'
 import type { BeatPatch, SpatialPrevisMode, SpatialPrevisState, SpatialSceneReference, Vec3 } from '@/lib/spatial-previs/types'
 import { replaceWhiteboxDraft } from '@/lib/spatial-previs/whitebox'
@@ -40,6 +41,9 @@ export type SpatialPrevisDirectorPanelProps = {
   seedanceReceipts?: readonly SeedanceDeliveryReceipt[]
   onRetrySeedanceSegment?: (input: SeedanceChainRetryRequest) => Promise<SeedancePrevisDeliveryResult>
   onUploadSceneAsset?: (file: File) => Promise<SpatialSceneReference>
+  onCreateDeliveryNode?: (delivery: PrevisDeliveryPackage) => void
+  onDownloadDeliveryPackage?: (delivery: PrevisDeliveryPackage) => void
+  onSaveDeliveryPackageToAssets?: (delivery: PrevisDeliveryPackage) => Promise<void>
   onClose: () => void
 }
 
@@ -128,6 +132,9 @@ export function SpatialPrevisDirectorPanel({
   seedanceReceipts = [],
   onRetrySeedanceSegment,
   onUploadSceneAsset,
+  onCreateDeliveryNode,
+  onDownloadDeliveryPackage,
+  onSaveDeliveryPackageToAssets,
   onClose,
 }: SpatialPrevisDirectorPanelProps) {
   const [state, setState] = useState(initialState)
@@ -139,10 +146,12 @@ export function SpatialPrevisDirectorPanel({
   const [isSaving, setIsSaving] = useState(false)
   const [isReloading, setIsReloading] = useState(false)
   const [isSceneAssetsUploading, setIsSceneAssetsUploading] = useState(false)
-  const [isDeliveryOpen, setIsDeliveryOpen] = useState(false)
+  const [isAdvancedDeliveryOpen, setIsAdvancedDeliveryOpen] = useState(false)
+  const [isSeedanceDeliveryOpen, setIsSeedanceDeliveryOpen] = useState(false)
   const [isReviewOpen, setIsReviewOpen] = useState(false)
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(seedanceReceipts.at(-1)?.deliveryId ?? null)
   const [deliveryStatus, setDeliveryStatus] = useState<string | null>(null)
+  const [isSavingDeliveryPackage, setIsSavingDeliveryPackage] = useState(false)
   const [capability, setCapability] = useState<SeedanceCapability>(standardSeedanceCapability)
   const saveGuard = useRef(createSpatialPrevisSaveGuard())
   const tabId = useId()
@@ -157,13 +166,15 @@ export function SpatialPrevisDirectorPanel({
     state.scene.coverage,
     state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.position),
   ), [state.masterTake.cameraTrack.keyframes, state.scene.coverage])
-  const deliveryPackage = useMemo(() => buildSeedanceTakePackage({
+  const previsDeliveryPackage = useMemo(() => buildPrevisDeliveryPackage(state), [state])
+  const seedanceDeliveryPackage = useMemo(() => buildSeedanceTakePackage({
     previs: state,
     capability,
     deliveryMode: 'direct',
   }), [capability, state])
 
   useEffect(() => {
+    if (!isAdvancedDeliveryOpen) return
     const controller = new AbortController()
     void fetch('/api/generate/seedance-previs', { signal: controller.signal })
       .then(async (response) => response.ok ? response.json() as Promise<unknown> : null)
@@ -174,7 +185,7 @@ export function SpatialPrevisDirectorPanel({
       })
       .catch(() => {})
     return () => controller.abort()
-  }, [])
+  }, [isAdvancedDeliveryOpen])
 
   useEffect(() => {
     if (selectedDeliveryId && seedanceReceipts.some((receipt) => receipt.deliveryId === selectedDeliveryId)) return
@@ -256,6 +267,30 @@ export function SpatialPrevisDirectorPanel({
       setDeliveryStatus('Seedance 提交失败。')
     }
   }
+  const handleCreateDeliveryNode = () => {
+    if (isBusy || !onCreateDeliveryNode) return
+    onCreateDeliveryNode(previsDeliveryPackage)
+    setDeliveryStatus('预演交付节点已创建。')
+  }
+
+  const handleDownloadDeliveryPackage = () => {
+    if (isBusy || !onDownloadDeliveryPackage) return
+    onDownloadDeliveryPackage(previsDeliveryPackage)
+    setDeliveryStatus('预演交付包已下载。')
+  }
+
+  const handleSaveDeliveryPackageToAssets = async () => {
+    if (isBusy || isSavingDeliveryPackage || !onSaveDeliveryPackageToAssets) return
+    setIsSavingDeliveryPackage(true)
+    try {
+      await onSaveDeliveryPackageToAssets(previsDeliveryPackage)
+      setDeliveryStatus('预演交付包已保存到素材库。')
+    } catch {
+      setDeliveryStatus('预演交付包保存失败。')
+    } finally {
+      setIsSavingDeliveryPackage(false)
+    }
+  }
   const selectedReceipt = seedanceReceipts.find((receipt) => receipt.deliveryId === selectedDeliveryId) ?? null
 
   return (
@@ -266,11 +301,14 @@ export function SpatialPrevisDirectorPanel({
       accentColor="indigo"
       count={state.masterTake.beats.length}
       summary={`${state.masterTake.id} · ${state.masterTake.durationSec}s`}
-      primaryLabel="保存预演"
+      primaryLabel="生成预演节点"
       busy={isBusy}
       closeDisabled={isBusy}
       allowNestedWheel
-      onPrimary={() => { void handleSave() }}
+      onPrimary={handleCreateDeliveryNode}
+      secondaryLabel="保存预演"
+      secondaryDisabled={isBusy}
+      onSecondary={() => { void handleSave() }}
       onClose={onClose}
       ariaLabel="三维预演 / SPATIAL PREVIS"
       bodyClassName="min-h-0 flex-1 space-y-3 overflow-y-auto p-4"
@@ -362,13 +400,44 @@ export function SpatialPrevisDirectorPanel({
           ) : <p className="mt-1.5 text-[11px] text-white/38">暂无覆盖风险。</p>}
         </section>
 
+        {(onDownloadDeliveryPackage || onSaveDeliveryPackageToAssets) ? (
+          <section aria-label="预演交付" className="border-t border-white/[0.08] pt-3">
+            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">预演交付</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {onDownloadDeliveryPackage ? (
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={handleDownloadDeliveryPackage}
+                  className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] font-medium text-white/72 disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  下载交付包
+                </button>
+              ) : null}
+              {onSaveDeliveryPackageToAssets ? (
+                <button
+                  type="button"
+                  disabled={isBusy || isSavingDeliveryPackage}
+                  onClick={() => { void handleSaveDeliveryPackageToAssets() }}
+                  className="rounded-md border border-indigo-200/30 bg-indigo-300/[0.1] px-2.5 py-1.5 text-[11px] font-medium text-indigo-50 disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  {isSavingDeliveryPackage ? '保存中…' : '保存到素材库'}
+                </button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
         {onDeliverToSeedance ? (
-          <section aria-label="Seedance 交付" className="border-t border-white/[0.08] pt-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
+          <details
+            className="border-t border-white/[0.08] pt-3"
+            onToggle={(event) => setIsAdvancedDeliveryOpen(event.currentTarget.open)}
+          >
+            <summary className="cursor-pointer text-[11px] font-medium text-white/52 marker:text-white/30">高级交付</summary>
+            <section aria-label="Seedance 交付" className="mt-2">
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">Seedance 交付</p>
-              </div>
-              <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5">
                 {onRetrySeedanceSegment && seedanceReceipts.length > 0 ? (
                   <button
                     type="button"
@@ -382,18 +451,18 @@ export function SpatialPrevisDirectorPanel({
                 <button
                   type="button"
                   disabled={isBusy}
-                  onClick={() => setIsDeliveryOpen((current) => !current)}
+                  onClick={() => setIsSeedanceDeliveryOpen((current) => !current)}
                   className="rounded-md border border-indigo-200/30 bg-indigo-300/[0.1] px-2.5 py-1.5 text-[11px] font-medium text-indigo-50 disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   生成到 Seedance
                 </button>
+                </div>
               </div>
-            </div>
-            {isDeliveryOpen ? (
+            {isSeedanceDeliveryOpen ? (
               <div className="mt-2">
                 <SeedanceDeliveryPanel
                   capability={capability}
-                  package={deliveryPackage}
+                  package={seedanceDeliveryPackage}
                   onSubmit={(payload) => { void handleSeedanceDelivery(payload) }}
                 />
               </div>
@@ -418,7 +487,8 @@ export function SpatialPrevisDirectorPanel({
               </div>
             ) : null}
             {deliveryStatus ? <p role="status" className="mt-2 text-[11px] text-indigo-100/75">{deliveryStatus}</p> : null}
-          </section>
+            </section>
+          </details>
         ) : null}
       </section>
     </DirectorToolPanelFrame>
