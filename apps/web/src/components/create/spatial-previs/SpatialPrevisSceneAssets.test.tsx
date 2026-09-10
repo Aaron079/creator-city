@@ -6,6 +6,8 @@ import test from 'node:test'
 import * as React from 'react'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import type { SpatialSceneReference } from '@/lib/spatial-previs/types'
+import * as sceneAssetsModule from './SpatialPrevisSceneAssets'
 import {
   addSpatialSceneReference,
   removeSpatialSceneReference,
@@ -94,4 +96,54 @@ test('maps safe project media assets and updates selected references without dup
   const selected = addSpatialSceneReference([], reference)
   assert.equal(addSpatialSceneReference(selected, reference), selected)
   assert.deepEqual(removeSpatialSceneReference(selected, reference.id), [])
+})
+
+test('merges a completed upload into references current after the upload starts', () => {
+  type UploadMerge = (references: readonly SpatialSceneReference[], reference: SpatialSceneReference) => SpatialSceneReference[]
+  const mergeUploadedSpatialSceneReference = (sceneAssetsModule as unknown as {
+    mergeUploadedSpatialSceneReference?: UploadMerge
+  }).mergeUploadedSpatialSceneReference
+  const referencesAtUploadStart: SpatialSceneReference[] = [{
+    id: 'scene-project-removed',
+    assetId: 'asset-removed',
+    title: 'Removed while uploading',
+    mediaType: 'image',
+    url: '/api/assets/asset-removed/file',
+    source: 'project',
+  }]
+  const latestReferences: SpatialSceneReference[] = [{
+    id: 'scene-project-added',
+    assetId: 'asset-added',
+    title: 'Added while uploading',
+    mediaType: 'video',
+    url: '/api/assets/asset-added/file',
+    source: 'project',
+  }]
+  const uploadedReference: SpatialSceneReference = {
+    id: 'scene-upload-finished',
+    assetId: 'asset-upload-finished',
+    title: 'Completed upload',
+    mediaType: 'image',
+    url: '/api/assets/asset-upload-finished/file',
+    source: 'upload',
+  }
+
+  assert.notDeepEqual(latestReferences, referencesAtUploadStart)
+  assert.equal(typeof mergeUploadedSpatialSceneReference, 'function')
+  assert.deepEqual(mergeUploadedSpatialSceneReference?.(latestReferences, uploadedReference), [
+    latestReferences[0],
+    uploadedReference,
+  ])
+})
+
+test('closes scene-asset interactions while an upload is in progress', () => {
+  type InteractionGate = (disabled: boolean, isUploading: boolean) => boolean
+  const isSceneAssetInteractionDisabled = (sceneAssetsModule as unknown as {
+    isSceneAssetInteractionDisabled?: InteractionGate
+  }).isSceneAssetInteractionDisabled
+
+  assert.equal(typeof isSceneAssetInteractionDisabled, 'function')
+  assert.equal(isSceneAssetInteractionDisabled?.(false, false), false)
+  assert.equal(isSceneAssetInteractionDisabled?.(true, false), true)
+  assert.equal(isSceneAssetInteractionDisabled?.(false, true), true)
 })

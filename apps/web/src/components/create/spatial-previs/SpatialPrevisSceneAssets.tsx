@@ -65,6 +65,17 @@ export function addSpatialSceneReference(
   return [...references, reference]
 }
 
+export function mergeUploadedSpatialSceneReference(
+  references: readonly SpatialSceneReference[],
+  reference: SpatialSceneReference,
+): SpatialSceneReference[] {
+  return addSpatialSceneReference(references, reference)
+}
+
+export function isSceneAssetInteractionDisabled(disabled: boolean, isUploading: boolean) {
+  return disabled || isUploading
+}
+
 export function removeSpatialSceneReference(
   references: readonly SpatialSceneReference[],
   referenceId: string,
@@ -86,6 +97,9 @@ export function SpatialPrevisSceneAssets({
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const latestReferencesRef = useRef<readonly SpatialSceneReference[]>(references)
+  latestReferencesRef.current = references
+  const interactionDisabled = isSceneAssetInteractionDisabled(disabled, isUploading)
   const activeReference = references[0]
 
   useEffect(() => {
@@ -133,24 +147,26 @@ export function SpatialPrevisSceneAssets({
     .filter((reference): reference is SpatialSceneReference => reference !== null), [assets, projectId])
 
   const selectReference = (reference: SpatialSceneReference) => {
-    if (disabled) return
+    if (interactionDisabled) return
     const next = addSpatialSceneReference(references, reference)
     if (next !== references) onReferencesChange(next)
   }
 
   const removeReference = (referenceId: string) => {
-    if (disabled) return
+    if (interactionDisabled) return
     onReferencesChange(removeSpatialSceneReference(references, referenceId))
   }
 
   const uploadFile = async (file: File | undefined) => {
-    if (!file || disabled || isUploading) return
+    if (!file || interactionDisabled) return
     setIsUploading(true)
+    setIsDragOver(false)
     setError(null)
     try {
       const reference = await onUpload(file)
-      const next = addSpatialSceneReference(references, reference)
-      if (next !== references) onReferencesChange(next)
+      const latestReferences = latestReferencesRef.current
+      const next = mergeUploadedSpatialSceneReference(latestReferences, reference)
+      if (next !== latestReferences) onReferencesChange(next)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '上传失败。')
     } finally {
@@ -163,8 +179,10 @@ export function SpatialPrevisSceneAssets({
       <button
         type="button"
         aria-label="添加场景资产"
-        disabled={disabled}
-        onClick={() => setIsOpen((current) => !current)}
+        disabled={interactionDisabled}
+        onClick={() => {
+          if (!interactionDisabled) setIsOpen((current) => !current)
+        }}
         className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.035] px-2 py-1.5 text-[11px] font-medium text-white/78 transition hover:border-indigo-200/35 hover:bg-indigo-300/[0.1] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
       >
         {activeReference ? (
@@ -186,6 +204,7 @@ export function SpatialPrevisSceneAssets({
           type="file"
           accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
           className="sr-only"
+          disabled={interactionDisabled}
           onChange={(event) => {
             void uploadFile(event.currentTarget.files?.[0])
             event.currentTarget.value = ''
@@ -194,25 +213,28 @@ export function SpatialPrevisSceneAssets({
         <div
           data-scene-asset-dropzone="true"
           role="button"
-          tabIndex={disabled ? -1 : 0}
-          onClick={() => inputRef.current?.click()}
+          aria-disabled={interactionDisabled}
+          tabIndex={interactionDisabled ? -1 : 0}
+          onClick={() => {
+            if (!interactionDisabled) inputRef.current?.click()
+          }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
+            if (!interactionDisabled && (event.key === 'Enter' || event.key === ' ')) {
               event.preventDefault()
               inputRef.current?.click()
             }
           }}
           onDragOver={(event) => {
             event.preventDefault()
-            if (!disabled) setIsDragOver(true)
+            if (!interactionDisabled) setIsDragOver(true)
           }}
           onDragLeave={() => setIsDragOver(false)}
           onDrop={(event) => {
             event.preventDefault()
             setIsDragOver(false)
-            void uploadFile(event.dataTransfer.files[0])
+            if (!interactionDisabled) void uploadFile(event.dataTransfer.files[0])
           }}
-          className={`flex min-h-14 cursor-pointer items-center justify-center gap-2 border border-dashed px-3 py-2 text-[11px] transition ${isDragOver ? 'border-indigo-200/60 bg-indigo-300/[0.1] text-indigo-50' : 'border-white/15 bg-black/15 text-white/55'} ${disabled || isUploading ? 'cursor-not-allowed opacity-45' : 'hover:border-white/30 hover:text-white/75'}`}
+          className={`flex min-h-14 cursor-pointer items-center justify-center gap-2 border border-dashed px-3 py-2 text-[11px] transition ${isDragOver ? 'border-indigo-200/60 bg-indigo-300/[0.1] text-indigo-50' : 'border-white/15 bg-black/15 text-white/55'} ${interactionDisabled ? 'cursor-not-allowed opacity-45' : 'hover:border-white/30 hover:text-white/75'}`}
         >
           {isUploading ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Upload size={14} aria-hidden="true" />}
           <span>{isUploading ? '上传中…' : '拖放或选择图片 / 视频'}</span>
@@ -229,7 +251,7 @@ export function SpatialPrevisSceneAssets({
                 <button
                   type="button"
                   aria-label={`移除场景资产 ${reference.title}`}
-                  disabled={disabled}
+                  disabled={interactionDisabled}
                   onClick={() => removeReference(reference.id)}
                   className="shrink-0 p-1 text-white/45 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
                 >
@@ -247,7 +269,7 @@ export function SpatialPrevisSceneAssets({
             <button
               key={reference.id}
               type="button"
-              disabled={disabled || references.some((item) => item.assetId === reference.assetId)}
+              disabled={interactionDisabled || references.some((item) => item.assetId === reference.assetId)}
               onClick={() => selectReference(reference)}
               className="flex w-full min-w-0 items-center gap-2 border border-white/[0.08] px-2 py-1.5 text-left text-[11px] text-white/65 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
