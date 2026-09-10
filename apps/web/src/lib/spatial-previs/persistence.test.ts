@@ -125,6 +125,29 @@ describe('spatial previs persistence', () => {
     }
   })
 
+  test('returns null for unsafe version-2 reference URLs', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+
+    for (const url of ['javascript:alert(1)', 'data:text/html,boom', 'not a url']) {
+      assert.equal(parseSpatialPrevisMetadata({
+        spatialPrevis: {
+          ...state,
+          scene: {
+            ...state.scene,
+            references: [{
+              id: 'reference-1',
+              assetId: 'asset-1',
+              title: 'Exterior reference',
+              mediaType: 'image',
+              url,
+              source: 'project',
+            }],
+          },
+        },
+      }), null)
+    }
+  })
+
   test('returns null for malformed or unsupported spatial previs metadata', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
     const malformedMetadata = [

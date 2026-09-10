@@ -1,4 +1,5 @@
 import { normalizeSpatialPrevis } from './normalize'
+import { isRenderableMediaUrl } from '../media/renderable-url'
 import type {
   ActorKeyframe,
   ActorTrack,
@@ -62,6 +63,7 @@ function references(value: unknown): SpatialSceneReference[] | null {
       || !assetId
       || !title
       || !url
+      || !isRenderableMediaUrl(url).ok
       || !REFERENCE_MEDIA_TYPES.has(reference.mediaType as string)
       || !REFERENCE_SOURCES.has(reference.source as string)
     ) {
