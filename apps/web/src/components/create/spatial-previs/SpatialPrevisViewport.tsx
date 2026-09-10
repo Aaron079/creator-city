@@ -633,7 +633,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
       </header>
 
       <div className="relative min-h-[390px] flex-1 bg-[#071015]">
-        <div data-spatial-whitebox-world="true" data-spatial-camera-rig={sampledCamera ? 'true' : undefined} className="absolute inset-0">
+        <div className="absolute inset-0">
           {mounted ? (
             <WorldCanvas
               state={state}
@@ -646,12 +646,9 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
               onObjectChange={handleObjectChange}
             />
           ) : <div className="h-full w-full" aria-hidden="true" />}
-          <div className="hidden" aria-hidden="true">
-            {state.scene.whitebox.entities.map((entity) => <span key={entity.id} data-spatial-whitebox-entity={entity.kind} />)}
-          </div>
         </div>
 
-        <aside data-spatial-camera-preview="true" data-spatial-live-camera="true" className="absolute bottom-3 right-3 h-36 w-56 overflow-hidden rounded-md border border-white/18 bg-[#080d11] shadow-2xl">
+        <aside data-spatial-camera-preview="true" className="absolute bottom-3 right-3 h-36 w-56 overflow-hidden rounded-md border border-white/18 bg-[#080d11] shadow-2xl">
           {mounted && sampledCamera ? <LivePreviewCanvas state={state} currentTimeSec={currentTimeSec} sampledCamera={sampledCamera} /> : <div className="h-full w-full" aria-hidden="true" />}
           <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between border-b border-white/10 bg-black/45 px-2 py-1 text-[10px] text-white/72">
             <span>LIVE</span>

@@ -2,16 +2,29 @@
  * Run: cd apps/web && node_modules/.bin/tsx --test src/components/create/spatial-previs/SpatialPrevisViewport.test.tsx
  */
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { describe, test } from 'node:test'
 import { readFileSync } from 'node:fs'
+import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { chromium, type Browser, type Page } from '@playwright/test'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { applySpatialCameraAction } from './SpatialCameraControlStrip'
 import { applySpatialNudge, SpatialPrevisViewport } from './SpatialPrevisViewport'
 import type { SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
 
 const viewportSource = readFileSync(new URL('./SpatialPrevisViewport.tsx', import.meta.url), 'utf8')
+
+declare global {
+  interface Window {
+    __spatialPrevisViewportHarness: {
+      mount: () => void
+    }
+  }
+}
 
 const state: SpatialPrevisState = {
   version: 2,
@@ -89,23 +102,263 @@ function stateWithWhitebox(): SpatialPrevisState {
   }
 }
 
+let browser: Browser | null = null
+let temporaryDirectory = ''
+let bundlePath = ''
+let stylesPath = ''
+
+type Rectangle = {
+  left: number
+  top: number
+  right: number
+  bottom: number
+  width: number
+  height: number
+}
+
+type RenderedViewportEvidence = {
+  viewport: Rectangle
+  livePreview: Rectangle
+  hiddenWhiteboxSentinels: number
+  canvases: Array<{
+    bufferWidth: number
+    bufferHeight: number
+    rect: Rectangle
+  }>
+}
+
+type ScreenshotPixelEvidence = {
+  colorBuckets: number
+  lumaRange: number
+  samples: number
+}
+
+async function findEsbuildBinary() {
+  const pnpmDirectory = path.resolve(process.cwd(), '../..', 'node_modules/.pnpm')
+  const entries = (await readdir(pnpmDirectory)).filter((entry) => entry.startsWith('tsx@')).sort()
+  for (const entry of entries) {
+    const candidate = path.join(pnpmDirectory, entry, 'node_modules/esbuild/bin/esbuild')
+    try {
+      await readdir(path.dirname(candidate))
+      return candidate
+    } catch {
+      // Keep looking for the tsx installation that owns esbuild.
+    }
+  }
+  throw new Error('Unable to locate the existing tsx esbuild binary')
+}
+
+function renderedHarnessSource() {
+  const componentPath = path.resolve(process.cwd(), 'src/components/create/spatial-previs/SpatialPrevisViewport.tsx')
+  return `
+    import * as React from 'react'
+    import { createRoot } from 'react-dom/client'
+    import { SpatialPrevisViewport } from ${JSON.stringify(componentPath)}
+
+    const state = ${JSON.stringify(stateWithWhitebox())}
+    let root = null
+
+    window.fetch = () => {
+      throw new Error('SpatialPrevisViewport harness must not make authenticated API requests')
+    }
+
+    window.__spatialPrevisViewportHarness = {
+      mount() {
+        root?.unmount()
+        const container = document.getElementById('root')
+        container.replaceChildren()
+        root = createRoot(container)
+        root.render(React.createElement(SpatialPrevisViewport, {
+          state,
+          currentTimeSec: 6,
+          disabled: true,
+          onChange: () => undefined,
+        }))
+      },
+    }
+  `
+}
+
+async function mountRenderedViewport(page: Page) {
+  await page.setContent('<!doctype html><html><head></head><body><div id="root"></div></body></html>')
+  await page.addStyleTag({ path: stylesPath })
+  await page.addStyleTag({ content: `
+    html, body, #root { min-height: 100%; }
+    body { min-width: 0; padding: 12px; }
+    #root { width: 100%; min-height: calc(100vh - 24px); }
+  ` })
+  await page.addScriptTag({ path: bundlePath })
+  await page.evaluate(() => window.__spatialPrevisViewportHarness.mount())
+  await page.waitForFunction(() => {
+    const canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas'))
+    return canvases.length === 2 && canvases.every((canvas) => canvas.width > 0 && canvas.height > 0 && canvas.getBoundingClientRect().width > 0 && canvas.getBoundingClientRect().height > 0)
+  })
+  await page.waitForTimeout(150)
+}
+
+async function renderedViewportEvidence(page: Page): Promise<RenderedViewportEvidence> {
+  return page.evaluate(`(() => {
+    const viewport = document.querySelector('[data-spatial-previs-viewport="true"]')
+    const livePreview = document.querySelector('[data-spatial-camera-preview="true"]')
+    const canvases = Array.from(document.querySelectorAll('[data-spatial-previs-viewport="true"] canvas'))
+    if (!viewport || !livePreview || canvases.length !== 2) throw new Error('Spatial previs viewport did not mount its overview and live canvases')
+
+    const rectangle = (element) => {
+      const rect = element.getBoundingClientRect()
+      return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }
+    }
+    const canvasSummary = (canvas) => {
+      const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl')
+      if (!gl) throw new Error('Expected a WebGL context for spatial previs canvas')
+      return {
+        bufferWidth: canvas.width,
+        bufferHeight: canvas.height,
+        rect: rectangle(canvas),
+      }
+    }
+
+    return {
+      viewport: rectangle(viewport),
+      livePreview: rectangle(livePreview),
+      hiddenWhiteboxSentinels: document.querySelectorAll('[data-spatial-whitebox-entity]').length,
+      canvases: canvases.map(canvasSummary),
+    }
+  })()`) as Promise<RenderedViewportEvidence>
+}
+
+async function screenshotPixelEvidence(page: Page, screenshot: Buffer): Promise<ScreenshotPixelEvidence> {
+  return page.evaluate(`(async () => {
+    const base64 = ${JSON.stringify(screenshot.toString('base64'))}
+    const image = new Image()
+    image.src = 'data:image/png;base64,' + base64
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth
+    canvas.height = image.naturalHeight
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new Error('Unable to inspect spatial previs screenshot pixels')
+    context.drawImage(image, 0, 0)
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+    const stride = Math.max(1, Math.floor(Math.sqrt((canvas.width * canvas.height) / 40_000)))
+    const colors = new Set()
+    let samples = 0
+    let minLuma = 255
+    let maxLuma = 0
+    for (let y = 0; y < canvas.height; y += stride) {
+      for (let x = 0; x < canvas.width; x += stride) {
+        const offset = (y * canvas.width + x) * 4
+        const red = pixels[offset] ?? 0
+        const green = pixels[offset + 1] ?? 0
+        const blue = pixels[offset + 2] ?? 0
+        const luma = Math.round(red * 0.2126 + green * 0.7152 + blue * 0.0722)
+        minLuma = Math.min(minLuma, luma)
+        maxLuma = Math.max(maxLuma, luma)
+        colors.add((red >> 4) + ':' + (green >> 4) + ':' + (blue >> 4))
+        samples += 1
+      }
+    }
+    return { colorBuckets: colors.size, lumaRange: maxLuma - minLuma, samples }
+  })()`) as Promise<ScreenshotPixelEvidence>
+}
+
+test.before(async () => {
+  temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'spatial-previs-viewport-'))
+  const entryPath = path.join(temporaryDirectory, 'entry.tsx')
+  bundlePath = path.join(temporaryDirectory, 'bundle.js')
+  stylesPath = path.join(temporaryDirectory, 'styles.css')
+  await writeFile(entryPath, renderedHarnessSource(), 'utf8')
+
+  const bundle = spawnSync(await findEsbuildBinary(), [
+    entryPath,
+    '--bundle',
+    '--platform=browser',
+    '--format=iife',
+    '--jsx=automatic',
+    `--outfile=${bundlePath}`,
+    `--tsconfig=${path.resolve(process.cwd(), 'tsconfig.json')}`,
+    '--define:process.env.NODE_ENV="test"',
+  ], { cwd: process.cwd(), encoding: 'utf8' })
+  assert.equal(bundle.status, 0, bundle.stderr || bundle.stdout)
+
+  const styles = spawnSync(path.resolve(process.cwd(), 'node_modules/.bin/tailwindcss'), [
+    '--input', path.resolve(process.cwd(), 'src/app/globals.css'),
+    '--output', stylesPath,
+    '--config', path.resolve(process.cwd(), 'tailwind.config.ts'),
+    '--minify',
+  ], { cwd: process.cwd(), encoding: 'utf8' })
+  assert.equal(styles.status, 0, styles.stderr || styles.stdout)
+  browser = await chromium.launch({ headless: true })
+})
+
+test.after(async () => {
+  await browser?.close()
+  if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true })
+})
+
+test('renders an actual nonblank overview and live WebGL world at desktop and mobile sizes', async () => {
+  assert.ok(browser)
+  const viewportSizes = [
+    { name: 'desktop', width: 1440, height: 900 },
+    { name: 'mobile', width: 390, height: 844 },
+  ]
+
+  for (const viewportSize of viewportSizes) {
+    const page = await browser.newPage({ viewport: viewportSize })
+    const browserFailures: string[] = []
+    const requests: string[] = []
+    page.on('console', (message) => {
+      if (message.type() === 'error') browserFailures.push(`console: ${message.text()}`)
+    })
+    page.on('pageerror', (error) => browserFailures.push(`page: ${error.message}`))
+    page.on('request', (request) => requests.push(request.url()))
+
+    try {
+      await mountRenderedViewport(page)
+      const evidence = await renderedViewportEvidence(page)
+      assert.equal(evidence.hiddenWhiteboxSentinels, 0, `${viewportSize.name}: rendered geometry must not rely on hidden DOM sentinels`)
+      assert.equal(evidence.canvases.length, 2, `${viewportSize.name}: expected overview and live canvases`)
+
+      const [overview, live] = evidence.canvases
+      assert.ok(overview && live)
+      for (const [name, canvas] of [['overview', overview], ['live', live]] as const) {
+        assert.ok(canvas.bufferWidth > 0 && canvas.bufferHeight > 0, `${viewportSize.name} ${name}: zero-sized WebGL buffer`)
+        assert.ok(canvas.rect.width > 0 && canvas.rect.height > 0, `${viewportSize.name} ${name}: zero-sized canvas layout`)
+      }
+
+      assert.ok(live.rect.left >= overview.rect.left && live.rect.top >= overview.rect.top, `${viewportSize.name}: live preview escapes overview bounds`)
+      assert.ok(live.rect.right <= overview.rect.right && live.rect.bottom <= overview.rect.bottom, `${viewportSize.name}: live preview is not framed inside overview`)
+      assert.ok(live.rect.left >= evidence.livePreview.left && live.rect.top >= evidence.livePreview.top, `${viewportSize.name}: live canvas escapes its preview frame`)
+      assert.ok(live.rect.right <= evidence.livePreview.right && live.rect.bottom <= evidence.livePreview.bottom, `${viewportSize.name}: live canvas exceeds its preview frame`)
+      assert.ok(live.rect.width >= 160 && live.rect.height >= 96, `${viewportSize.name}: live preview lost its usable overlay framing`)
+      assert.ok(live.rect.width < overview.rect.width && live.rect.height < overview.rect.height, `${viewportSize.name}: live preview obscures the overview canvas`)
+
+      const canvasLocators = page.locator('[data-spatial-previs-viewport="true"] canvas')
+      for (const [index, name] of ['overview', 'live'].entries()) {
+        const screenshotPath = path.join(temporaryDirectory, `${viewportSize.name}-${name}.png`)
+        const screenshotBuffer = await canvasLocators.nth(index).screenshot({ path: screenshotPath })
+        const screenshot = await stat(screenshotPath)
+        assert.ok(screenshot.size > 1_000, `${viewportSize.name} ${name}: screenshot is trivial`)
+        const pixels = await screenshotPixelEvidence(page, screenshotBuffer)
+        assert.ok(pixels.lumaRange >= 24, `${viewportSize.name} ${name}: visible canvas pixels are too uniform`)
+        assert.ok(pixels.colorBuckets >= 12, `${viewportSize.name} ${name}: visible canvas pixels lack scene detail`)
+      }
+
+      assert.deepEqual(requests, [], `${viewportSize.name}: viewport harness must not make API requests`)
+      assert.deepEqual(browserFailures, [], `${viewportSize.name}: browser reported rendering errors`)
+    } finally {
+      await page.close()
+    }
+  }
+})
+
 function assertOtherCameraFramesUnchanged(next: SpatialPrevisState, source: SpatialPrevisState) {
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[0], source.masterTake.cameraTrack.keyframes[0])
   assert.deepEqual(next.masterTake.cameraTrack.keyframes[2], source.masterTake.cameraTrack.keyframes[2])
 }
 
 describe('SpatialPrevisViewport', () => {
-  test('renders solid whitebox entities, actor proxy, and physical camera rig', () => {
-    const markup = renderToStaticMarkup(
-      createElement(SpatialPrevisViewport, { state: stateWithWhitebox(), currentTimeSec: 6, onChange: () => undefined }),
-    )
-
-    assert.match(markup, /data-spatial-whitebox-world="true"/)
-    assert.match(markup, /data-spatial-camera-rig="true"/)
-    assert.match(markup, /data-spatial-live-camera="true"/)
-    for (const kind of ['floor', 'wall', 'opening', 'volume', 'furniture', 'referencePlane']) {
-      assert.match(markup, new RegExp(`data-spatial-whitebox-entity="${kind}"`))
-    }
+  test('does not expose test-only whitebox markup sentinels', () => {
+    assert.doesNotMatch(viewportSource, /data-spatial-(whitebox-world|camera-rig|live-camera|whitebox-entity)/)
   })
 
   test('keeps spatial markup contracts off Three primitives', () => {
