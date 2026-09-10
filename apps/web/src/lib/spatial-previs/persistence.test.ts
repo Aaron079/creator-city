@@ -86,6 +86,36 @@ describe('spatial previs persistence', () => {
     assert.deepEqual(parseSpatialPrevisMetadata({ spatialPrevis: persisted }), persisted)
   })
 
+  test('restores an asset-library scene reference', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const persisted = {
+      ...state,
+      scene: {
+        ...state.scene,
+        references: [{
+          id: 'scene-library-asset-1',
+          assetId: 'asset-1',
+          title: 'Existing library exterior',
+          mediaType: 'image' as const,
+          url: 'https://example.com/exterior.jpg',
+          source: 'library' as const,
+        }],
+        whitebox: {
+          entities: [{
+            id: 'floor-1',
+            kind: 'floor' as const,
+            position: { x: 0, y: 0, z: 0 },
+            rotationY: 0,
+            size: { x: 8, y: 0.1, z: 8 },
+            sourceAssetIds: ['asset-1'],
+          }],
+        },
+      },
+    }
+
+    assert.deepEqual(parseSpatialPrevisMetadata({ spatialPrevis: persisted }), persisted)
+  })
+
   test('returns null for malformed version-2 references and whitebox entities', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
     const reference = {

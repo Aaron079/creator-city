@@ -98,7 +98,13 @@ function renderedHarnessSource() {
       rejectUpload: null,
     }
 
-    window.fetch = async () => new Response(JSON.stringify({ success: true, assets: [] }), {
+    window.fetch = async () => new Response(JSON.stringify({ success: true, assets: [{
+      id: 'asset-library-street-01',
+      projectId: 'project-previous-work',
+      title: 'Library street reference',
+      type: 'image',
+      url: 'storage://creator-city-assets/library/street-reference.jpg',
+    }] }), {
       headers: { 'content-type': 'application/json' },
     })
 
@@ -361,6 +367,33 @@ test('does not update references when a controlled upload rejects', async () => 
       pendingCalls: [true, false],
       referenceCalls: [],
       uploadCalls: 1,
+    })
+  } finally {
+    await page.close()
+  }
+})
+
+test('shows and selects an existing media asset from the account library', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage()
+  try {
+    await mountSceneAssets(page)
+
+    const libraryAsset = page.getByRole('button', { name: 'Library street reference' })
+    await libraryAsset.waitFor()
+    await libraryAsset.click()
+
+    assert.deepEqual(await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot()), {
+      pendingCalls: [],
+      referenceCalls: [[{
+        id: 'scene-library-asset-library-street-01',
+        assetId: 'asset-library-street-01',
+        title: 'Library street reference',
+        mediaType: 'image',
+        url: '/api/assets/asset-library-street-01/file',
+        source: 'library',
+      }]],
+      uploadCalls: 0,
     })
   } finally {
     await page.close()

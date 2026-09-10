@@ -37,7 +37,10 @@ function isValidSceneReference(reference: SpatialSceneReference) {
   )
 }
 
-export function spatialSceneReferenceFromProjectAsset(asset: ProjectAssetItem): SpatialSceneReference | null {
+function spatialSceneReferenceFromAsset(
+  asset: ProjectAssetItem,
+  source: Extract<SpatialSceneReference['source'], 'project' | 'library'>,
+): SpatialSceneReference | null {
   const assetId = asset.id.trim()
   const mediaType = normalizeAssetType(asset.normalizedType || asset.type)
   const rawUrl = asset.url?.trim() || asset.dataUrl?.trim() || ''
@@ -47,13 +50,21 @@ export function spatialSceneReferenceFromProjectAsset(asset: ProjectAssetItem): 
   if (!isRenderableMediaUrl(url).ok) return null
 
   return {
-    id: `scene-project-${assetId}`,
+    id: `scene-${source}-${assetId}`,
     assetId,
     title: sceneAssetTitle(asset),
     mediaType,
     url,
-    source: 'project',
+    source,
   }
+}
+
+export function spatialSceneReferenceFromProjectAsset(asset: ProjectAssetItem): SpatialSceneReference | null {
+  return spatialSceneReferenceFromAsset(asset, 'project')
+}
+
+export function spatialSceneReferenceFromLibraryAsset(asset: ProjectAssetItem): SpatialSceneReference | null {
+  return spatialSceneReferenceFromAsset(asset, 'library')
 }
 
 export function addSpatialSceneReference(
@@ -112,7 +123,7 @@ export function SpatialPrevisSceneAssets({
       setIsLoading(true)
       setError(null)
       try {
-        const response = await fetch(`/api/assets?projectId=${encodeURIComponent(projectId)}&includeUnbound=1`, {
+        const response = await fetch('/api/assets?limit=200', {
           credentials: 'include',
           cache: 'no-store',
           headers: { Accept: 'application/json' },
@@ -146,6 +157,10 @@ export function SpatialPrevisSceneAssets({
   const projectMediaAssets = useMemo(() => assets
     .filter((asset) => asset.projectId === projectId)
     .map(spatialSceneReferenceFromProjectAsset)
+    .filter((reference): reference is SpatialSceneReference => reference !== null), [assets, projectId])
+  const libraryMediaAssets = useMemo(() => assets
+    .filter((asset) => asset.projectId !== projectId)
+    .map(spatialSceneReferenceFromLibraryAsset)
     .filter((reference): reference is SpatialSceneReference => reference !== null), [assets, projectId])
 
   const selectReference = (reference: SpatialSceneReference) => {
@@ -266,21 +281,39 @@ export function SpatialPrevisSceneAssets({
           </ul>
         ) : null}
 
-        <div className="max-h-32 space-y-1 overflow-y-auto pr-1" aria-label="项目图片和视频素材">
+        <div className="max-h-32 space-y-1 overflow-y-auto pr-1" aria-label="场景图片和视频素材">
           {isLoading ? (
             <p className="flex items-center gap-1.5 py-1 text-[11px] text-white/45"><Loader2 size={13} className="animate-spin" /> 加载素材中…</p>
-          ) : projectMediaAssets.length > 0 ? projectMediaAssets.map((reference) => (
-            <button
-              key={reference.id}
-              type="button"
-              disabled={interactionDisabled || references.some((item) => item.assetId === reference.assetId)}
-              onClick={() => selectReference(reference)}
-              className="flex w-full min-w-0 items-center gap-2 border border-white/[0.08] px-2 py-1.5 text-left text-[11px] text-white/65 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {reference.mediaType === 'video' ? <Video size={13} className="shrink-0" aria-hidden="true" /> : <ImageIcon size={13} className="shrink-0" aria-hidden="true" />}
-              <span className="truncate">{reference.title}</span>
-            </button>
-          )) : (
+          ) : projectMediaAssets.length + libraryMediaAssets.length > 0 ? (
+            <>
+              {projectMediaAssets.length > 0 ? <p className="px-1 pt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-white/38">本项目</p> : null}
+              {projectMediaAssets.map((reference) => (
+                <button
+                  key={reference.id}
+                  type="button"
+                  disabled={interactionDisabled || references.some((item) => item.assetId === reference.assetId)}
+                  onClick={() => selectReference(reference)}
+                  className="flex w-full min-w-0 items-center gap-2 border border-white/[0.08] px-2 py-1.5 text-left text-[11px] text-white/65 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {reference.mediaType === 'video' ? <Video size={13} className="shrink-0" aria-hidden="true" /> : <ImageIcon size={13} className="shrink-0" aria-hidden="true" />}
+                  <span className="truncate">{reference.title}</span>
+                </button>
+              ))}
+              {libraryMediaAssets.length > 0 ? <p className="px-1 pt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-white/38">资产库</p> : null}
+              {libraryMediaAssets.map((reference) => (
+                <button
+                  key={reference.id}
+                  type="button"
+                  disabled={interactionDisabled || references.some((item) => item.assetId === reference.assetId)}
+                  onClick={() => selectReference(reference)}
+                  className="flex w-full min-w-0 items-center gap-2 border border-white/[0.08] px-2 py-1.5 text-left text-[11px] text-white/65 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {reference.mediaType === 'video' ? <Video size={13} className="shrink-0" aria-hidden="true" /> : <ImageIcon size={13} className="shrink-0" aria-hidden="true" />}
+                  <span className="truncate">{reference.title}</span>
+                </button>
+              ))}
+            </>
+          ) : (
             <p className="py-1 text-[11px] text-white/38">没有可用的项目图片或视频素材。</p>
           )}
         </div>

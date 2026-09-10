@@ -10,7 +10,7 @@ export type SpatialSceneReference = {
   title: string
   mediaType: 'image' | 'video'
   url: string
-  source: 'project' | 'upload'
+  source: 'project' | 'library' | 'upload'
 }
 
 export type WhiteboxEntity = {
