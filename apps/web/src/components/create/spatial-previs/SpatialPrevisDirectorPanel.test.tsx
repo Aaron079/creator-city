@@ -22,11 +22,13 @@ import type { SpatialPrevisState } from '@/lib/spatial-previs/types'
 Object.assign(globalThis, { React })
 
 const state: SpatialPrevisState = {
-  version: 1,
+  version: 2,
   projectId: 'project-previs-01',
   scene: {
     sourceMode: 'multi-view',
     coverage: { mode: 'verified', cameraFreedom: 'full' },
+    references: [],
+    whitebox: { entities: [] },
   },
   masterTake: {
     id: 'take-1',

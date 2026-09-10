@@ -14,11 +14,13 @@ import type { SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
 const viewportSource = readFileSync(new URL('./SpatialPrevisViewport.tsx', import.meta.url), 'utf8')
 
 const state: SpatialPrevisState = {
-  version: 1,
+  version: 2,
   projectId: 'project-previs-01',
   scene: {
     sourceMode: 'multi-view',
     coverage: { mode: 'verified', cameraFreedom: 'full' },
+    references: [],
+    whitebox: { entities: [] },
   },
   masterTake: {
     id: 'master-take-01',

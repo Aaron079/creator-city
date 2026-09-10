@@ -33,7 +33,7 @@ describe('spatial previs persistence', () => {
     assert.deepEqual(existingMetadata, source)
   })
 
-  test('restores a normalized version-1 spatial previs state', () => {
+  test('migrates a persisted version-1 spatial previs state to version 2', () => {
     const state = normalizeSpatialPrevis({
       projectId: 'project-1',
       sourceMode: 'video-scan',
@@ -42,8 +42,87 @@ describe('spatial previs persistence', () => {
       editorMode: 'beats',
       updatedAt: '2026-09-09T00:00:00.000Z',
     })
+    const { references, whitebox, ...legacyScene } = state.scene
 
-    assert.deepEqual(parseSpatialPrevisMetadata({ spatialPrevis: state }), state)
+    void references
+    void whitebox
+
+    const parsed = parseSpatialPrevisMetadata({
+      spatialPrevis: { ...state, version: 1, scene: legacyScene },
+    })
+
+    assert.deepEqual(parsed, state)
+    assert.deepEqual(parsed?.scene.references, [])
+    assert.deepEqual(parsed?.scene.whitebox.entities, [])
+  })
+
+  test('restores a valid version-2 spatial previs state', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const persisted = {
+      ...state,
+      scene: {
+        ...state.scene,
+        references: [{
+          id: 'reference-1',
+          assetId: 'asset-1',
+          title: 'Exterior reference',
+          mediaType: 'image' as const,
+          url: 'https://example.com/exterior.jpg',
+          source: 'project' as const,
+        }],
+        whitebox: {
+          entities: [{
+            id: 'floor-1',
+            kind: 'floor' as const,
+            position: { x: 0, y: 0, z: 0 },
+            rotationY: 0,
+            size: { x: 8, y: 0.1, z: 8 },
+            sourceAssetIds: ['asset-1'],
+          }],
+        },
+      },
+    }
+
+    assert.deepEqual(parseSpatialPrevisMetadata({ spatialPrevis: persisted }), persisted)
+  })
+
+  test('returns null for malformed version-2 references and whitebox entities', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const reference = {
+      id: 'reference-1',
+      assetId: 'asset-1',
+      title: 'Exterior reference',
+      mediaType: 'image',
+      url: 'https://example.com/exterior.jpg',
+      source: 'project',
+    }
+    const entity = {
+      id: 'floor-1',
+      kind: 'floor',
+      position: { x: 0, y: 0, z: 0 },
+      rotationY: 0,
+      size: { x: 8, y: 0.1, z: 8 },
+      sourceAssetIds: ['asset-1'],
+    }
+    const malformedStates = [
+      { ...state, scene: { ...state.scene, references: [{ ...reference, id: '' }] } },
+      { ...state, scene: { ...state.scene, references: [{ ...reference, assetId: '' }] } },
+      { ...state, scene: { ...state.scene, references: [{ ...reference, title: '' }] } },
+      { ...state, scene: { ...state.scene, references: [{ ...reference, mediaType: 'audio' }] } },
+      { ...state, scene: { ...state.scene, references: [{ ...reference, url: '' }] } },
+      { ...state, scene: { ...state.scene, references: [{ ...reference, source: 'external' }] } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, id: '' }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, kind: 'light' }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, position: { x: 0, y: 0 } }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, rotationY: Number.POSITIVE_INFINITY }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, size: { x: 8, y: 0.1 } }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, sourceAssetIds: [] }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, sourceAssetIds: [''] }] } } },
+    ]
+
+    for (const spatialPrevis of malformedStates) {
+      assert.equal(parseSpatialPrevisMetadata({ spatialPrevis }), null)
+    }
   })
 
   test('returns null for malformed or unsupported spatial previs metadata', () => {
