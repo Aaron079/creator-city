@@ -21,6 +21,7 @@ type SpatialPrevisSceneAssetsProps = {
   disabled: boolean
   onReferencesChange: (references: SpatialSceneReference[]) => void
   onUpload: (file: File) => Promise<SpatialSceneReference>
+  onUploadPending?: (isPending: boolean) => void
 }
 
 function sceneAssetTitle(asset: Pick<ProjectAssetItem, 'title' | 'name'>) {
@@ -89,6 +90,7 @@ export function SpatialPrevisSceneAssets({
   disabled,
   onReferencesChange,
   onUpload,
+  onUploadPending,
 }: SpatialPrevisSceneAssetsProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [assets, setAssets] = useState<ProjectAssetItem[]>([])
@@ -160,6 +162,7 @@ export function SpatialPrevisSceneAssets({
   const uploadFile = async (file: File | undefined) => {
     if (!file || interactionDisabled) return
     setIsUploading(true)
+    onUploadPending?.(true)
     setIsDragOver(false)
     setError(null)
     try {
@@ -171,6 +174,7 @@ export function SpatialPrevisSceneAssets({
       setError(caught instanceof Error ? caught.message : '上传失败。')
     } finally {
       setIsUploading(false)
+      onUploadPending?.(false)
     }
   }
 

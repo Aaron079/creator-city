@@ -2,7 +2,9 @@
  * Run: cd apps/web && node_modules/.bin/tsx --test src/components/create/spatial-previs/SpatialPrevisSceneAssets.test.tsx
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { resolve } from 'node:path'
 import * as React from 'react'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -146,4 +148,17 @@ test('closes scene-asset interactions while an upload is in progress', () => {
   assert.equal(isSceneAssetInteractionDisabled?.(false, false), false)
   assert.equal(isSceneAssetInteractionDisabled?.(true, false), true)
   assert.equal(isSceneAssetInteractionDisabled?.(false, true), true)
+})
+
+test('reports upload pending before awaiting and clears it from finally', () => {
+  const source = readFileSync(resolve(import.meta.dirname, 'SpatialPrevisSceneAssets.tsx'), 'utf8')
+  const pendingStart = source.indexOf('onUploadPending?.(true)')
+  const awaitUpload = source.indexOf('await onUpload(file)')
+  const finallyBlock = source.indexOf('finally {', awaitUpload)
+  const pendingEnd = source.indexOf('onUploadPending?.(false)', finallyBlock)
+
+  assert.ok(pendingStart >= 0)
+  assert.ok(awaitUpload > pendingStart)
+  assert.ok(finallyBlock > awaitUpload)
+  assert.ok(pendingEnd > finallyBlock)
 })

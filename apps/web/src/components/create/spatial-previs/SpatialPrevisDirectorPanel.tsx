@@ -71,6 +71,14 @@ export function canMutateSpatialPrevisEditor(isBusy: boolean) {
   return !isBusy
 }
 
+export function isSpatialPrevisBusy(isSaving: boolean, isReloading: boolean, isSceneAssetsUploading: boolean) {
+  return isSaving || isReloading || isSceneAssetsUploading
+}
+
+export function canReplaceSpatialPrevisSceneReferences(isSaving: boolean, isReloading: boolean) {
+  return !isSaving && !isReloading
+}
+
 export function selectSpatialPrevisEditorMode(state: SpatialPrevisState, editorMode: SpatialPrevisMode): SpatialPrevisState {
   return state.editorMode === editorMode ? state : { ...state, editorMode }
 }
@@ -130,6 +138,7 @@ export function SpatialPrevisDirectorPanel({
   const [saveConflict, setSaveConflict] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isReloading, setIsReloading] = useState(false)
+  const [isSceneAssetsUploading, setIsSceneAssetsUploading] = useState(false)
   const [isDeliveryOpen, setIsDeliveryOpen] = useState(false)
   const [isReviewOpen, setIsReviewOpen] = useState(false)
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(seedanceReceipts.at(-1)?.deliveryId ?? null)
@@ -143,7 +152,7 @@ export function SpatialPrevisDirectorPanel({
     beats: `spatial-previs-${tabId}-beats-tab`,
   }
   const tabRefs = useRef<Record<SpatialPrevisMode, HTMLButtonElement | null>>({ continuous: null, beats: null })
-  const isBusy = isSaving || isReloading
+  const isBusy = isSaving || isReloading || isSceneAssetsUploading
   const risks = useMemo(() => assessAuthoringRisks(
     state.scene.coverage,
     state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.position),
@@ -184,7 +193,9 @@ export function SpatialPrevisDirectorPanel({
   }
 
   const handleSceneReferencesChange = (references: SpatialSceneReference[]) => {
-    handleStateChange(replaceWhiteboxDraft(state, references))
+    if (!canReplaceSpatialPrevisSceneReferences(isSaving, isReloading)) return
+    setState((current) => replaceWhiteboxDraft(current, references))
+    setBeatError(null)
   }
 
   const handleBeatPatch = (beatId: string, patch: { position: Vec3; target: Vec3 }) => {
@@ -270,6 +281,7 @@ export function SpatialPrevisDirectorPanel({
           references={state.scene.references}
           disabled={isBusy}
           onReferencesChange={handleSceneReferencesChange}
+          onUploadPending={setIsSceneAssetsUploading}
           onUpload={async (file) => {
             if (!onUploadSceneAsset) throw new Error('场景资产上传不可用。')
             return onUploadSceneAsset(file)

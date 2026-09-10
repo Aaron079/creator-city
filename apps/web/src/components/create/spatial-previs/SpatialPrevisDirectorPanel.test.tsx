@@ -17,7 +17,9 @@ import {
   SpatialPrevisDirectorPanel,
 } from './SpatialPrevisDirectorPanel'
 import { clampSpatialPrevisTime, commitSpatialNumericDraft } from './SpatialPrevisTimeline'
-import type { SpatialPrevisState } from '@/lib/spatial-previs/types'
+import { replaceWhiteboxDraft } from '@/lib/spatial-previs/whitebox'
+import type { SpatialPrevisState, SpatialSceneReference } from '@/lib/spatial-previs/types'
+import * as directorPanelModule from './SpatialPrevisDirectorPanel'
 
 Object.assign(globalThis, { React })
 
@@ -157,6 +159,42 @@ test('blocks all editor mutations while the accepted save snapshot is pending', 
   resolveSave?.('success')
   assert.equal(await pendingSave, 'success')
   assert.equal(canMutateSpatialPrevisEditor(guard.isPending()), true)
+})
+
+test('treats a scene-asset upload as busy for save, close, and editor mutation guards', () => {
+  type BusyGuard = (isSaving: boolean, isReloading: boolean, isSceneAssetsUploading: boolean) => boolean
+  const isSpatialPrevisBusy = (directorPanelModule as unknown as {
+    isSpatialPrevisBusy?: BusyGuard
+  }).isSpatialPrevisBusy
+
+  assert.equal(typeof isSpatialPrevisBusy, 'function')
+  const isBusy = isSpatialPrevisBusy?.(false, false, true)
+  assert.equal(isBusy, true)
+  assert.equal(canMutateSpatialPrevisEditor(isBusy ?? false), false)
+})
+
+test('accepts completed scene references during upload but rejects them while saving or reloading', () => {
+  type SceneReferenceGuard = (isSaving: boolean, isReloading: boolean) => boolean
+  const canReplaceSpatialPrevisSceneReferences = (directorPanelModule as unknown as {
+    canReplaceSpatialPrevisSceneReferences?: SceneReferenceGuard
+  }).canReplaceSpatialPrevisSceneReferences
+  const completedReference: SpatialSceneReference = {
+    id: 'scene-upload-completed',
+    assetId: 'asset-upload-completed',
+    title: 'Completed scene reference',
+    mediaType: 'image',
+    url: '/api/assets/asset-upload-completed/file',
+    source: 'upload',
+  }
+
+  assert.equal(typeof canReplaceSpatialPrevisSceneReferences, 'function')
+  assert.equal(canReplaceSpatialPrevisSceneReferences?.(false, false), true)
+  const updated = canReplaceSpatialPrevisSceneReferences?.(false, false)
+    ? replaceWhiteboxDraft(state, [completedReference])
+    : state
+  assert.deepEqual(updated.scene.references, [completedReference])
+  assert.equal(canReplaceSpatialPrevisSceneReferences?.(true, false), false)
+  assert.equal(canReplaceSpatialPrevisSceneReferences?.(false, true), false)
 })
 
 test('keeps a failed beat patch state intact and provides an inline error message', () => {
