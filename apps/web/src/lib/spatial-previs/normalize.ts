@@ -84,12 +84,13 @@ export function normalizeSpatialPrevis(input: SpatialPrevisInput): SpatialPrevis
   const sourceMode = input.sourceMode ?? 'manual'
 
   return {
-    version: 2,
+    version: 3,
     projectId: input.projectId,
     scene: {
       sourceMode,
       coverage: coverageFor(sourceMode),
       references: [],
+      assetSets: [],
       whitebox: { entities: [] },
     },
     masterTake: {

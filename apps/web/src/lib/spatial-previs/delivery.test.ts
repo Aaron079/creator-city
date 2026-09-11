@@ -7,7 +7,7 @@ import { buildPrevisDeliveryPackage } from './delivery'
 import type { SpatialPrevisState } from './types'
 
 const state: SpatialPrevisState = {
-  version: 2,
+  version: 3,
   projectId: 'project-previs-delivery',
   scene: {
     sourceMode: 'multi-view',
@@ -20,9 +20,16 @@ const state: SpatialPrevisState = {
       url: '/api/assets/asset-scene-1/file',
       source: 'project',
     }],
+    assetSets: [{
+      id: 'asset-set-scene-1',
+      role: 'scene',
+      referenceIds: ['scene-reference-1'],
+    }],
     whitebox: {
       entities: [{
         id: 'whitebox-wall-1',
+        label: 'whitebox-wall-1',
+        confidence: 1,
         kind: 'wall',
         position: { x: 0, y: 2, z: -4 },
         rotationY: 0,
@@ -71,11 +78,18 @@ test('serializes whitebox, references, and tracks without provider capability', 
   assert.equal('capability' in delivery, false)
   assert.deepEqual(delivery.scene.whitebox.entities, state.scene.whitebox.entities)
   assert.deepEqual(delivery.scene.references, state.scene.references)
+  assert.deepEqual(delivery.scene.assetSets, state.scene.assetSets)
   assert.deepEqual(delivery.masterTake, state.masterTake)
   assert.notEqual(delivery.scene, state.scene)
+  assert.notEqual(delivery.scene.assetSets, state.scene.assetSets)
+  assert.notEqual(delivery.scene.assetSets[0], state.scene.assetSets[0])
+  assert.notEqual(delivery.scene.assetSets[0]!.referenceIds, state.scene.assetSets[0]!.referenceIds)
   assert.notEqual(delivery.masterTake, state.masterTake)
   assert.equal(Object.isFrozen(delivery), true)
   assert.equal(Object.isFrozen(delivery.scene.whitebox.entities), true)
+  assert.equal(Object.isFrozen(state.scene.assetSets), false)
+  assert.equal(Object.isFrozen(state.scene.assetSets[0]), false)
+  assert.equal(Object.isFrozen(state.scene.assetSets[0]!.referenceIds), false)
 
   state.scene.whitebox.entities[0]!.position.x = 99
   state.masterTake.cameraTrack.keyframes[0]!.target.z = 99

@@ -1,13 +1,14 @@
 'use client'
 
 import * as React from 'react'
+import { sampleActor } from '@/lib/spatial-previs/sampler'
 import type { CameraKeyframe, SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
 
 const KEYFRAME_EPSILON = 1e-6
 const POSITION_DELTA = 0.35
 const TARGET_DELTA = 0.2
 
-export const SPATIAL_CAMERA_ACTIONS = ['推/拉', '摇/俯仰', '移', '跟拍', '升/降'] as const
+export const SPATIAL_CAMERA_ACTIONS = ['推', '拉', '摇', '移', '跟', '升', '降'] as const
 
 export type SpatialCameraAction = typeof SPATIAL_CAMERA_ACTIONS[number]
 
@@ -25,16 +26,11 @@ function exactCameraKeyframe(keyframes: CameraKeyframe[], timeSec: number) {
   return matches.length === 1 ? matches[0] : null
 }
 
-function exactActorPosition(state: SpatialPrevisState, timeSec: number, actorTrackId?: string) {
-  const tracks = actorTrackId
-    ? state.masterTake.actorTracks.filter((track) => track.id === actorTrackId)
-    : state.masterTake.actorTracks
-  for (const track of tracks) {
-    const matches = track.keyframes.filter((keyframe) => Math.abs(keyframe.timeSec - timeSec) <= KEYFRAME_EPSILON)
-    if (matches.length === 1) return matches[0]?.position ?? null
-  }
-
-  return null
+function actorPosition(state: SpatialPrevisState, timeSec: number, actorTrackId?: string) {
+  const track = actorTrackId
+    ? state.masterTake.actorTracks.find((item) => item.id === actorTrackId)
+    : state.masterTake.actorTracks[0]
+  return track?.keyframes.length ? sampleActor(track, timeSec).position : null
 }
 
 function addVector(vector: Vec3, delta: Vec3): Vec3 {
@@ -72,17 +68,21 @@ function cameraPatch(
   const right = lateralDirection(forward)
 
   switch (action) {
-    case '推/拉': {
-      const isPush = keyframe.intent !== 'push'
-      const sign = isPush ? 1 : -1
+    case '推':
       return {
-        position: addVector(keyframe.position, scaleVector(forward, POSITION_DELTA * sign)),
+        position: addVector(keyframe.position, scaleVector(forward, POSITION_DELTA)),
         target: { ...keyframe.target },
         focalLengthMm: keyframe.focalLengthMm,
-        intent: isPush ? 'push' : 'pull',
+        intent: 'push',
       }
-    }
-    case '摇/俯仰':
+    case '拉':
+      return {
+        position: addVector(keyframe.position, scaleVector(forward, -POSITION_DELTA)),
+        target: { ...keyframe.target },
+        focalLengthMm: keyframe.focalLengthMm,
+        intent: 'pull',
+      }
+    case '摇':
       return {
         position: { ...keyframe.position },
         target: addVector(addVector(keyframe.target, scaleVector(right, TARGET_DELTA)), { x: 0, y: 0.12, z: 0 }),
@@ -96,7 +96,7 @@ function cameraPatch(
         focalLengthMm: keyframe.focalLengthMm,
         intent: 'dolly',
       }
-    case '跟拍': {
+    case '跟': {
       const focus = actorPosition ? { ...actorPosition, y: actorPosition.y + 1 } : addVector(keyframe.target, scaleVector(forward, POSITION_DELTA))
       const rigDestination = actorPosition
         ? addVector(actorPosition, { x: -forward.x * 3, y: 1.6, z: -forward.z * 3 })
@@ -108,16 +108,20 @@ function cameraPatch(
         intent: 'follow',
       }
     }
-    case '升/降': {
-      const isRise = keyframe.intent !== 'crane'
-      const sign = isRise ? 1 : -1
+    case '升':
       return {
-        position: addVector(keyframe.position, { x: 0, y: POSITION_DELTA * sign, z: 0 }),
-        target: addVector(keyframe.target, { x: 0, y: POSITION_DELTA * sign, z: 0 }),
+        position: addVector(keyframe.position, { x: 0, y: POSITION_DELTA, z: 0 }),
+        target: addVector(keyframe.target, { x: 0, y: POSITION_DELTA, z: 0 }),
         focalLengthMm: keyframe.focalLengthMm,
         intent: 'crane',
       }
-    }
+    case '降':
+      return {
+        position: addVector(keyframe.position, { x: 0, y: -POSITION_DELTA, z: 0 }),
+        target: addVector(keyframe.target, { x: 0, y: -POSITION_DELTA, z: 0 }),
+        focalLengthMm: keyframe.focalLengthMm,
+        intent: 'crane',
+      }
   }
 }
 
@@ -130,7 +134,7 @@ export function applySpatialCameraAction(
   const keyframe = exactCameraKeyframe(state.masterTake.cameraTrack.keyframes, currentTimeSec)
   if (!keyframe) return state
 
-  const patch = cameraPatch(keyframe, action, exactActorPosition(state, currentTimeSec, actorTrackId))
+  const patch = cameraPatch(keyframe, action, actorPosition(state, currentTimeSec, actorTrackId))
   return {
     ...state,
     masterTake: {
@@ -185,7 +189,7 @@ export function SpatialCameraControlStrip({
             onClick={() => {
               dispatchSpatialCameraAction({ state, currentTimeSec, action, actorTrackId, onChange })
             }}
-            className="min-w-12 rounded-md border border-white/12 bg-white/[0.045] px-2.5 py-1.5 text-xs font-medium text-white/72 transition hover:border-cyan-200/35 hover:bg-cyan-200/[0.09] hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-35"
+            className="h-7 min-w-8 rounded-md border border-white/12 bg-white/[0.045] px-2 text-xs font-medium text-white/72 transition hover:border-cyan-200/35 hover:bg-cyan-200/[0.09] hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-35"
           >
             {action}
           </button>

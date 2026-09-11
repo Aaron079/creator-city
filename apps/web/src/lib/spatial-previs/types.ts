@@ -13,9 +13,19 @@ export type SpatialSceneReference = {
   source: 'project' | 'library' | 'upload'
 }
 
+export type SpatialAssetRole = 'scene' | 'character' | 'prop' | 'reference'
+
+export type SpatialAssetSet = {
+  id: string
+  role: SpatialAssetRole
+  referenceIds: string[]
+}
+
 export type WhiteboxEntity = {
   id: string
-  kind: 'floor' | 'wall' | 'opening' | 'volume' | 'furniture' | 'referencePlane'
+  label: string
+  confidence: number
+  kind: 'floor' | 'wall' | 'opening' | 'volume' | 'furniture' | 'referencePlane' | 'prop'
   position: Vec3
   rotationY: number
   size: Vec3
@@ -81,6 +91,7 @@ export type SpatialPrevisScene = {
   sourceMode: SpatialPrevisSourceMode
   coverage: SpatialCoverage
   references: SpatialSceneReference[]
+  assetSets: SpatialAssetSet[]
   whitebox: { entities: WhiteboxEntity[] }
 }
 
@@ -95,7 +106,7 @@ export type SpatialCoverage =
   | { mode: 'unavailable'; cameraFreedom: 'disabled' }
 
 export type SpatialPrevisState = {
-  version: 2
+  version: 3
   projectId: string
   scene: SpatialPrevisScene
   masterTake: MasterTake

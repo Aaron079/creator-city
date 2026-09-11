@@ -11,7 +11,7 @@ import * as React from 'react'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { chromium, type Browser, type Page } from '@playwright/test'
-import type { SpatialSceneReference } from '@/lib/spatial-previs/types'
+import type { SpatialAssetRole, SpatialSceneReference } from '@/lib/spatial-previs/types'
 import * as sceneAssetsModule from './SpatialPrevisSceneAssets'
 import {
   addSpatialSceneReference,
@@ -28,10 +28,14 @@ declare global {
       mount: () => void
       rejectUpload: () => void
       resolveUpload: () => void
+      failSecondUpload: () => void
+      useImmediateUploads: () => void
       snapshot: () => {
+        assetSetCalls: Array<{ references: SpatialSceneReference[]; role: SpatialAssetRole }>
         pendingCalls: boolean[]
         referenceCalls: SpatialSceneReference[][]
-        uploadCalls: number
+        uploadNames: string[]
+      uploadCalls: number
       }
     }
   }
@@ -40,8 +44,10 @@ declare global {
 const props = {
   projectId: 'project-previs-01',
   references: [],
+  assetSets: [],
   disabled: false,
   onReferencesChange: () => undefined,
+  onAddAssetSet: () => undefined,
   onUpload: async () => ({
     id: 'scene-upload-01',
     assetId: 'asset-upload-01',
@@ -90,15 +96,26 @@ function renderedHarnessSource() {
     const uploadedReference = ${JSON.stringify(uploadedReference)}
     let root = null
     let references = []
+    let assetSets = []
     const state = {
+      assetSetCalls: [],
       pendingCalls: [],
       referenceCalls: [],
+      uploadNames: [],
       uploadCalls: 0,
+      failOnSecondUpload: false,
+      immediateUploads: false,
       resolveUpload: null,
       rejectUpload: null,
     }
 
     window.fetch = async () => new Response(JSON.stringify({ success: true, assets: [{
+      id: 'asset-project-interior-01',
+      projectId: 'project-previs-browser',
+      title: 'Project interior reference',
+      type: 'image',
+      url: 'storage://creator-city-assets/project-previs-browser/interior-reference.jpg',
+    }, {
       id: 'asset-library-street-01',
       projectId: 'project-previous-work',
       title: 'Library street reference',
@@ -112,14 +129,54 @@ function renderedHarnessSource() {
       root.render(React.createElement(SpatialPrevisSceneAssets, {
         projectId: 'project-previs-browser',
         references,
+        assetSets,
         disabled: false,
         onReferencesChange(next) {
           references = structuredClone(next)
           state.referenceCalls.push(structuredClone(next))
           renderPanel()
         },
-        onUpload() {
+        onAddAssetSet(selectedReferences, role) {
+          const selected = structuredClone(selectedReferences)
+          state.assetSetCalls.push({ references: selected, role })
+          for (const reference of selected) {
+            if (!references.some((item) => item.id === reference.id)) references.push(reference)
+          }
+          assetSets.push({
+            id: 'asset-set-' + role + '-' + (assetSets.length + 1),
+            role,
+            referenceIds: selected.map((reference) => reference.id),
+          })
+          renderPanel()
+        },
+        onUpload(file) {
           state.uploadCalls += 1
+          state.uploadNames.push(file.name)
+          if (state.failOnSecondUpload && state.uploadCalls === 2) {
+            state.failOnSecondUpload = false
+            state.immediateUploads = true
+            return Promise.reject(new Error('Second upload failed'))
+          }
+          if (state.failOnSecondUpload) {
+            return Promise.resolve({
+              id: 'scene-upload-' + file.name,
+              assetId: 'asset-upload-' + file.name,
+              title: file.name,
+              mediaType: 'image',
+              url: '/api/assets/asset-upload-' + file.name + '/file',
+              source: 'upload',
+            })
+          }
+          if (state.immediateUploads) {
+            return Promise.resolve({
+              id: 'scene-upload-' + file.name,
+              assetId: 'asset-upload-' + file.name,
+              title: file.name,
+              mediaType: 'image',
+              url: '/api/assets/asset-upload-' + file.name + '/file',
+              source: 'upload',
+            })
+          }
           return new Promise((resolve, reject) => {
             state.resolveUpload = () => resolve(uploadedReference)
             state.rejectUpload = () => reject(new Error('Browser upload failed'))
@@ -136,9 +193,14 @@ function renderedHarnessSource() {
       document.getElementById('root').replaceChildren()
       root = createRoot(document.getElementById('root'))
       references = []
+      assetSets = []
+      state.assetSetCalls = []
       state.pendingCalls = []
       state.referenceCalls = []
+      state.uploadNames = []
       state.uploadCalls = 0
+      state.failOnSecondUpload = false
+      state.immediateUploads = false
       state.resolveUpload = null
       state.rejectUpload = null
       renderPanel()
@@ -148,9 +210,13 @@ function renderedHarnessSource() {
       mount,
       resolveUpload: () => state.resolveUpload?.(),
       rejectUpload: () => state.rejectUpload?.(),
+      failSecondUpload: () => { state.failOnSecondUpload = true },
+      useImmediateUploads: () => { state.immediateUploads = true },
       snapshot: () => structuredClone({
+        assetSetCalls: state.assetSetCalls,
         pendingCalls: state.pendingCalls,
         referenceCalls: state.referenceCalls,
+        uploadNames: state.uploadNames,
         uploadCalls: state.uploadCalls,
       }),
     }
@@ -219,11 +285,17 @@ test('summarizes the first selected scene asset and asset count in its compact c
         source: 'project',
       },
     ],
+    assetSets: [{
+      id: 'asset-set-scene-1',
+      role: 'scene',
+      referenceIds: ['scene-project-01', 'scene-project-02'],
+    }],
   }))
   const compactControl = markup.match(/<button[^>]*aria-label="添加场景资产"[^>]*>([\s\S]*?)<\/button>/)?.[1] ?? ''
 
   assert.match(compactControl, /Rain-soaked alley/)
   assert.match(compactControl, /2 assets/)
+  assert.match(compactControl, /场景/)
   assert.doesNotMatch(compactControl, /Scene assets|Close-up reference/)
 })
 
@@ -306,6 +378,86 @@ test('closes scene-asset interactions while an upload is in progress', () => {
   assert.equal(isSceneAssetInteractionDisabled?.(false, true), true)
 })
 
+test('uploads every selected file sequentially and preserves selection order', async () => {
+  type UploadFiles = (
+    files: readonly File[],
+    upload: (file: File) => Promise<SpatialSceneReference>,
+  ) => Promise<SpatialSceneReference[]>
+  const uploadSceneAssetFiles = (sceneAssetsModule as unknown as {
+    uploadSceneAssetFiles?: UploadFiles
+  }).uploadSceneAssetFiles
+  const files = [
+    new File(['front'], 'front.jpg', { type: 'image/jpeg' }),
+    new File(['left'], 'left.jpg', { type: 'image/jpeg' }),
+    new File(['right'], 'right.jpg', { type: 'image/jpeg' }),
+  ]
+  const calls: string[] = []
+  let activeUploads = 0
+  let maxActiveUploads = 0
+
+  assert.equal(typeof uploadSceneAssetFiles, 'function')
+  const uploaded = await uploadSceneAssetFiles?.(files, async (file) => {
+    calls.push(file.name)
+    activeUploads += 1
+    maxActiveUploads = Math.max(maxActiveUploads, activeUploads)
+    await new Promise((resolve) => setTimeout(resolve, 1))
+    activeUploads -= 1
+    return {
+      id: `scene-upload-${file.name}`,
+      assetId: `asset-${file.name}`,
+      title: file.name,
+      mediaType: 'image',
+      url: `/api/assets/asset-${file.name}/file`,
+      source: 'upload',
+    }
+  })
+
+  assert.deepEqual(calls, ['front.jpg', 'left.jpg', 'right.jpg'])
+  assert.equal(maxActiveUploads, 1)
+  assert.deepEqual(uploaded?.map((reference) => reference.title), calls)
+})
+
+test('preserves uploaded prefixes and remaining files in a typed batch failure', async () => {
+  type UploadFiles = (
+    files: readonly File[],
+    upload: (file: File) => Promise<SpatialSceneReference>,
+  ) => Promise<SpatialSceneReference[]>
+  const uploadSceneAssetFiles = (sceneAssetsModule as unknown as {
+    uploadSceneAssetFiles?: UploadFiles
+  }).uploadSceneAssetFiles
+  const files = [
+    new File(['first'], 'first.jpg', { type: 'image/jpeg' }),
+    new File(['second'], 'second.jpg', { type: 'image/jpeg' }),
+  ]
+  const uploadedReference = {
+    id: 'scene-upload-first',
+    assetId: 'asset-first',
+    title: 'first.jpg',
+    mediaType: 'image' as const,
+    url: '/api/assets/asset-first/file',
+    source: 'upload' as const,
+  }
+
+  assert.equal(typeof uploadSceneAssetFiles, 'function')
+  await assert.rejects(
+    () => uploadSceneAssetFiles!(files, async (file) => {
+      if (file.name === 'second.jpg') throw new Error('Second upload failed')
+      return uploadedReference
+    }),
+    (error: unknown) => {
+      const failure = error as {
+        name?: string
+        uploadedReferences?: SpatialSceneReference[]
+        remainingFiles?: File[]
+      }
+      assert.equal(failure.name, 'SpatialSceneAssetUploadFailure')
+      assert.deepEqual(failure.uploadedReferences, [uploadedReference])
+      assert.deepEqual(failure.remainingFiles?.map((file) => file.name), ['second.jpg'])
+      return true
+    },
+  )
+})
+
 test('reports the real upload lifecycle and updates references after a successful controlled upload', async () => {
   assert.ok(browser)
   const page = await browser.newPage()
@@ -321,8 +473,10 @@ test('reports the real upload lifecycle and updates references after a successfu
     })
     await page.getByText('上传中…').waitFor()
     assert.deepEqual(await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot()), {
+      assetSetCalls: [],
       pendingCalls: [true],
       referenceCalls: [],
+      uploadNames: ['scene-reference.jpg'],
       uploadCalls: 1,
     })
     assert.equal(await page.getByRole('button', { name: '添加场景资产' }).isDisabled(), true)
@@ -332,12 +486,84 @@ test('reports the real upload lifecycle and updates references after a successfu
     await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.resolveUpload())
     await page.getByText('拖放或选择图片 / 视频').waitFor()
     assert.deepEqual(await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot()), {
+      assetSetCalls: [{ references: [uploadedReference], role: 'scene' }],
       pendingCalls: [true, false],
-      referenceCalls: [[uploadedReference]],
+      referenceCalls: [],
+      uploadNames: ['scene-reference.jpg'],
       uploadCalls: 1,
     })
     assert.equal(await page.getByRole('button', { name: '添加场景资产' }).isEnabled(), true)
     assert.equal(await dropzone.getAttribute('aria-disabled'), 'false')
+  } finally {
+    await page.close()
+  }
+})
+
+test('adds one default scene set for an ordered multi-angle upload batch', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage()
+  try {
+    await mountSceneAssets(page)
+    await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.useImmediateUploads())
+    await page.locator('input[type="file"]').setInputFiles([
+      { name: 'front.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('front') },
+      { name: 'left.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('left') },
+      { name: 'right.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('right') },
+    ])
+
+    await page.getByText('拖放或选择图片 / 视频').waitFor()
+    const snapshot = await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot())
+    assert.deepEqual(snapshot.pendingCalls, [true, false])
+    assert.deepEqual(snapshot.uploadNames, ['front.jpg', 'left.jpg', 'right.jpg'])
+    assert.equal(snapshot.assetSetCalls.length, 1)
+    assert.equal(snapshot.assetSetCalls[0]?.role, 'scene')
+    assert.deepEqual(
+      snapshot.assetSetCalls[0]?.references.map((reference) => reference.title),
+      ['front.jpg', 'left.jpg', 'right.jpg'],
+    )
+  } finally {
+    await page.close()
+  }
+})
+
+test('groups a successful upload prefix and retries only the failed remainder', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage()
+  try {
+    await mountSceneAssets(page)
+    await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.failSecondUpload())
+    await page.locator('input[type="file"]').setInputFiles([
+      { name: 'first.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('first') },
+      { name: 'second.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('second') },
+    ])
+
+    await page.getByRole('alert').waitFor()
+    assert.match(await page.getByRole('alert').textContent() ?? '', /Second upload failed/)
+    assert.deepEqual(await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot()), {
+      assetSetCalls: [{
+        references: [{
+          id: 'scene-upload-first.jpg',
+          assetId: 'asset-upload-first.jpg',
+          title: 'first.jpg',
+          mediaType: 'image',
+          url: '/api/assets/asset-upload-first.jpg/file',
+          source: 'upload',
+        }],
+        role: 'scene',
+      }],
+      pendingCalls: [true, false],
+      referenceCalls: [],
+      uploadNames: ['first.jpg', 'second.jpg'],
+      uploadCalls: 2,
+    })
+
+    await page.getByRole('button', { name: '重试剩余文件' }).click()
+    await page.getByText('拖放或选择图片 / 视频').waitFor()
+    const snapshot = await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot())
+    assert.deepEqual(snapshot.pendingCalls, [true, false, true, false])
+    assert.deepEqual(snapshot.uploadNames, ['first.jpg', 'second.jpg', 'second.jpg'])
+    assert.equal(snapshot.assetSetCalls.length, 2)
+    assert.deepEqual(snapshot.assetSetCalls[1]?.references.map((reference) => reference.title), ['second.jpg'])
   } finally {
     await page.close()
   }
@@ -357,15 +583,19 @@ test('does not update references when a controlled upload rejects', async () => 
     })
     await page.getByText('上传中…').waitFor()
     assert.deepEqual(await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot()), {
+      assetSetCalls: [],
       pendingCalls: [true],
       referenceCalls: [],
+      uploadNames: ['scene-reference-failed.jpg'],
       uploadCalls: 1,
     })
     await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.rejectUpload())
     await page.getByRole('alert').waitFor()
     assert.deepEqual(await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot()), {
+      assetSetCalls: [],
       pendingCalls: [true, false],
       referenceCalls: [],
+      uploadNames: ['scene-reference-failed.jpg'],
       uploadCalls: 1,
     })
   } finally {
@@ -373,26 +603,55 @@ test('does not update references when a controlled upload rejects', async () => 
   }
 })
 
-test('shows and selects an existing media asset from the account library', async () => {
+test('shows library assets first and adds selected media as one chosen-role set', async () => {
   assert.ok(browser)
   const page = await browser.newPage()
   try {
     await mountSceneAssets(page)
-
     const libraryAsset = page.getByRole('button', { name: 'Library street reference' })
     await libraryAsset.waitFor()
+
+    assert.deepEqual(
+      await page.locator('[aria-label="场景图片和视频素材"] > p').allTextContents(),
+      ['资产库', '本项目'],
+    )
+    assert.equal(await page.getByRole('group', { name: '素材角色' }).count(), 0)
+
     await libraryAsset.click()
+    const roleGroup = page.getByRole('group', { name: '素材角色' })
+    await roleGroup.waitFor()
+    assert.equal(await roleGroup.getByRole('button', { name: '场景' }).getAttribute('aria-pressed'), 'true')
+    assert.deepEqual(await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot()), {
+      assetSetCalls: [],
+      pendingCalls: [],
+      referenceCalls: [],
+      uploadNames: [],
+      uploadCalls: 0,
+    })
+
+    await roleGroup.getByRole('button', { name: '道具' }).click()
+    await libraryAsset.click()
+    assert.equal(await page.getByRole('group', { name: '素材角色' }).count(), 0)
+    await libraryAsset.click()
+    assert.equal(await roleGroup.getByRole('button', { name: '场景' }).getAttribute('aria-pressed'), 'true')
+    await roleGroup.getByRole('button', { name: '道具' }).click()
+    await page.getByRole('button', { name: '添加素材组' }).click()
 
     assert.deepEqual(await page.evaluate(() => window.__spatialPrevisSceneAssetsHarness.snapshot()), {
+      assetSetCalls: [{
+        references: [{
+          id: 'scene-library-asset-library-street-01',
+          assetId: 'asset-library-street-01',
+          title: 'Library street reference',
+          mediaType: 'image',
+          url: '/api/assets/asset-library-street-01/file',
+          source: 'library',
+        }],
+        role: 'prop',
+      }],
       pendingCalls: [],
-      referenceCalls: [[{
-        id: 'scene-library-asset-library-street-01',
-        assetId: 'asset-library-street-01',
-        title: 'Library street reference',
-        mediaType: 'image',
-        url: '/api/assets/asset-library-street-01/file',
-        source: 'library',
-      }]],
+      referenceCalls: [],
+      uploadNames: [],
       uploadCalls: 0,
     })
   } finally {

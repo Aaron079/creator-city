@@ -5,6 +5,8 @@ import type {
   ActorTrack,
   CameraKeyframe,
   CameraTrack,
+  SpatialAssetRole,
+  SpatialAssetSet,
   SpatialSceneReference,
   SpatialPrevisBeat,
   SpatialPrevisState,
@@ -20,7 +22,8 @@ const EDITOR_MODES = new Set(['continuous', 'beats'])
 const CAMERA_INTENTS = new Set(['push', 'pull', 'pan-tilt', 'dolly', 'follow', 'crane', 'static'])
 const REFERENCE_MEDIA_TYPES = new Set(['image', 'video'])
 const REFERENCE_SOURCES = new Set(['project', 'library', 'upload'])
-const WHITEBOX_ENTITY_KINDS = new Set(['floor', 'wall', 'opening', 'volume', 'furniture', 'referencePlane'])
+const ASSET_ROLES = new Set(['scene', 'character', 'prop', 'reference'])
+const WHITEBOX_ENTITY_KINDS = new Set(['floor', 'wall', 'opening', 'volume', 'furniture', 'referencePlane', 'prop'])
 const MIDPOINT_EPSILON = 1e-6
 const MIN_DURATION_SEC = 5
 const MAX_DURATION_SEC = 180
@@ -51,6 +54,8 @@ function vec3(value: unknown): Vec3 | null {
 function references(value: unknown): SpatialSceneReference[] | null {
   if (!Array.isArray(value)) return null
   const items: SpatialSceneReference[] = []
+  const referenceIds = new Set<string>()
+  const assetIds = new Set<string>()
   for (const candidate of value) {
     const reference = record(candidate)
     if (!reference) return null
@@ -60,7 +65,9 @@ function references(value: unknown): SpatialSceneReference[] | null {
     const url = string(reference.url)
     if (
       !id
+      || referenceIds.has(id)
       || !assetId
+      || assetIds.has(assetId)
       || !title
       || !url
       || !isRenderableMediaUrl(url).ok
@@ -69,26 +76,68 @@ function references(value: unknown): SpatialSceneReference[] | null {
     ) {
       return null
     }
+    referenceIds.add(id)
+    assetIds.add(assetId)
     items.push({
+      ...reference,
       id,
       assetId,
       title,
       mediaType: reference.mediaType as SpatialSceneReference['mediaType'],
       url,
       source: reference.source as SpatialSceneReference['source'],
+    } as SpatialSceneReference)
+  }
+  return items
+}
+
+function assetSets(value: unknown, sceneReferences: SpatialSceneReference[]): SpatialAssetSet[] | null {
+  if (!Array.isArray(value)) return null
+  const referenceIds = new Set(sceneReferences.map((reference) => reference.id))
+  const assetSetIds = new Set<string>()
+  const items: SpatialAssetSet[] = []
+  for (const candidate of value) {
+    const assetSet = record(candidate)
+    if (!assetSet || !Array.isArray(assetSet.referenceIds) || assetSet.referenceIds.length === 0) return null
+    const id = string(assetSet.id)
+    if (!id || assetSetIds.has(id) || !ASSET_ROLES.has(assetSet.role as string)) return null
+
+    const parsedReferenceIds: string[] = []
+    const assetSetReferenceIds = new Set<string>()
+    for (const referenceId of assetSet.referenceIds) {
+      const parsedReferenceId = string(referenceId)
+      if (
+        !parsedReferenceId
+        || assetSetReferenceIds.has(parsedReferenceId)
+        || !referenceIds.has(parsedReferenceId)
+      ) {
+        return null
+      }
+      assetSetReferenceIds.add(parsedReferenceId)
+      parsedReferenceIds.push(parsedReferenceId)
+    }
+
+    assetSetIds.add(id)
+    items.push({
+      id,
+      role: assetSet.role as SpatialAssetRole,
+      referenceIds: parsedReferenceIds,
     })
   }
   return items
 }
 
-function whitebox(value: unknown): { entities: WhiteboxEntity[] } | null {
+function whitebox(value: unknown, legacy: boolean): { entities: WhiteboxEntity[] } | null {
   const item = record(value)
   if (!item || !Array.isArray(item.entities)) return null
   const entities: WhiteboxEntity[] = []
+  const entityIds = new Set<string>()
   for (const candidate of item.entities) {
     const entity = record(candidate)
     if (!entity || !Array.isArray(entity.sourceAssetIds)) return null
     const id = string(entity.id)
+    const label = legacy ? id : string(entity.label)
+    const confidence = legacy ? 1 : number(entity.confidence)
     const position = vec3(entity.position)
     const rotationY = number(entity.rotationY)
     const size = vec3(entity.size)
@@ -100,16 +149,24 @@ function whitebox(value: unknown): { entities: WhiteboxEntity[] } | null {
     }
     if (
       !id
+      || !label
+      || confidence === null
+      || confidence < 0
+      || confidence > 1
       || !position
       || rotationY === null
       || !size
       || !WHITEBOX_ENTITY_KINDS.has(entity.kind as string)
       || sourceAssetIds.length === 0
+      || entityIds.has(id)
     ) {
       return null
     }
+    entityIds.add(id)
     entities.push({
       id,
+      label,
+      confidence,
       kind: entity.kind as WhiteboxEntity['kind'],
       position,
       rotationY,
@@ -242,7 +299,7 @@ function timelineIsExecutable(
 
 function state(value: unknown): SpatialPrevisState | null {
   const candidate = record(value)
-  if (!candidate || (candidate.version !== 1 && candidate.version !== 2)) return null
+  if (!candidate || (candidate.version !== 1 && candidate.version !== 2 && candidate.version !== 3)) return null
   const projectId = string(candidate.projectId)
   const scene = record(candidate.scene)
   const masterTake = record(candidate.masterTake)
@@ -276,13 +333,23 @@ function state(value: unknown): SpatialPrevisState | null {
   const parsedCameraTrack = cameraTrack(masterTake.cameraTrack)
   const parsedBeats = beats(masterTake.beats)
   const parsedReferences = candidate.version === 1 ? [] : references(scene.references)
-  const parsedWhitebox = candidate.version === 1 ? { entities: [] } : whitebox(scene.whitebox)
+  const parsedAssetSets = candidate.version === 3
+    ? parsedReferences && assetSets(scene.assetSets, parsedReferences)
+    : parsedReferences?.map((reference, index) => ({
+      id: `asset-set-legacy-${index + 1}`,
+      role: 'scene' as const,
+      referenceIds: [reference.id],
+    }))
+  const parsedWhitebox = candidate.version === 1
+    ? { entities: [] }
+    : whitebox(scene.whitebox, candidate.version === 2)
   if (
     !coverageMatches(scene.coverage, normalized.scene.coverage)
     || !parsedActorTracks
     || !parsedCameraTrack
     || !parsedBeats
     || !parsedReferences
+    || !parsedAssetSets
     || !parsedWhitebox
     || !timelineIsExecutable(parsedCameraTrack, parsedActorTracks, parsedBeats, durationSec)
   ) {
@@ -294,6 +361,7 @@ function state(value: unknown): SpatialPrevisState | null {
     scene: {
       ...normalized.scene,
       references: parsedReferences,
+      assetSets: parsedAssetSets,
       whitebox: parsedWhitebox,
     },
     masterTake: {
@@ -306,10 +374,16 @@ function state(value: unknown): SpatialPrevisState | null {
   }
 }
 
-export function parseSpatialPrevisMetadata(metadata: unknown): SpatialPrevisState | null {
+export function parseSpatialPrevisMetadata(
+  metadata: unknown,
+  expectedProjectId?: string,
+): SpatialPrevisState | null {
   try {
     const root = record(metadata)
-    return root ? state(root.spatialPrevis) : null
+    const parsed = root ? state(root.spatialPrevis) : null
+    return parsed && (expectedProjectId === undefined || parsed.projectId === expectedProjectId)
+      ? parsed
+      : null
   } catch {
     return null
   }

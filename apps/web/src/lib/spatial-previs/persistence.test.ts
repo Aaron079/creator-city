@@ -33,7 +33,19 @@ describe('spatial previs persistence', () => {
     assert.deepEqual(existingMetadata, source)
   })
 
-  test('migrates a persisted version-1 spatial previs state to version 2', () => {
+  test('returns null when persisted spatial previs belongs to another project', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const metadata = {
+      title: 'Project 2',
+      email: 'project-2@example.com',
+      spatialPrevis: state,
+    }
+
+    assert.deepEqual(parseSpatialPrevisMetadata(metadata, 'project-1'), state)
+    assert.equal(parseSpatialPrevisMetadata(metadata, 'project-2'), null)
+  })
+
+  test('migrates a persisted version-1 spatial previs state to version 3', () => {
     const state = normalizeSpatialPrevis({
       projectId: 'project-1',
       sourceMode: 'video-scan',
@@ -42,9 +54,10 @@ describe('spatial previs persistence', () => {
       editorMode: 'beats',
       updatedAt: '2026-09-09T00:00:00.000Z',
     })
-    const { references, whitebox, ...legacyScene } = state.scene
+    const { references, assetSets, whitebox, ...legacyScene } = state.scene
 
     void references
+    void assetSets
     void whitebox
 
     const parsed = parseSpatialPrevisMetadata({
@@ -52,44 +65,72 @@ describe('spatial previs persistence', () => {
     })
 
     assert.deepEqual(parsed, state)
+    assert.equal(parsed?.version, 3)
     assert.deepEqual(parsed?.scene.references, [])
+    assert.deepEqual(parsed?.scene.assetSets, [])
     assert.deepEqual(parsed?.scene.whitebox.entities, [])
   })
 
-  test('restores a valid version-2 spatial previs state', () => {
+  test('migrates version-2 references and whitebox geometry to version 3', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const { assetSets, ...legacyScene } = state.scene
+
+    void assetSets
+
+    const references = [{
+      id: 'reference-1',
+      assetId: 'asset-1',
+      title: 'Project exterior',
+      mediaType: 'image' as const,
+      url: 'https://example.com/project-exterior.jpg?size=original#view',
+      source: 'project' as const,
+    }, {
+      id: 'scene-library-asset-2',
+      assetId: 'asset-2',
+      title: 'Library exterior',
+      mediaType: 'video' as const,
+      url: 'https://example.com/library-exterior.mp4?token=exact',
+      source: 'library' as const,
+    }]
+    const entity = {
+      id: 'floor-1',
+      kind: 'floor' as const,
+      position: { x: 0, y: 0, z: 0 },
+      rotationY: 0,
+      size: { x: 8, y: 0.1, z: 8 },
+      sourceAssetIds: ['asset-1'],
+    }
     const persisted = {
       ...state,
+      version: 2,
       scene: {
-        ...state.scene,
-        references: [{
-          id: 'reference-1',
-          assetId: 'asset-1',
-          title: 'Exterior reference',
-          mediaType: 'image' as const,
-          url: 'https://example.com/exterior.jpg',
-          source: 'project' as const,
-        }],
-        whitebox: {
-          entities: [{
-            id: 'floor-1',
-            kind: 'floor' as const,
-            position: { x: 0, y: 0, z: 0 },
-            rotationY: 0,
-            size: { x: 8, y: 0.1, z: 8 },
-            sourceAssetIds: ['asset-1'],
-          }],
-        },
+        ...legacyScene,
+        references,
+        whitebox: { entities: [entity] },
       },
     }
 
-    assert.deepEqual(parseSpatialPrevisMetadata({ spatialPrevis: persisted }), persisted)
+    const parsed = parseSpatialPrevisMetadata({ spatialPrevis: persisted })
+
+    assert.equal(parsed?.version, 3)
+    assert.deepEqual(parsed?.scene.references, references)
+    assert.deepEqual(parsed?.scene.assetSets, [{
+      id: 'asset-set-legacy-1',
+      role: 'scene',
+      referenceIds: ['reference-1'],
+    }, {
+      id: 'asset-set-legacy-2',
+      role: 'scene',
+      referenceIds: ['scene-library-asset-2'],
+    }])
+    assert.deepEqual(parsed?.scene.whitebox.entities, [{ ...entity, label: 'floor-1', confidence: 1 }])
   })
 
-  test('restores an asset-library scene reference', () => {
+  test('restores a valid version-3 scene with prop whitebox geometry', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
     const persisted = {
       ...state,
+      version: 3 as const,
       scene: {
         ...state.scene,
         references: [{
@@ -100,13 +141,20 @@ describe('spatial previs persistence', () => {
           url: 'https://example.com/exterior.jpg',
           source: 'library' as const,
         }],
+        assetSets: [{
+          id: 'asset-set-1',
+          role: 'prop' as const,
+          referenceIds: ['scene-library-asset-1'],
+        }],
         whitebox: {
           entities: [{
-            id: 'floor-1',
-            kind: 'floor' as const,
+            id: 'prop-1',
+            label: 'Dining table',
+            confidence: 0.75,
+            kind: 'prop' as const,
             position: { x: 0, y: 0, z: 0 },
             rotationY: 0,
-            size: { x: 8, y: 0.1, z: 8 },
+            size: { x: 2, y: 1, z: 1 },
             sourceAssetIds: ['asset-1'],
           }],
         },
@@ -116,7 +164,57 @@ describe('spatial previs persistence', () => {
     assert.deepEqual(parseSpatialPrevisMetadata({ spatialPrevis: persisted }), persisted)
   })
 
-  test('returns null for malformed version-2 references and whitebox entities', () => {
+  test('returns null for duplicate scene reference ids in version 2 and version 3', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const reference = {
+      id: 'reference-duplicate',
+      assetId: 'asset-1',
+      title: 'Exterior reference',
+      mediaType: 'image' as const,
+      url: 'https://example.com/exterior.jpg',
+      source: 'project' as const,
+    }
+
+    for (const version of [3, 2]) {
+      assert.equal(parseSpatialPrevisMetadata({
+        spatialPrevis: {
+          ...state,
+          version,
+          scene: {
+            ...state.scene,
+            references: [reference, { ...reference, assetId: 'asset-2' }],
+          },
+        },
+      }), null)
+    }
+  })
+
+  test('returns null for duplicate scene asset ids across distinct references in version 2 and version 3', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const reference = {
+      id: 'reference-one',
+      assetId: 'asset-duplicate',
+      title: 'Exterior reference',
+      mediaType: 'image' as const,
+      url: 'https://example.com/exterior.jpg',
+      source: 'project' as const,
+    }
+
+    for (const version of [3, 2]) {
+      assert.equal(parseSpatialPrevisMetadata({
+        spatialPrevis: {
+          ...state,
+          version,
+          scene: {
+            ...state.scene,
+            references: [reference, { ...reference, id: 'reference-two' }],
+          },
+        },
+      }), null)
+    }
+  })
+
+  test('returns null for malformed version-3 references and whitebox entities', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
     const reference = {
       id: 'reference-1',
@@ -128,6 +226,8 @@ describe('spatial previs persistence', () => {
     }
     const entity = {
       id: 'floor-1',
+      label: 'Floor',
+      confidence: 1,
       kind: 'floor',
       position: { x: 0, y: 0, z: 0 },
       rotationY: 0,
@@ -142,6 +242,15 @@ describe('spatial previs persistence', () => {
       { ...state, scene: { ...state.scene, references: [{ ...reference, url: '' }] } },
       { ...state, scene: { ...state.scene, references: [{ ...reference, source: 'external' }] } },
       { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, id: '' }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, label: '' }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, label: '   ' }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, confidence: undefined }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, confidence: '1' }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, confidence: Number.NaN }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, confidence: Number.POSITIVE_INFINITY }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, confidence: Number.NEGATIVE_INFINITY }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, confidence: -0.01 }] } } },
+      { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, confidence: 1.01 }] } } },
       { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, kind: 'light' }] } } },
       { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, position: { x: 0, y: 0 } }] } } },
       { ...state, scene: { ...state.scene, whitebox: { entities: [{ ...entity, rotationY: Number.POSITIVE_INFINITY }] } } },
@@ -155,6 +264,87 @@ describe('spatial previs persistence', () => {
     }
   })
 
+  test('returns null for duplicate persisted whitebox entity ids', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const entity = {
+      id: 'wall-duplicate',
+      label: '墙体',
+      confidence: 1,
+      kind: 'wall' as const,
+      position: { x: 0, y: 1.5, z: 0 },
+      rotationY: 0,
+      size: { x: 4, y: 3, z: 0.2 },
+      sourceAssetIds: ['manual'],
+    }
+
+    assert.equal(parseSpatialPrevisMetadata({
+      spatialPrevis: {
+        ...state,
+        scene: {
+          ...state.scene,
+          whitebox: { entities: [entity, { ...entity, label: '重复墙体' }] },
+        },
+      },
+    }), null)
+  })
+
+  test('returns null for malformed version-3 asset sets', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const reference = {
+      id: 'reference-1',
+      assetId: 'asset-1',
+      title: 'Exterior reference',
+      mediaType: 'image' as const,
+      url: 'https://example.com/exterior.jpg',
+      source: 'project' as const,
+    }
+    const assetSet = {
+      id: 'asset-set-1',
+      role: 'scene',
+      referenceIds: ['reference-1'],
+    }
+    const scene = { ...state.scene, references: [reference], assetSets: [assetSet] }
+    const malformedScenes = [
+      { ...scene, assetSets: undefined },
+      { ...scene, assetSets: [{ ...assetSet, id: '' }] },
+      { ...scene, assetSets: [assetSet, { ...assetSet }] },
+      { ...scene, assetSets: [{ ...assetSet, role: 'environment' }] },
+      { ...scene, assetSets: [{ ...assetSet, referenceIds: ['missing-reference'] }] },
+    ]
+
+    for (const malformedScene of malformedScenes) {
+      assert.equal(parseSpatialPrevisMetadata({
+        spatialPrevis: { ...state, scene: malformedScene },
+      }), null)
+    }
+  })
+
+  test('returns null for empty or duplicate reference ids within a version-3 asset set', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const reference = {
+      id: 'reference-1',
+      assetId: 'asset-1',
+      title: 'Exterior reference',
+      mediaType: 'image' as const,
+      url: 'https://example.com/exterior.jpg',
+      source: 'project' as const,
+    }
+    const malformedReferenceIds = [[], ['reference-1', 'reference-1']]
+
+    for (const referenceIds of malformedReferenceIds) {
+      assert.equal(parseSpatialPrevisMetadata({
+        spatialPrevis: {
+          ...state,
+          scene: {
+            ...state.scene,
+            references: [reference],
+            assetSets: [{ id: 'asset-set-1', role: 'scene', referenceIds }],
+          },
+        },
+      }), null)
+    }
+  })
+
   test('returns null for unsafe version-2 reference URLs', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
 
@@ -162,6 +352,7 @@ describe('spatial previs persistence', () => {
       assert.equal(parseSpatialPrevisMetadata({
         spatialPrevis: {
           ...state,
+          version: 2,
           scene: {
             ...state.scene,
             references: [{

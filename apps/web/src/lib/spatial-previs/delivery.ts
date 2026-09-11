@@ -21,6 +21,10 @@ function cloneScene(scene: SpatialPrevisScene): SpatialPrevisScene {
   return {
     ...scene,
     references: scene.references.map((reference) => ({ ...reference })),
+    assetSets: scene.assetSets.map((assetSet) => ({
+      ...assetSet,
+      referenceIds: [...assetSet.referenceIds],
+    })),
     whitebox: {
       entities: scene.whitebox.entities.map((entity) => ({
         ...entity,

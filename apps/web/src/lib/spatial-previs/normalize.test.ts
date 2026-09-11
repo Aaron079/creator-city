@@ -17,11 +17,12 @@ const unsupportedAspectRatio: AspectRatio = '4:3'
 void unsupportedAspectRatio
 
 describe('spatial previs normalization', () => {
-  test('initializes version-2 whitebox scene state', () => {
+  test('initializes version-3 asset and whitebox scene state', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
 
-    assert.equal(state.version, 2)
+    assert.equal(state.version, 3)
     assert.deepEqual(state.scene.references, [])
+    assert.deepEqual(state.scene.assetSets, [])
     assert.deepEqual(state.scene.whitebox.entities, [])
   })
 

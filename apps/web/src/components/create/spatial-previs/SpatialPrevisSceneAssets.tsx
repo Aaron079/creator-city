@@ -6,7 +6,7 @@ import type { ProjectAssetItem } from '@/components/create/ProjectAssetsPanel'
 import { normalizeAssetType } from '@/lib/assets/normalize'
 import { getLocalImportDisplayUrl } from '@/lib/canvas/localImageImport'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
-import type { SpatialSceneReference } from '@/lib/spatial-previs/types'
+import type { SpatialAssetRole, SpatialAssetSet, SpatialSceneReference } from '@/lib/spatial-previs/types'
 
 type AssetsResponse = {
   success?: boolean
@@ -18,11 +18,21 @@ type AssetsResponse = {
 type SpatialPrevisSceneAssetsProps = {
   projectId: string
   references: readonly SpatialSceneReference[]
+  assetSets: readonly SpatialAssetSet[]
   disabled: boolean
   onReferencesChange: (references: SpatialSceneReference[]) => void
+  onAddAssetSet: (references: readonly SpatialSceneReference[], role: SpatialAssetRole) => void
   onUpload: (file: File) => Promise<SpatialSceneReference>
+  onUploadFiles?: (files: readonly File[]) => Promise<SpatialSceneReference[]>
   onUploadPending?: (isPending: boolean) => void
 }
+
+const ASSET_ROLES: Array<{ role: SpatialAssetRole; label: string }> = [
+  { role: 'scene', label: '场景' },
+  { role: 'character', label: '人物' },
+  { role: 'prop', label: '道具' },
+  { role: 'reference', label: '参考' },
+]
 
 function sceneAssetTitle(asset: Pick<ProjectAssetItem, 'title' | 'name'>) {
   return asset.title?.trim() || asset.name?.trim() || '未命名素材'
@@ -84,6 +94,33 @@ export function mergeUploadedSpatialSceneReference(
   return addSpatialSceneReference(references, reference)
 }
 
+export class SpatialSceneAssetUploadFailure extends Error {
+  readonly uploadedReferences: SpatialSceneReference[]
+  readonly remainingFiles: File[]
+
+  constructor(caught: unknown, uploadedReferences: readonly SpatialSceneReference[], remainingFiles: readonly File[]) {
+    super(caught instanceof Error ? caught.message : '上传失败。')
+    this.name = 'SpatialSceneAssetUploadFailure'
+    this.uploadedReferences = uploadedReferences.map((reference) => ({ ...reference }))
+    this.remainingFiles = [...remainingFiles]
+  }
+}
+
+export async function uploadSceneAssetFiles(
+  files: readonly File[],
+  upload: (file: File) => Promise<SpatialSceneReference>,
+) {
+  const references: SpatialSceneReference[] = []
+  for (const [index, file] of files.entries()) {
+    try {
+      references.push(await upload(file))
+    } catch (caught) {
+      throw new SpatialSceneAssetUploadFailure(caught, references, files.slice(index))
+    }
+  }
+  return references
+}
+
 export function isSceneAssetInteractionDisabled(disabled: boolean, isUploading: boolean) {
   return disabled || isUploading
 }
@@ -98,9 +135,12 @@ export function removeSpatialSceneReference(
 export function SpatialPrevisSceneAssets({
   projectId,
   references,
+  assetSets,
   disabled,
   onReferencesChange,
+  onAddAssetSet,
   onUpload,
+  onUploadFiles,
   onUploadPending,
 }: SpatialPrevisSceneAssetsProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -108,12 +148,22 @@ export function SpatialPrevisSceneAssets({
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [pendingReferences, setPendingReferences] = useState<SpatialSceneReference[]>([])
+  const [pendingRole, setPendingRole] = useState<SpatialAssetRole>('scene')
+  const [retryFiles, setRetryFiles] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const latestReferencesRef = useRef<readonly SpatialSceneReference[]>(references)
-  latestReferencesRef.current = references
   const interactionDisabled = isSceneAssetInteractionDisabled(disabled, isUploading)
-  const activeReference = references[0]
+  const activeAssetSet = assetSets[assetSets.length - 1]
+  const activeSetReferences = activeAssetSet
+    ? activeAssetSet.referenceIds.flatMap((referenceId) => {
+        const reference = references.find((item) => item.id === referenceId)
+        return reference ? [reference] : []
+      })
+    : []
+  const activeReference = activeSetReferences[0] ?? references[0]
+  const activeRoleLabel = ASSET_ROLES.find((item) => item.role === activeAssetSet?.role)?.label
+  const activeReferenceCount = activeSetReferences.length || references.length
 
   useEffect(() => {
     if (!isOpen || !projectId) return
@@ -163,10 +213,13 @@ export function SpatialPrevisSceneAssets({
     .map(spatialSceneReferenceFromLibraryAsset)
     .filter((reference): reference is SpatialSceneReference => reference !== null), [assets, projectId])
 
-  const selectReference = (reference: SpatialSceneReference) => {
+  const togglePendingReference = (reference: SpatialSceneReference) => {
     if (interactionDisabled) return
-    const next = addSpatialSceneReference(references, reference)
-    if (next !== references) onReferencesChange(next)
+    const next = pendingReferences.some((item) => item.id === reference.id)
+      ? pendingReferences.filter((item) => item.id !== reference.id)
+      : [...pendingReferences, reference]
+    setPendingReferences(next)
+    if (next.length === 0) setPendingRole('scene')
   }
 
   const removeReference = (referenceId: string) => {
@@ -174,18 +227,31 @@ export function SpatialPrevisSceneAssets({
     onReferencesChange(removeSpatialSceneReference(references, referenceId))
   }
 
-  const uploadFile = async (file: File | undefined) => {
-    if (!file || interactionDisabled) return
+  const addPendingAssetSet = () => {
+    if (interactionDisabled || pendingReferences.length === 0) return
+    const selected = pendingReferences
+    setPendingReferences([])
+    setPendingRole('scene')
+    onAddAssetSet(selected, pendingRole)
+  }
+
+  const uploadFiles = async (files: readonly File[]) => {
+    if (files.length === 0 || interactionDisabled) return
     setIsUploading(true)
     onUploadPending?.(true)
     setIsDragOver(false)
+    setRetryFiles([])
     setError(null)
     try {
-      const reference = await onUpload(file)
-      const latestReferences = latestReferencesRef.current
-      const next = mergeUploadedSpatialSceneReference(latestReferences, reference)
-      if (next !== latestReferences) onReferencesChange(next)
+      const uploaded = onUploadFiles
+        ? await onUploadFiles(files)
+        : await uploadSceneAssetFiles(files, onUpload)
+      if (uploaded.length > 0) onAddAssetSet(uploaded, 'scene')
     } catch (caught) {
+      if (caught instanceof SpatialSceneAssetUploadFailure) {
+        if (caught.uploadedReferences.length > 0) onAddAssetSet(caught.uploadedReferences, 'scene')
+        setRetryFiles(caught.remainingFiles)
+      }
       setError(caught instanceof Error ? caught.message : '上传失败。')
     } finally {
       setIsUploading(false)
@@ -206,8 +272,9 @@ export function SpatialPrevisSceneAssets({
       >
         {activeReference ? (
           <>
-            <span className="max-w-32 truncate">{activeReference.title}</span>
-            <span>{references.length} assets</span>
+            <span className="max-w-32 truncate">{activeRoleLabel ? `${activeRoleLabel} · ` : ''}{activeReference.title}</span>
+            <span>{activeReferenceCount} assets</span>
+            <Plus size={13} aria-hidden="true" />
           </>
         ) : (
           <>
@@ -221,11 +288,12 @@ export function SpatialPrevisSceneAssets({
         <input
           ref={inputRef}
           type="file"
+          multiple
           accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
           className="sr-only"
           disabled={interactionDisabled}
           onChange={(event) => {
-            void uploadFile(event.currentTarget.files?.[0])
+            void uploadFiles(Array.from(event.currentTarget.files ?? []))
             event.currentTarget.value = ''
           }}
         />
@@ -251,7 +319,7 @@ export function SpatialPrevisSceneAssets({
           onDrop={(event) => {
             event.preventDefault()
             setIsDragOver(false)
-            if (!interactionDisabled) void uploadFile(event.dataTransfer.files[0])
+            if (!interactionDisabled) void uploadFiles(Array.from(event.dataTransfer.files))
           }}
           className={`flex min-h-14 cursor-pointer items-center justify-center gap-2 border border-dashed px-3 py-2 text-[11px] transition ${isDragOver ? 'border-indigo-200/60 bg-indigo-300/[0.1] text-indigo-50' : 'border-white/15 bg-black/15 text-white/55'} ${interactionDisabled ? 'cursor-not-allowed opacity-45' : 'hover:border-white/30 hover:text-white/75'}`}
         >
@@ -260,6 +328,44 @@ export function SpatialPrevisSceneAssets({
         </div>
 
         {error ? <p role="alert" className="text-[11px] text-amber-200/85">{error}</p> : null}
+        {retryFiles.length > 0 ? (
+          <button
+            type="button"
+            disabled={interactionDisabled}
+            onClick={() => { void uploadFiles(retryFiles) }}
+            className="text-[11px] text-indigo-100 underline decoration-indigo-200/45 underline-offset-2 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            重试剩余文件
+          </button>
+        ) : null}
+
+        {pendingReferences.length > 0 ? (
+          <div className="space-y-2 border border-white/[0.08] bg-white/[0.025] p-2">
+            <div role="group" aria-label="素材角色" className="inline-flex overflow-hidden rounded-md border border-white/12">
+              {ASSET_ROLES.map(({ role, label }) => (
+                <button
+                  key={role}
+                  type="button"
+                  aria-pressed={pendingRole === role}
+                  disabled={interactionDisabled}
+                  onClick={() => setPendingRole(role)}
+                  className={`px-2 py-1 text-[11px] transition ${pendingRole === role ? 'bg-indigo-300/20 text-indigo-50' : 'text-white/52 hover:bg-white/[0.05] hover:text-white/78'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled={interactionDisabled}
+              onClick={addPendingAssetSet}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-200/30 bg-indigo-300/[0.12] px-2 py-1.5 text-[11px] font-medium text-indigo-50 transition hover:bg-indigo-300/[0.18] disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <Plus size={13} aria-hidden="true" />
+              添加素材组
+            </button>
+          </div>
+        ) : null}
 
         {references.length > 0 ? (
           <ul className="space-y-1" aria-label="已选场景资产">
@@ -286,26 +392,28 @@ export function SpatialPrevisSceneAssets({
             <p className="flex items-center gap-1.5 py-1 text-[11px] text-white/45"><Loader2 size={13} className="animate-spin" /> 加载素材中…</p>
           ) : projectMediaAssets.length + libraryMediaAssets.length > 0 ? (
             <>
-              {projectMediaAssets.length > 0 ? <p className="px-1 pt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-white/38">本项目</p> : null}
-              {projectMediaAssets.map((reference) => (
+              {libraryMediaAssets.length > 0 ? <p className="px-1 pt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-white/38">资产库</p> : null}
+              {libraryMediaAssets.map((reference) => (
                 <button
                   key={reference.id}
                   type="button"
+                  aria-pressed={pendingReferences.some((item) => item.id === reference.id)}
                   disabled={interactionDisabled || references.some((item) => item.assetId === reference.assetId)}
-                  onClick={() => selectReference(reference)}
+                  onClick={() => togglePendingReference(reference)}
                   className="flex w-full min-w-0 items-center gap-2 border border-white/[0.08] px-2 py-1.5 text-left text-[11px] text-white/65 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {reference.mediaType === 'video' ? <Video size={13} className="shrink-0" aria-hidden="true" /> : <ImageIcon size={13} className="shrink-0" aria-hidden="true" />}
                   <span className="truncate">{reference.title}</span>
                 </button>
               ))}
-              {libraryMediaAssets.length > 0 ? <p className="px-1 pt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-white/38">资产库</p> : null}
-              {libraryMediaAssets.map((reference) => (
+              {projectMediaAssets.length > 0 ? <p className="px-1 pt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-white/38">本项目</p> : null}
+              {projectMediaAssets.map((reference) => (
                 <button
                   key={reference.id}
                   type="button"
+                  aria-pressed={pendingReferences.some((item) => item.id === reference.id)}
                   disabled={interactionDisabled || references.some((item) => item.assetId === reference.assetId)}
-                  onClick={() => selectReference(reference)}
+                  onClick={() => togglePendingReference(reference)}
                   className="flex w-full min-w-0 items-center gap-2 border border-white/[0.08] px-2 py-1.5 text-left text-[11px] text-white/65 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {reference.mediaType === 'video' ? <Video size={13} className="shrink-0" aria-hidden="true" /> : <ImageIcon size={13} className="shrink-0" aria-hidden="true" />}

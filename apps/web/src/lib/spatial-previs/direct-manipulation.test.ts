@@ -27,6 +27,8 @@ function fixture(): SpatialPrevisState {
       whitebox: {
         entities: [{
           id: 'whitebox-volume',
+          label: 'whitebox-volume',
+          confidence: 1,
           kind: 'volume',
           position: { x: 1, y: 2, z: 3 },
           rotationY: 0.5,

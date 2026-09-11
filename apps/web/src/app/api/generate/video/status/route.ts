@@ -4,6 +4,10 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { getExecutorForProvider } from '@/lib/executors/executor-gateway'
 import type { Prisma } from '@prisma/client'
+import {
+  internalSpatialPrevisTestStatusPayload,
+  sanitizeInternalSpatialPrevisNodeMetadata,
+} from './spatial-previs-test-status'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -22,6 +26,10 @@ function jsonValue(value: unknown): Prisma.InputJsonValue {
   } catch {
     return {} as Prisma.InputJsonObject
   }
+}
+
+function isInternalSpatialPrevisTest(input: Record<string, unknown>) {
+  return input.testDurationSec === 5 || input.testDurationSec === 10
 }
 
 async function findExistingVideoAsset(jobId: string, outputAssetId?: string | null) {
@@ -49,6 +57,7 @@ async function writeCanvasNodeVideoResult(args: {
   providerRegion?: 'cn' | 'global'
   executionRegion?: 'cn' | 'global'
   storageRegion?: 'cn' | 'global'
+  internalSpatialPrevisTest?: boolean
 }) {
   if (!args.workflowId || !args.nodeId) return
   const node = await db.canvasNode.findUnique({
@@ -62,18 +71,29 @@ async function writeCanvasNodeVideoResult(args: {
   if (!node) return
 
   const metadata = record(node.metadataJson)
-  await db.canvasNode.update({
-    where: { id: node.id },
+  const isSpatialPrevisTest = args.internalSpatialPrevisTest || metadata.spatialPrevisTest === true
+  const safeMetadata = isSpatialPrevisTest
+    ? sanitizeInternalSpatialPrevisNodeMetadata(metadata)
+    : metadata
+  await db.canvasNode.updateMany({
+    where: {
+      id: node.id,
+      metadataJson: {
+        path: ['generationJobId'],
+        equals: args.generationJobId,
+      },
+    },
     data: {
       status: 'done',
       resultVideoUrl: args.videoUrl,
-      resultPreview: '视频已生成',
+      resultPreview: isSpatialPrevisTest ? '三维预演测试已完成' : '视频已生成',
       errorMessage: null,
       metadataJson: jsonValue({
-        ...metadata,
-        providerId: args.providerId,
-        model: args.model ?? stringValue(metadata.model),
-        taskId: args.taskId ?? metadata.taskId,
+        ...safeMetadata,
+        ...(isSpatialPrevisTest
+          ? { model: 'spatial-previs-internal' }
+          : { providerId: args.providerId, model: args.model ?? stringValue(metadata.model) }),
+        ...(!isSpatialPrevisTest ? { taskId: args.taskId ?? metadata.taskId } : {}),
         generationJobId: args.generationJobId,
         assetId: args.assetId,
         outputAssetId: args.assetId,
@@ -81,14 +101,16 @@ async function writeCanvasNodeVideoResult(args: {
         stableUrl: args.videoUrl,
         resolvedUrl: args.videoUrl,
         resultVideoUrl: args.videoUrl,
-        originalProviderVideoUrl: args.providerOriginalUrl ?? metadata.originalProviderVideoUrl,
-        providerOriginalUrl: args.providerOriginalUrl ?? metadata.providerOriginalUrl,
-        temporaryUrl: args.providerOriginalUrl ?? metadata.temporaryUrl,
-        providerRegion: args.providerRegion ?? null,
-        executionRegion: args.executionRegion ?? null,
-        storageRegion: args.storageRegion ?? null,
-        sourceProviderRegion: args.providerRegion ?? null,
-        executorKind: 'aliyun_fc',
+        ...(!isSpatialPrevisTest ? {
+          originalProviderVideoUrl: args.providerOriginalUrl ?? metadata.originalProviderVideoUrl,
+          providerOriginalUrl: args.providerOriginalUrl ?? metadata.providerOriginalUrl,
+          temporaryUrl: args.providerOriginalUrl ?? metadata.temporaryUrl,
+          providerRegion: args.providerRegion ?? null,
+          executionRegion: args.executionRegion ?? null,
+          storageRegion: args.storageRegion ?? null,
+          sourceProviderRegion: args.providerRegion ?? null,
+          executorKind: 'aliyun_fc',
+        } : {}),
         generationStatus: 'generation_success',
         persistenceStatus: 'persistence_success',
         assetStatus: 'ready',
@@ -102,18 +124,17 @@ async function writeCanvasNodeVideoResult(args: {
         lastError: null,
         lastGenerationError: null,
         mediaPersistence: {
-          ...record(metadata.mediaPersistence),
+          ...(!isSpatialPrevisTest ? record(metadata.mediaPersistence) : {}),
           status: 'persisted',
           persistenceStatus: 'persistence_success',
           assetId: args.assetId,
           outputAssetId: args.assetId,
           stableUrl: args.videoUrl,
           resolvedUrl: args.videoUrl,
-          storageProvider: 'aliyun-oss',
-          storageKey: args.storageKey,
+          ...(!isSpatialPrevisTest ? { storageProvider: 'aliyun-oss', storageKey: args.storageKey } : {}),
         },
         generationJob: {
-          ...record(metadata.generationJob),
+          ...(!isSpatialPrevisTest ? record(metadata.generationJob) : {}),
           id: args.generationJobId,
           outputAssetId: args.assetId,
         },
@@ -125,8 +146,6 @@ async function writeCanvasNodeVideoResult(args: {
 }
 
 export async function GET(request: NextRequest) {
-  // Parse generationJobId BEFORE auth — lets unauthenticated requests get a safe degraded response
-  // rather than a generic 401 when the job ID is valid.
   const { searchParams } = new URL(request.url)
   const generationJobId = searchParams.get('generationJobId')?.trim() ?? ''
   if (!generationJobId) {
@@ -139,25 +158,29 @@ export async function GET(request: NextRequest) {
   }
 
   const currentUser = await getCurrentUser()
+  if (!currentUser) {
+    return NextResponse.json({
+      success: false,
+      status: 'failed',
+      errorCode: 'UNAUTHORIZED',
+      message: '请先登录后查询视频任务。',
+    }, { status: 401 })
+  }
 
-  // Authenticated: find job owned by this user.
-  // Degraded (no session): find job by ID only — UUIDs are unguessable, safe to return status.
-  // This handles: DB session-lookup failures, expired cookies, cross-device polling.
-  const generationJob = currentUser
-    ? await db.generationJob.findFirst({ where: { id: generationJobId, userId: currentUser.id } })
-    : await db.generationJob.findFirst({ where: { id: generationJobId } })
+  const generationJob = await db.generationJob.findFirst({ where: { id: generationJobId, userId: currentUser.id } })
 
   if (!generationJob) {
     return NextResponse.json({
       success: false,
       status: 'failed',
       errorCode: 'generation_job_not_found',
-      message: currentUser ? 'GenerationJob not found.' : '视频任务不存在，或需要登录后查询。',
+      message: '视频任务不存在。',
       generationJobId,
     }, { status: 404 })
   }
 
   const input = record(generationJob.input)
+  const internalSpatialPrevisTest = isInternalSpatialPrevisTest(input)
   const providerId = generationJob.providerId
   const taskId = generationJob.providerJobId ?? stringValue(input.taskId)
   const workflowId = stringValue(input.workflowId)
@@ -172,7 +195,7 @@ export async function GET(request: NextRequest) {
 
     // Recovery: cn-executor may have marked the job SUCCEEDED but failed to INSERT the Asset row.
     // Create it here so CanvasNodeCard can resolve the assetId without showing "记录不存在".
-    if (!asset && videoUrl && currentUser) {
+    if (!asset && videoUrl) {
       const recoveryId = assetId ?? crypto.randomUUID()
       try {
         asset = await db.asset.upsert({
@@ -207,8 +230,27 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Only write canvas node result when authenticated — degraded mode skips the DB write
-    if (videoUrl && assetId && currentUser) {
+    if (internalSpatialPrevisTest) {
+      if (asset && assetId) {
+        await writeCanvasNodeVideoResult({
+          workflowId,
+          nodeId,
+          providerId,
+          taskId: taskId || undefined,
+          generationJobId: generationJob.id,
+          assetId,
+          videoUrl: asset.url,
+          internalSpatialPrevisTest: true,
+        })
+      }
+      return NextResponse.json(internalSpatialPrevisTestStatusPayload({
+        generationJobId: generationJob.id,
+        status: generationJob.status,
+        asset,
+      }), { status: 200 })
+    }
+
+    if (videoUrl && assetId) {
       await writeCanvasNodeVideoResult({
         workflowId,
         nodeId,
@@ -237,8 +279,7 @@ export async function GET(request: NextRequest) {
       resultVideoUrl: videoUrl,
       videoUrl,
       stableUrl: videoUrl,
-      // Asset details only returned when authenticated
-      ...(currentUser ? {
+      ...(assetId ? {
         assetId,
         outputAssetId: assetId,
         asset: asset ? {
@@ -256,6 +297,12 @@ export async function GET(request: NextRequest) {
   }
 
   if (generationJob.status === 'FAILED') {
+    if (internalSpatialPrevisTest) {
+      return NextResponse.json(internalSpatialPrevisTestStatusPayload({
+        generationJobId: generationJob.id,
+        status: generationJob.status,
+      }), { status: 200 })
+    }
     const failOutput = record(generationJob.output)
     return NextResponse.json({
       success: false,
@@ -277,8 +324,7 @@ export async function GET(request: NextRequest) {
       providerHttpStatus: failOutput.providerHttpStatus,
       submittedInput: failOutput.submittedInput,
       stageTrace: failOutput.stageTrace,
-      // providerResponse omitted in degraded mode — may contain raw API data
-      ...(currentUser ? { providerResponse: failOutput.providerResponse } : {}),
+      providerResponse: failOutput.providerResponse,
     }, { status: 200 })
   }
 
@@ -286,6 +332,12 @@ export async function GET(request: NextRequest) {
   // When providerJobId is set, FC already submitted the task to the provider — do not fire stall
   // errors that would poison CanvasNode.status even though the video may still be generating.
   const ageMs = Date.now() - new Date(generationJob.updatedAt).getTime()
+  if (internalSpatialPrevisTest) {
+    return NextResponse.json(internalSpatialPrevisTestStatusPayload({
+      generationJobId: generationJob.id,
+      status: generationJob.status,
+    }), { status: 200 })
+  }
   if (generationJob.status === 'QUEUED' && ageMs > 2 * 60 * 1000 && !generationJob.providerJobId) {
     return NextResponse.json({
       success: false,

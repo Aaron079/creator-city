@@ -15,7 +15,8 @@ import { PerspectiveCamera, Vector3 } from 'three'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { applySpatialCameraAction } from './SpatialCameraControlStrip'
 import { applySpatialNudge, SpatialPrevisViewport } from './SpatialPrevisViewport'
-import type { SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
+import { applyWhiteboxGroundDrag } from '@/lib/spatial-previs/whitebox-edit'
+import type { SpatialPrevisState, Vec3, WhiteboxEntity } from '@/lib/spatial-previs/types'
 
 const viewportSource = readFileSync(new URL('./SpatialPrevisViewport.tsx', import.meta.url), 'utf8')
 
@@ -30,12 +31,13 @@ declare global {
 }
 
 const state: SpatialPrevisState = {
-  version: 2,
+  version: 3,
   projectId: 'project-previs-01',
   scene: {
     sourceMode: 'multi-view',
     coverage: { mode: 'verified', cameraFreedom: 'full' },
     references: [],
+    assetSets: [],
     whitebox: { entities: [] },
   },
   masterTake: {
@@ -93,13 +95,29 @@ function stateWithWhitebox(): SpatialPrevisState {
       ...state.scene,
       whitebox: {
         entities: [
-          { id: 'floor-main', kind: 'floor', position: { x: 0, y: -0.75, z: 0 }, rotationY: 0, size: { x: 16, y: 0.2, z: 12 }, sourceAssetIds: ['reference-1'] },
-          { id: 'wall-back', kind: 'wall', position: { x: 0, y: 2, z: -4 }, rotationY: 0, size: { x: 8, y: 4, z: 0.25 }, sourceAssetIds: ['reference-1'] },
-          { id: 'opening-left', kind: 'opening', position: { x: -3, y: 1.3, z: -3.8 }, rotationY: 0, size: { x: 1.4, y: 2.6, z: 0.16 }, sourceAssetIds: ['reference-1'] },
-          { id: 'volume-stage', kind: 'volume', position: { x: 2, y: 0.5, z: 0 }, rotationY: 0.4, size: { x: 2, y: 1, z: 2 }, sourceAssetIds: ['reference-1'] },
-          { id: 'furniture-table', kind: 'furniture', position: { x: -2, y: 0.45, z: 1 }, rotationY: -0.2, size: { x: 1.6, y: 0.9, z: 0.8 }, sourceAssetIds: ['reference-1'] },
-          { id: 'reference-plane', kind: 'referencePlane', position: { x: 4, y: 2, z: -2 }, rotationY: 0.2, size: { x: 3, y: 2, z: 0.08 }, sourceAssetIds: ['reference-1'] },
+          { id: 'floor-main', label: 'floor-main', confidence: 1, kind: 'floor', position: { x: 0, y: -0.75, z: 0 }, rotationY: 0, size: { x: 16, y: 0.2, z: 12 }, sourceAssetIds: ['reference-1'] },
+          { id: 'wall-back', label: 'wall-back', confidence: 1, kind: 'wall', position: { x: 0, y: 2, z: -4 }, rotationY: 0, size: { x: 8, y: 4, z: 0.25 }, sourceAssetIds: ['reference-1'] },
+          { id: 'opening-left', label: 'opening-left', confidence: 1, kind: 'opening', position: { x: -3, y: 1.3, z: -3.8 }, rotationY: 0, size: { x: 1.4, y: 2.6, z: 0.16 }, sourceAssetIds: ['reference-1'] },
+          { id: 'volume-stage', label: 'volume-stage', confidence: 1, kind: 'volume', position: { x: 2, y: 0.5, z: 0 }, rotationY: 0.4, size: { x: 2, y: 1, z: 2 }, sourceAssetIds: ['reference-1'] },
+          { id: 'furniture-table', label: 'furniture-table', confidence: 1, kind: 'furniture', position: { x: -2, y: 0.45, z: 1 }, rotationY: -0.2, size: { x: 1.6, y: 0.9, z: 0.8 }, sourceAssetIds: ['reference-1'] },
+          { id: 'prop-pedestal', label: 'prop-pedestal', confidence: 1, kind: 'prop', position: { x: 1, y: 0.6, z: 2 }, rotationY: 0, size: { x: 1, y: 1.2, z: 1 }, sourceAssetIds: ['reference-1'] },
+          { id: 'reference-plane', label: 'reference-plane', confidence: 1, kind: 'referencePlane', position: { x: 4, y: 2, z: -2 }, rotationY: 0.2, size: { x: 3, y: 2, z: 0.08 }, sourceAssetIds: ['reference-1'] },
         ],
+      },
+    },
+  }
+}
+
+function stateWithLowConfidenceWhitebox(): SpatialPrevisState {
+  const fullWorld = stateWithWhitebox()
+  return {
+    ...fullWorld,
+    scene: {
+      ...fullWorld.scene,
+      whitebox: {
+        entities: fullWorld.scene.whitebox.entities.map((entity) => entity.id === 'wall-back'
+          ? { ...entity, confidence: 0.45 }
+          : entity),
       },
     },
   }
@@ -733,6 +751,50 @@ test('moves the selected whitebox actor through an actual overview-canvas pointe
   }
 })
 
+test('moves a selected whitebox solid through an actual overview-canvas pointer drag', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithWhitebox()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+
+    const solidStart = worldPointInCanvas({ x: 0, y: 3, z: -4 }, overviewCanvas)
+    const solidDestination = worldPointInCanvas({ x: 4, y: 0, z: -2 }, overviewCanvas)
+    await page.mouse.click(solidStart.x, solidStart.y)
+    await page.getByText('当前：wall-back', { exact: true }).waitFor({ timeout: 3_000 })
+    await page.mouse.move(solidStart.x, solidStart.y)
+    await page.mouse.down()
+    await page.mouse.move(solidDestination.x, solidDestination.y, { steps: 5 })
+    await page.mouse.up()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null, undefined, { timeout: 3_000 })
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const originalSolid = interactiveState.scene.whitebox.entities.find((entity) => entity.id === 'wall-back')
+    const changedSolid = changed.scene.whitebox.entities.find((entity) => entity.id === 'wall-back')
+    assert.ok(originalSolid)
+    assert.ok(changedSolid)
+    assert.notDeepEqual(changedSolid.position, originalSolid.position)
+    assert.equal(changedSolid.position.y, originalSolid.position.y)
+    assert.deepEqual(
+      changed.scene.whitebox.entities.filter((entity) => entity.id !== 'wall-back'),
+      interactiveState.scene.whitebox.entities.filter((entity) => entity.id !== 'wall-back'),
+    )
+    assert.deepEqual(changed.masterTake, interactiveState.masterTake)
+    await page.getByText('当前：wall-back', { exact: true }).waitFor()
+    assert.equal(
+      await page.locator('[data-spatial-previs-viewport="true"] canvas').first().evaluate((canvas) => getComputedStyle(canvas.parentElement ?? canvas).cursor),
+      'grab',
+    )
+  } finally {
+    await page.close()
+  }
+})
+
 test('raises the selected actor through an actual overview-canvas pointer drag', async () => {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -928,6 +990,40 @@ function assertOtherActorFramesUnchanged(next: SpatialPrevisState, source: Spati
 }
 
 describe('SpatialPrevisViewport', () => {
+  test('announces low-confidence whitebox geometry as an editable advisory', () => {
+    const markup = renderToStaticMarkup(createElement(SpatialPrevisViewport, {
+      state: stateWithLowConfidenceWhitebox(),
+      currentTimeSec: 6,
+      onChange: () => undefined,
+    }))
+
+    assert.match(markup, /role="status"/)
+    assert.match(markup, /aria-label="低置信度白模：1 个，仍可编辑"/)
+    assert.match(markup, /低置信度 1/)
+  })
+
+  test('applies the stable whitebox ground-drag contract without touching take data', () => {
+    const source = stateWithWhitebox()
+    const next = applyWhiteboxGroundDrag(source, 'wall-back', { x: 4, z: -2 })
+    const wall = next.scene.whitebox.entities.find((entity) => entity.id === 'wall-back')
+
+    assert.deepEqual(wall?.position, { x: 4, y: 2, z: -2 })
+    assert.equal(wall?.kind, 'wall')
+    assert.equal(wall?.label, 'wall-back')
+    assert.equal(wall?.confidence, 1)
+    assert.deepEqual(wall?.size, { x: 8, y: 4, z: 0.25 })
+    assert.equal(next.masterTake, source.masterTake)
+  })
+
+  test('resolves prop whitebox entities through the public material color helper', async () => {
+    const spatialViewportModule = await import('./SpatialPrevisViewport') as {
+      whiteboxEntityMaterialColor?: (kind: WhiteboxEntity['kind']) => string
+    }
+
+    assert.equal(typeof spatialViewportModule.whiteboxEntityMaterialColor, 'function')
+    assert.equal(spatialViewportModule.whiteboxEntityMaterialColor?.('prop'), '#9a6149')
+  })
+
   test('does not expose test-only whitebox markup sentinels', () => {
     assert.doesNotMatch(viewportSource, /data-spatial-(whitebox-world|camera-rig|live-camera|whitebox-entity)/)
   })
@@ -970,8 +1066,8 @@ describe('SpatialPrevisViewport', () => {
 
     assert.equal(markup.match(/data-spatial-previs-viewport="([^"]+)"/)?.[1], 'true')
     assert.equal(markup.match(/data-spatial-camera-preview="([^"]+)"/)?.[1], 'true')
-    assert.match(markup, /aria-label="推\/拉"/)
-    assert.match(markup, /aria-label="跟拍"/)
+    assert.match(markup, /aria-label="推"/)
+    assert.match(markup, /aria-label="跟"/)
   })
 
   test('keeps unavailable coverage advisory-only while camera actions and nudges remain editable', () => {
@@ -985,7 +1081,7 @@ describe('SpatialPrevisViewport', () => {
     const markup = renderToStaticMarkup(
       createElement(SpatialPrevisViewport, { state: unavailableState, currentTimeSec: 6, onChange: () => undefined }),
     )
-    const action = applySpatialCameraAction(unavailableState, 6, '推/拉')
+    const action = applySpatialCameraAction(unavailableState, 6, '推')
     const nudge = applySpatialNudge(unavailableState, {
       currentTimeSec: 6,
       selection: 'camera',
@@ -999,7 +1095,7 @@ describe('SpatialPrevisViewport', () => {
     assert.notEqual(action, unavailableState)
     assert.notEqual(nudge, unavailableState)
     assert.equal(risk?.blocking, false)
-    assert.doesNotMatch(markup, /aria-label="推\/拉" disabled=""/)
+    assert.doesNotMatch(markup, /aria-label="推" disabled=""/)
   })
 
   test('declares literal true data-attribute values rather than boolean JSX attributes', () => {
@@ -1077,15 +1173,23 @@ describe('SpatialPrevisViewport', () => {
     }
     const original = actionState.masterTake.cameraTrack.keyframes[1]!
 
-    const pushPull = applySpatialCameraAction(actionState, 6, '推/拉')
-    const pushPullFrame = pushPull.masterTake.cameraTrack.keyframes[1]!
-    assert.notDeepEqual(pushPullFrame.position, original.position)
-    assert.deepEqual(pushPullFrame.target, original.target)
-    assert.equal(pushPullFrame.focalLengthMm, original.focalLengthMm)
-    assert.equal(pushPullFrame.intent, 'push')
-    assertOtherCameraFramesUnchanged(pushPull, actionState)
+    const push = applySpatialCameraAction(actionState, 6, '推')
+    const pushFrame = push.masterTake.cameraTrack.keyframes[1]!
+    assert.notDeepEqual(pushFrame.position, original.position)
+    assert.deepEqual(pushFrame.target, original.target)
+    assert.equal(pushFrame.focalLengthMm, original.focalLengthMm)
+    assert.equal(pushFrame.intent, 'push')
+    assertOtherCameraFramesUnchanged(push, actionState)
 
-    const panTilt = applySpatialCameraAction(actionState, 6, '摇/俯仰')
+    const pull = applySpatialCameraAction(actionState, 6, '拉')
+    const pullFrame = pull.masterTake.cameraTrack.keyframes[1]!
+    assert.notDeepEqual(pullFrame.position, original.position)
+    assert.deepEqual(pullFrame.target, original.target)
+    assert.equal(pullFrame.focalLengthMm, original.focalLengthMm)
+    assert.equal(pullFrame.intent, 'pull')
+    assertOtherCameraFramesUnchanged(pull, actionState)
+
+    const panTilt = applySpatialCameraAction(actionState, 6, '摇')
     const panTiltFrame = panTilt.masterTake.cameraTrack.keyframes[1]!
     assert.deepEqual(panTiltFrame.position, original.position)
     assert.notDeepEqual(panTiltFrame.target, original.target)
@@ -1111,7 +1215,7 @@ describe('SpatialPrevisViewport', () => {
     assert.equal(dollyFrame.intent, 'dolly')
     assertOtherCameraFramesUnchanged(dolly, actionState)
 
-    const follow = applySpatialCameraAction(actionState, 6, '跟拍')
+    const follow = applySpatialCameraAction(actionState, 6, '跟')
     const followFrame = follow.masterTake.cameraTrack.keyframes[1]!
     assert.notDeepEqual(followFrame.position, original.position)
     assert.notDeepEqual(followFrame.target, original.target)
@@ -1119,18 +1223,27 @@ describe('SpatialPrevisViewport', () => {
     assert.equal(followFrame.intent, 'follow')
     assertOtherCameraFramesUnchanged(follow, actionState)
 
-    const crane = applySpatialCameraAction(actionState, 6, '升/降')
-    const craneFrame = crane.masterTake.cameraTrack.keyframes[1]!
-    assert.equal(craneFrame.position.x, original.position.x)
-    assert.equal(craneFrame.position.z, original.position.z)
-    assert.equal(craneFrame.target.x, original.target.x)
-    assert.equal(craneFrame.target.z, original.target.z)
+    const rise = applySpatialCameraAction(actionState, 6, '升')
+    const riseFrame = rise.masterTake.cameraTrack.keyframes[1]!
+    assert.equal(riseFrame.position.x, original.position.x)
+    assert.equal(riseFrame.position.z, original.position.z)
+    assert.equal(riseFrame.target.x, original.target.x)
+    assert.equal(riseFrame.target.z, original.target.z)
     assert.ok(Math.abs(
-      (craneFrame.position.y - original.position.y) - (craneFrame.target.y - original.target.y),
+      (riseFrame.position.y - original.position.y) - (riseFrame.target.y - original.target.y),
     ) < 1e-9)
-    assert.equal(craneFrame.focalLengthMm, original.focalLengthMm)
-    assert.equal(craneFrame.intent, 'crane')
-    assertOtherCameraFramesUnchanged(crane, actionState)
+    assert.ok(riseFrame.position.y > original.position.y)
+    assert.equal(riseFrame.focalLengthMm, original.focalLengthMm)
+    assert.equal(riseFrame.intent, 'crane')
+    assertOtherCameraFramesUnchanged(rise, actionState)
+
+    const descend = applySpatialCameraAction(actionState, 6, '降')
+    const descendFrame = descend.masterTake.cameraTrack.keyframes[1]!
+    assert.ok(descendFrame.position.y < original.position.y)
+    assert.ok(descendFrame.target.y < original.target.y)
+    assert.equal(descendFrame.focalLengthMm, original.focalLengthMm)
+    assert.equal(descendFrame.intent, 'crane')
+    assertOtherCameraFramesUnchanged(descend, actionState)
   })
 
   test('moves laterally with a stable horizontal fallback for vertical camera views', () => {
@@ -1291,7 +1404,7 @@ describe('SpatialPrevisViewport', () => {
       dispatchSpatialCameraAction?: (input: {
         state: SpatialPrevisState
         currentTimeSec: number
-        action: '推/拉'
+        action: '推'
         onChange: (next: SpatialPrevisState) => void
       }) => void
     }
@@ -1301,7 +1414,7 @@ describe('SpatialPrevisViewport', () => {
     spatialControlModule.dispatchSpatialCameraAction!({
       state,
       currentTimeSec: 6,
-      action: '推/拉',
+      action: '推',
       onChange: (next) => { changed = next },
     })
     assert.ok(changed)
@@ -1311,7 +1424,7 @@ describe('SpatialPrevisViewport', () => {
     spatialControlModule.dispatchSpatialCameraAction!({
       state,
       currentTimeSec: 5,
-      action: '推/拉',
+      action: '推',
       onChange: (next) => { changed = next },
     })
     assert.equal(changed, null)

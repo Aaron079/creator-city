@@ -8,11 +8,13 @@ import { adviseSeedanceDelivery } from '@/lib/seedance-previs/advisory'
 import { resolveSeedanceCapability, type SeedanceEntitlement } from '@/lib/seedance-previs/capabilities'
 import {
   appendSeedancePrevisDeliveryMetadata,
+  type SeedancePrevisSegmentReceipt,
   updateSeedancePrevisDeliverySegmentResults,
 } from '@/lib/seedance-previs/deliveryPersistence'
 import { buildSeedanceTakePackage, type DeliveryMode, type JsonValue } from '@/lib/seedance-previs/package'
 import { partitionMasterTake } from '@/lib/seedance-previs/partition'
 import { parseSpatialPrevisMetadata } from '@/lib/spatial-previs/persistence'
+import { createSpatialPrevisTestTake, type SpatialPrevisTestDuration } from '@/lib/spatial-previs/test-delivery'
 
 type DeliveryBody = {
   projectId: string
@@ -27,21 +29,32 @@ type DeliveryBody = {
   referenceVideos: string[]
   audioReferences: string[]
   resolution?: string
+  nodeId?: string
+  testDurationSec?: SpatialPrevisTestDuration
 }
 
 type WorkflowRecord = {
   id: string
   projectId: string
   metadataJson: unknown
+  updatedAt: Date
 }
 
 type RouteUser = { id: string }
+
+type CanvasNodeRecord = {
+  kind: string
+  status: string
+  metadataJson: unknown
+}
 
 type GenerationJobInput = {
   userId: string
   projectId: string
   workflowId: string
   masterTakeId: string
+  nodeId?: string
+  testDurationSec?: SpatialPrevisTestDuration
   prompt: string
   model: string
   deliveryId: string
@@ -57,7 +70,10 @@ type GenerationJobUpdate = {
 export type SeedancePrevisRouteDependencies = {
   getCurrentUser: () => Promise<RouteUser | null>
   findWorkflow: (projectId: string, workflowId: string, userId: string) => Promise<WorkflowRecord | null>
+  findCanvasNode: (workflowId: string, nodeId: string) => Promise<CanvasNodeRecord | null>
   updateWorkflowMetadata: (workflowId: string, metadata: Record<string, unknown>) => Promise<void>
+  updateWorkflowMetadataIfCurrent: (workflow: WorkflowRecord, metadata: Record<string, unknown>) => Promise<boolean>
+  reserveSpatialPrevisTestReceipt: (workflow: WorkflowRecord, metadata: Record<string, unknown>) => Promise<boolean>
   resolveEntitlement: (user: RouteUser) => SeedanceEntitlement
   resolveModel: (submittedModel: string) => string
   platformDispatchEnabled: () => boolean
@@ -69,6 +85,10 @@ export type SeedancePrevisRouteDependencies = {
 
 function isDeliveryMode(value: unknown): value is DeliveryMode {
   return value === 'direct' || value === 'continuity-chain'
+}
+
+function isSpatialPrevisTestDuration(value: unknown): value is SpatialPrevisTestDuration {
+  return value === 5 || value === 10
 }
 
 function requiredString(value: unknown): string | null {
@@ -96,6 +116,10 @@ function parseBody(value: unknown): DeliveryBody | null {
   const prompt = optionalString(body.prompt)
   const imageUrl = optionalString(body.imageUrl)
   const resolution = optionalString(body.resolution)
+  const nodeId = optionalString(body.nodeId)
+  const testDurationSec = body.testDurationSec === undefined || body.testDurationSec === null
+    ? undefined
+    : isSpatialPrevisTestDuration(body.testDurationSec) ? body.testDurationSec : null
   const referenceImages = stringArray(body.referenceImages)
   const referenceVideos = stringArray(body.referenceVideos)
   const audioReferences = stringArray(body.audioReferences)
@@ -113,6 +137,9 @@ function parseBody(value: unknown): DeliveryBody | null {
     || prompt === null
     || imageUrl === null
     || resolution === null
+    || nodeId === null
+    || testDurationSec === null
+    || (testDurationSec !== undefined && !nodeId)
     || !referenceImages
     || !referenceVideos
     || !audioReferences
@@ -135,6 +162,8 @@ function parseBody(value: unknown): DeliveryBody | null {
     referenceVideos,
     audioReferences,
     ...(resolution ? { resolution } : {}),
+    ...(nodeId ? { nodeId } : {}),
+    ...(testDurationSec ? { testDurationSec } : {}),
   }
 }
 
@@ -150,13 +179,45 @@ const dependencies: SeedancePrevisRouteDependencies = {
   getCurrentUser,
   findWorkflow: async (projectId, workflowId, userId) => db.canvasWorkflow.findFirst({
     where: { id: workflowId, projectId, project: { ownerId: userId } },
-    select: { id: true, projectId: true, metadataJson: true },
+    select: { id: true, projectId: true, metadataJson: true, updatedAt: true },
+  }),
+  findCanvasNode: async (workflowId, nodeId) => db.canvasNode.findUnique({
+    where: { workflowId_nodeId: { workflowId, nodeId } },
+    select: { kind: true, status: true, metadataJson: true },
   }),
   updateWorkflowMetadata: async (workflowId, metadata) => {
     await db.canvasWorkflow.update({
       where: { id: workflowId },
       data: { metadataJson: metadata as Prisma.InputJsonValue },
     })
+  },
+  updateWorkflowMetadataIfCurrent: async (workflow, metadata) => {
+    const update = await db.canvasWorkflow.updateMany({
+      where: {
+        id: workflow.id,
+        projectId: workflow.projectId,
+        updatedAt: workflow.updatedAt,
+      },
+      data: {
+        metadataJson: metadata as Prisma.InputJsonValue,
+        updatedAt: new Date(),
+      },
+    })
+    return update.count === 1
+  },
+  reserveSpatialPrevisTestReceipt: async (workflow, metadata) => {
+    const reservation = await db.canvasWorkflow.updateMany({
+      where: {
+        id: workflow.id,
+        projectId: workflow.projectId,
+        updatedAt: workflow.updatedAt,
+      },
+      data: {
+        metadataJson: metadata as Prisma.InputJsonValue,
+        updatedAt: new Date(),
+      },
+    })
+    return reservation.count === 1
   },
   resolveEntitlement: serverEntitlement,
   resolveModel: () => process.env.VOLCENGINE_SEEDANCE_MODEL?.trim() || 'seedance-2.5',
@@ -168,7 +229,7 @@ const dependencies: SeedancePrevisRouteDependencies = {
     data: {
       userId: input.userId,
       projectId: input.projectId,
-      nodeId: input.masterTakeId,
+      nodeId: input.nodeId ?? input.masterTakeId,
       providerId: 'volcengine-seedance-video',
       provider: 'volcengine-seedance-video',
       nodeType: 'video',
@@ -180,6 +241,7 @@ const dependencies: SeedancePrevisRouteDependencies = {
         masterTakeId: input.masterTakeId,
         model: input.model,
         deliveryId: input.deliveryId,
+        ...(input.testDurationSec ? { testDurationSec: input.testDurationSec } : {}),
       }) as Prisma.InputJsonValue,
     },
     select: { id: true },
@@ -205,6 +267,17 @@ function selectedMode(body: DeliveryBody): DeliveryMode {
 
 function serializable(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Record<string, JsonValue>
+}
+
+function isRunningSpatialPrevisTestNode(node: CanvasNodeRecord | null): boolean {
+  if (!node || node.kind !== 'video' || node.status !== 'running') return false
+  const metadata = node.metadataJson
+  return Boolean(
+    metadata
+    && typeof metadata === 'object'
+    && !Array.isArray(metadata)
+    && (metadata as Record<string, unknown>).spatialPrevisTest === true,
+  )
 }
 
 export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevisRouteDependencies> = {}) {
@@ -241,13 +314,29 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
         return jsonError('SPATIAL_PREVIS_NOT_FOUND', '请先保存有效的空间预演，再生成到 Seedance。', 400)
       }
 
+      if (body.testDurationSec) {
+        const testNode = await deps.findCanvasNode(workflow.id, body.nodeId!)
+        if (!isRunningSpatialPrevisTestNode(testNode)) {
+          return jsonError('SPATIAL_PREVIS_TEST_NODE_INVALID', '三维预演测试节点无效或已变更。', 409)
+        }
+      }
+
+      let deliveryPrevis = previs
+      if (body.testDurationSec) {
+        try {
+          deliveryPrevis = createSpatialPrevisTestTake(previs, body.testDurationSec)
+        } catch {
+          return jsonError('VALIDATION_FAILED', '预演测试时长超出主镜头范围。', 400)
+        }
+      }
+
       const capability = resolveSeedanceCapability({
         model,
         entryPoint: 'ark',
         entitlement: deps.resolveEntitlement(user),
       })
       const advice = adviseSeedanceDelivery({
-        requestedDurationSec: previs.masterTake.durationSec,
+        requestedDurationSec: deliveryPrevis.masterTake.durationSec,
         capability,
         coverageFindings: [],
       })
@@ -264,18 +353,18 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
         }
       }
 
-      const takePackage = buildSeedanceTakePackage({ previs, capability, deliveryMode })
+      const takePackage = buildSeedanceTakePackage({ previs: deliveryPrevis, capability, deliveryMode })
       const chain = deliveryMode === 'continuity-chain'
-        ? partitionMasterTake(previs, { maxSegmentSec: 30, userConfirmed: true })
+        ? partitionMasterTake(deliveryPrevis, { maxSegmentSec: 30, userConfirmed: true })
         : null
       const deliveryId = deps.createDeliveryId()
-      const segmentResults = chain
+      const segmentResults: SeedancePrevisSegmentReceipt[] = chain
         ? chain.segments.map((segment) => ({
           segmentId: segment.id,
           index: segment.index,
           status: segment.index === 0 ? 'submitting' : 'queued',
         }))
-        : [{ segmentId: previs.masterTake.id, index: 0, status: 'submitting' }]
+        : [{ segmentId: deliveryPrevis.masterTake.id, index: 0, status: 'submitting' }]
       const persistedPackage = serializable({
         ...takePackage,
         requestedMode: body.requestedMode,
@@ -288,16 +377,40 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
           resolution: body.resolution ?? null,
         },
         ...(chain ? { chain } : {}),
+        ...(body.testDurationSec ? { internalTest: true, testDurationSec: body.testDurationSec } : {}),
       })
       const nextMetadata = appendSeedancePrevisDeliveryMetadata(workflow.metadataJson, {
         deliveryId,
-        masterTakeId: previs.masterTake.id,
+        masterTakeId: deliveryPrevis.masterTake.id,
         package: persistedPackage,
         capabilitySnapshot: serializable(capability),
         acknowledgements: body.acknowledgedFindingIds,
         segmentResults,
       })
-      await deps.updateWorkflowMetadata(workflow.id, nextMetadata)
+      if (body.testDurationSec) {
+        const reserved = await deps.reserveSpatialPrevisTestReceipt(workflow, nextMetadata)
+        if (!reserved) {
+          return jsonError('SPATIAL_PREVIS_TEST_IN_PROGRESS', '已有三维预演测试正在创建，请稍后重试。', 409)
+        }
+      } else {
+        await deps.updateWorkflowMetadata(workflow.id, nextMetadata)
+      }
+
+      const persistSegmentResults = async (results: typeof segmentResults) => {
+        if (!body.testDurationSec) {
+          const metadata = updateSeedancePrevisDeliverySegmentResults(nextMetadata, deliveryId, results)
+          await deps.updateWorkflowMetadata(workflow.id, metadata)
+          return
+        }
+
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const current = await deps.findWorkflow(body.projectId, body.workflowId, user.id)
+          if (!current) throw new Error('SPATIAL_PREVIS_TEST_WORKFLOW_NOT_FOUND')
+          const metadata = updateSeedancePrevisDeliverySegmentResults(current.metadataJson, deliveryId, results)
+          if (await deps.updateWorkflowMetadataIfCurrent(current, metadata)) return true
+        }
+        return false
+      }
 
       const firstSegment = chain?.segments[0]
       const duration = firstSegment
@@ -308,17 +421,18 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
         userId: user.id,
         projectId: body.projectId,
         workflowId: body.workflowId,
-        masterTakeId: previs.masterTake.id,
+        masterTakeId: deliveryPrevis.masterTake.id,
+        ...(body.nodeId ? { nodeId: body.nodeId } : {}),
+        ...(body.testDurationSec ? { testDurationSec: body.testDurationSec } : {}),
         prompt,
         model,
         deliveryId,
       })
       if (!generationJob) {
-        const failedMetadata = updateSeedancePrevisDeliverySegmentResults(nextMetadata, deliveryId, [
+        await persistSegmentResults([
           { ...segmentResults[0]!, status: 'failed', errorCode: 'GENERATION_JOB_CREATE_FAILED' },
           ...segmentResults.slice(1),
         ])
-        await deps.updateWorkflowMetadata(workflow.id, failedMetadata)
         return jsonError('GENERATION_JOB_CREATE_FAILED', '视频任务创建失败，请稍后重试。', 503, { deliveryId })
       }
 
@@ -340,51 +454,72 @@ export function createSeedancePrevisPostHandler(overrides: Partial<SeedancePrevi
         workflowId: body.workflowId,
         })
       } catch (error) {
-        const message = safeErrorMessage(error, 'Seedance 预演请求未能发送。')
-        const failedMetadata = updateSeedancePrevisDeliverySegmentResults(nextMetadata, deliveryId, [
+        const message = body.testDurationSec
+          ? '三维预演测试未能提交。'
+          : safeErrorMessage(error, 'Seedance 预演请求未能发送。')
+        await persistSegmentResults([
           { ...segmentResults[0]!, status: 'failed', errorCode: 'SEEDANCE_PREVIS_DISPATCH_FAILED' },
           ...segmentResults.slice(1),
         ])
-        await deps.updateWorkflowMetadata(workflow.id, failedMetadata)
         await deps.updateGenerationJob(generationJob.id, { status: 'FAILED', errorMessage: message })
         return jsonError('SEEDANCE_PREVIS_DISPATCH_FAILED', message, 502, { deliveryId })
       }
 
       if (!result.success) {
-        const failedMetadata = updateSeedancePrevisDeliverySegmentResults(nextMetadata, deliveryId, [
+        await persistSegmentResults([
           { ...segmentResults[0]!, status: 'failed', errorCode: result.errorCode },
           ...segmentResults.slice(1),
         ])
-        await deps.updateWorkflowMetadata(workflow.id, failedMetadata)
         await deps.updateGenerationJob(generationJob.id, {
           status: 'FAILED',
-          errorMessage: result.message,
+          errorMessage: body.testDurationSec ? '三维预演测试未能提交。' : result.message,
           output: serializable(result),
         })
-        return jsonError(result.errorCode, result.message, 502, { deliveryId, requestedMode: body.requestedMode, deliveryMode })
+        return jsonError(
+          result.errorCode,
+          body.testDurationSec ? '三维预演测试未能提交。' : result.message,
+          502,
+          { deliveryId, requestedMode: body.requestedMode, deliveryMode },
+        )
       }
       const completedSegment = result.async
         ? { ...segmentResults[0]!, status: 'submitted', providerTaskId: result.taskId, generationJobId: generationJob.id }
         : { ...segmentResults[0]!, status: 'succeeded', videoUrl: result.videoUrl, generationJobId: generationJob.id }
-      const completedMetadata = updateSeedancePrevisDeliverySegmentResults(nextMetadata, deliveryId, [
+      const persistedFinalReceipt = await persistSegmentResults([
         completedSegment,
         ...segmentResults.slice(1),
       ])
-      await deps.updateWorkflowMetadata(workflow.id, completedMetadata)
       await deps.updateGenerationJob(generationJob.id, {
         status: result.async ? 'QUEUED' : 'SUCCEEDED',
         ...(result.async ? { providerJobId: result.taskId } : {}),
         output: serializable(result),
       })
+      if (body.testDurationSec && !persistedFinalReceipt) {
+        return jsonOk({
+          accepted: true,
+          status: 'running',
+          deliveryId,
+          generationJobId: generationJob.id,
+          testDurationSec: body.testDurationSec,
+        }, { status: 202 })
+      }
       return jsonOk({
         deliveryId,
         requestedMode: body.requestedMode,
         deliveryMode,
         segmentCount: segmentResults.length,
+        generationJobId: generationJob.id,
+        ...(body.testDurationSec ? { testDurationSec: body.testDurationSec } : {}),
         result,
       })
     } catch (error) {
-      return jsonError('SEEDANCE_PREVIS_DELIVERY_FAILED', safeErrorMessage(error, '空间预演提交失败。'), 500)
+      return jsonError(
+        'SEEDANCE_PREVIS_DELIVERY_FAILED',
+        body.testDurationSec
+          ? '三维预演测试未能提交。'
+          : safeErrorMessage(error, '空间预演提交失败。'),
+        500,
+      )
     }
   }
 }

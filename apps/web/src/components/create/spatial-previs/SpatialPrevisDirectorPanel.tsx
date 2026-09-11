@@ -8,12 +8,16 @@ import { buildSeedanceTakePackage } from '@/lib/seedance-previs/package'
 import type { SeedanceDeliveryReceipt } from '@/lib/seedance-previs/receipts'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { buildPrevisDeliveryPackage, type PrevisDeliveryPackage } from '@/lib/spatial-previs/delivery'
+import { addSpatialSceneAssetSet } from '@/lib/spatial-previs/asset-sets'
 import { applyBeatPatch } from '@/lib/spatial-previs/normalize'
-import type { BeatPatch, SpatialPrevisMode, SpatialPrevisState, SpatialSceneReference, Vec3 } from '@/lib/spatial-previs/types'
+import type { SpatialPrevisTestDuration } from '@/lib/spatial-previs/test-delivery'
+import type { BeatPatch, SpatialAssetRole, SpatialPrevisMode, SpatialPrevisState, SpatialSceneReference, Vec3 } from '@/lib/spatial-previs/types'
 import { replaceWhiteboxDraft } from '@/lib/spatial-previs/whitebox'
 import { SpatialPrevisSceneAssets } from './SpatialPrevisSceneAssets'
 import { SpatialPrevisTimeline, clampSpatialPrevisTime } from './SpatialPrevisTimeline'
 import { SpatialPrevisViewport } from './SpatialPrevisViewport'
+import { SpatialPrevisTestPanel, type SpatialPrevisTestStatus } from './SpatialPrevisTestPanel'
+import { SpatialWhiteboxToolbar } from './SpatialWhiteboxToolbar'
 import {
   SeedanceDeliveryPanel,
   type SeedanceDeliveryPayload,
@@ -33,6 +37,11 @@ export type SeedancePrevisDeliveryResult = {
   message: string
 }
 
+export type SpatialPrevisTestResult = {
+  success: boolean
+  message: string
+}
+
 export type SpatialPrevisDirectorPanelProps = {
   initialState: SpatialPrevisState
   onSave: (state: SpatialPrevisState) => void | 'success' | 'failed' | 'conflict' | Promise<void | 'success' | 'failed' | 'conflict'>
@@ -41,6 +50,9 @@ export type SpatialPrevisDirectorPanelProps = {
   seedanceReceipts?: readonly SeedanceDeliveryReceipt[]
   onRetrySeedanceSegment?: (input: SeedanceChainRetryRequest) => Promise<SeedancePrevisDeliveryResult>
   onUploadSceneAsset?: (file: File) => Promise<SpatialSceneReference>
+  onUploadSceneAssets?: (files: readonly File[]) => Promise<SpatialSceneReference[]>
+  onRunSpatialPrevisTest?: (state: SpatialPrevisState, durationSec: SpatialPrevisTestDuration) => Promise<SpatialPrevisTestResult>
+  spatialPrevisTestStatus?: SpatialPrevisTestStatus | null
   onCreateDeliveryNode?: (delivery: PrevisDeliveryPackage) => void
   onDownloadDeliveryPackage?: (delivery: PrevisDeliveryPackage) => void
   onSaveDeliveryPackageToAssets?: (delivery: PrevisDeliveryPackage) => Promise<void>
@@ -76,6 +88,10 @@ export function canMutateSpatialPrevisEditor(isBusy: boolean) {
 }
 
 export function isSpatialPrevisBusy(isSaving: boolean, isReloading: boolean, isSceneAssetsUploading: boolean) {
+  return isSaving || isReloading || isSceneAssetsUploading
+}
+
+export function isSpatialWhiteboxToolbarDisabled(isSaving: boolean, isReloading: boolean, isSceneAssetsUploading: boolean) {
   return isSaving || isReloading || isSceneAssetsUploading
 }
 
@@ -132,6 +148,9 @@ export function SpatialPrevisDirectorPanel({
   seedanceReceipts = [],
   onRetrySeedanceSegment,
   onUploadSceneAsset,
+  onUploadSceneAssets,
+  onRunSpatialPrevisTest,
+  spatialPrevisTestStatus,
   onCreateDeliveryNode,
   onDownloadDeliveryPackage,
   onSaveDeliveryPackageToAssets,
@@ -152,6 +171,8 @@ export function SpatialPrevisDirectorPanel({
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(seedanceReceipts.at(-1)?.deliveryId ?? null)
   const [deliveryStatus, setDeliveryStatus] = useState<string | null>(null)
   const [isSavingDeliveryPackage, setIsSavingDeliveryPackage] = useState(false)
+  const [testStatus, setTestStatus] = useState<SpatialPrevisTestStatus>({ kind: 'idle' })
+  const displayedTestStatus = spatialPrevisTestStatus ?? testStatus
   const [capability, setCapability] = useState<SeedanceCapability>(standardSeedanceCapability)
   const saveGuard = useRef(createSpatialPrevisSaveGuard())
   const tabId = useId()
@@ -198,6 +219,12 @@ export function SpatialPrevisDirectorPanel({
     setBeatError(null)
   }
 
+  const handleWhiteboxChange = (next: SpatialPrevisState) => {
+    if (isSpatialWhiteboxToolbarDisabled(isSaving, isReloading, isSceneAssetsUploading)) return
+    setState(next)
+    setBeatError(null)
+  }
+
   const handleCurrentTimeChange = (timeSec: number) => {
     if (!canMutateSpatialPrevisEditor(isBusy)) return
     setCurrentTimeSec(clampSpatialPrevisTime(timeSec, state.masterTake.durationSec))
@@ -206,6 +233,12 @@ export function SpatialPrevisDirectorPanel({
   const handleSceneReferencesChange = (references: SpatialSceneReference[]) => {
     if (!canReplaceSpatialPrevisSceneReferences(isSaving, isReloading)) return
     setState((current) => replaceWhiteboxDraft(current, references))
+    setBeatError(null)
+  }
+
+  const handleAddSceneAssetSet = (references: readonly SpatialSceneReference[], role: SpatialAssetRole) => {
+    if (!canReplaceSpatialPrevisSceneReferences(isSaving, isReloading)) return
+    setState((current) => addSpatialSceneAssetSet(current, references, role))
     setBeatError(null)
   }
 
@@ -267,6 +300,21 @@ export function SpatialPrevisDirectorPanel({
       setDeliveryStatus('Seedance 提交失败。')
     }
   }
+
+  const handleSpatialPrevisTest = async (durationSec: SpatialPrevisTestDuration) => {
+    if (!onRunSpatialPrevisTest || isBusy || displayedTestStatus.kind === 'submitting') return
+    setTestStatus({ kind: 'submitting', message: '正在提交预演测试…' })
+    try {
+      const result = await onRunSpatialPrevisTest(state, durationSec)
+      setTestStatus({
+        kind: result.success ? 'submitted' : 'failed',
+        message: result.message,
+      })
+    } catch {
+      setTestStatus({ kind: 'failed', message: '预演测试提交失败。' })
+    }
+  }
+
   const handleCreateDeliveryNode = () => {
     if (isBusy || !onCreateDeliveryNode) return
     onCreateDeliveryNode(previsDeliveryPackage)
@@ -317,13 +365,21 @@ export function SpatialPrevisDirectorPanel({
         <SpatialPrevisSceneAssets
           projectId={initialState.projectId}
           references={state.scene.references}
+          assetSets={state.scene.assetSets}
           disabled={isBusy}
           onReferencesChange={handleSceneReferencesChange}
+          onAddAssetSet={handleAddSceneAssetSet}
           onUploadPending={setIsSceneAssetsUploading}
+          onUploadFiles={onUploadSceneAssets}
           onUpload={async (file) => {
             if (!onUploadSceneAsset) throw new Error('场景资产上传不可用。')
             return onUploadSceneAsset(file)
           }}
+        />
+        <SpatialWhiteboxToolbar
+          state={state}
+          disabled={isSpatialWhiteboxToolbarDisabled(isSaving, isReloading, isSceneAssetsUploading)}
+          onChange={handleWhiteboxChange}
         />
         <div className="inline-flex overflow-hidden rounded-md border border-white/12" role="tablist" aria-label="预演编辑模式">
           <button
@@ -386,6 +442,13 @@ export function SpatialPrevisDirectorPanel({
             </button>
           </div>
         ) : null}
+
+        <SpatialPrevisTestPanel
+          advisory={risks.length > 0 ? '当前覆盖存在提示，仍可运行内部测试。' : '内部测试仅验证当前镜位与走位覆盖。'}
+          disabled={isBusy || !onRunSpatialPrevisTest}
+          status={displayedTestStatus}
+          onRun={(durationSec) => { void handleSpatialPrevisTest(durationSec) }}
+        />
 
         <section aria-label="覆盖风险" className="border-t border-white/[0.08] pt-3">
           <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">覆盖风险</p>

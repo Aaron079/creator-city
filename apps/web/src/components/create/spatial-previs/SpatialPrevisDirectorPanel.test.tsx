@@ -12,6 +12,7 @@ import {
   applySpatialPrevisBeatPatch,
   canMutateSpatialPrevisEditor,
   createSpatialPrevisSaveGuard,
+  isSpatialWhiteboxToolbarDisabled,
   nextSpatialPrevisEditorMode,
   selectSpatialPrevisEditorMode,
   SpatialPrevisDirectorPanel,
@@ -24,12 +25,13 @@ import * as directorPanelModule from './SpatialPrevisDirectorPanel'
 Object.assign(globalThis, { React })
 
 const state: SpatialPrevisState = {
-  version: 2,
+  version: 3,
   projectId: 'project-previs-01',
   scene: {
     sourceMode: 'multi-view',
     coverage: { mode: 'verified', cameraFreedom: 'full' },
     references: [],
+    assetSets: [],
     whitebox: { entities: [] },
   },
   masterTake: {
@@ -74,6 +76,31 @@ test('renders both synchronized timeline tabs for the supplied master take', () 
   assert.match(markup, /aria-controls="[^"]+"/)
   assert.match(markup, /tabindex="0"/)
   assert.match(markup, /tabindex="-1"/)
+})
+
+test('composes the compact whitebox toolbar at the top of the spatial workspace', () => {
+  const markup = renderToStaticMarkup(createElement(SpatialPrevisDirectorPanel, {
+    initialState: state,
+    onSave: () => undefined,
+    onClose: () => undefined,
+  }))
+
+  const toolbarIndex = markup.indexOf('aria-label="白模搭建工具"')
+  const viewportIndex = markup.indexOf('data-spatial-previs-viewport="true"')
+  assert.ok(toolbarIndex >= 0)
+  assert.ok(viewportIndex > toolbarIndex)
+  assert.match(markup, /添加地面/)
+  assert.match(markup, /添加墙体/)
+  assert.match(markup, /添加开口/)
+  assert.match(markup, /添加家具/)
+  assert.match(markup, /添加道具/)
+})
+
+test('locks whitebox additions while saving, reloading, or uploading', () => {
+  assert.equal(isSpatialWhiteboxToolbarDisabled(false, false, false), false)
+  assert.equal(isSpatialWhiteboxToolbarDisabled(true, false, false), true)
+  assert.equal(isSpatialWhiteboxToolbarDisabled(false, true, false), true)
+  assert.equal(isSpatialWhiteboxToolbarDisabled(false, false, true), true)
 })
 
 test('switches only the editor mode while retaining the one master take', () => {

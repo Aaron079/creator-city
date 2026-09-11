@@ -87,3 +87,13 @@ test('releases an incomplete canvas initialization after effect cleanup', () => 
   assert.equal((initializationSource.match(/initializationCompleted = true/g) ?? []).length, 2)
   assert.match(initializationSource, /if \(!initializationCompleted && initStartedRef\.current === initKey\) initStartedRef\.current = ''/)
 })
+
+test('enables the internal spatial test control in the real workspace without changing the delivery actions', () => {
+  const mountSource = sourceBetween(workspaceSource, "{isSpatialPrevisOpen && saveStatus !== 'opening'", '{isContinuityCheckerOpen')
+
+  assert.match(workspaceSource, /useEffect\(\(\) => \{\s*spatialPrevisOpenRef\.current = isSpatialPrevisOpen[\s\S]*?spatialPrevisPollAbortRef\.current\?\.abort\(\)[\s\S]*?\}, \[isSpatialPrevisOpen\]\)/)
+  assert.match(mountSource, /onRunSpatialPrevisTest=\{handleRunSpatialPrevisTest\}/)
+  assert.match(mountSource, /onCreateDeliveryNode=\{handleCreateSpatialPrevisDeliveryNode\}/)
+  assert.match(mountSource, /onDownloadDeliveryPackage=\{handleDownloadSpatialPrevisDeliveryPackage\}/)
+  assert.match(mountSource, /onSaveDeliveryPackageToAssets=\{handleSaveSpatialPrevisDeliveryPackageToAssets\}/)
+})

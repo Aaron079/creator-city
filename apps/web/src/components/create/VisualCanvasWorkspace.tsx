@@ -58,7 +58,8 @@ import {
   spatialPrevisMetadata,
 } from '@/lib/spatial-previs/persistence'
 import { normalizeSpatialPrevis } from '@/lib/spatial-previs/normalize'
-import type { PrevisDeliveryPackage } from '@/lib/spatial-previs/delivery'
+import { buildPrevisDeliveryPackage, type PrevisDeliveryPackage } from '@/lib/spatial-previs/delivery'
+import { buildSpatialPrevisTestRequest, type SpatialPrevisTestDuration } from '@/lib/spatial-previs/test-delivery'
 import type { SpatialPrevisState, SpatialSceneReference } from '@/lib/spatial-previs/types'
 import { isRenderableMediaUrl } from '@/lib/media/renderable-url'
 import { parseSeedancePrevisDeliveries } from '@/lib/seedance-previs/deliveryPersistence'
@@ -67,7 +68,9 @@ import {
   SpatialPrevisDirectorPanel,
   type SeedancePrevisDeliveryRequest,
 } from '@/components/create/spatial-previs/SpatialPrevisDirectorPanel'
+import type { SpatialPrevisTestStatus } from '@/components/create/spatial-previs/SpatialPrevisTestPanel'
 import type { SeedanceChainRetryRequest } from '@/components/create/spatial-previs/SeedanceChainReviewPanel'
+import { uploadSceneAssetFiles } from '@/components/create/spatial-previs/SpatialPrevisSceneAssets'
 import { ContinuityCheckerPanel } from '@/components/create/ContinuityCheckerPanel'
 import { CharacterBiblePanel } from '@/components/create/CharacterBiblePanel'
 import { SceneBiblePanel } from '@/components/create/SceneBiblePanel'
@@ -98,6 +101,8 @@ import { mergeAnnotationMetadata, type CanvasAnnotationState } from '@/lib/canva
 // Defaults to fully disabled so toolbar entries are hidden until confirmed available.
 
 type AssetTransformCaps = { removeBackground: boolean; upscale: boolean }
+
+export const uploadSpatialSceneAssetFiles = uploadSceneAssetFiles
 let _atCapCache: AssetTransformCaps | null = null
 let _atCapFetchedAt = 0
 const AT_CAP_TTL_MS = 5 * 60 * 1000 // 5 min
@@ -1938,6 +1943,49 @@ function videoSuccessMetadata(node: VisualCanvasNode, result: GenerateApiResult,
   }
 }
 
+function spatialPrevisTestSuccessMetadata(
+  node: VisualCanvasNode,
+  input: { generationJobId: string; assetId?: string; taskId?: string; videoUrl: string },
+) {
+  const metadata = metadataRecord(node.metadataJson)
+  return {
+    ...metadata,
+    model: 'spatial-previs-internal',
+    generationStatus: 'generation_success',
+    persistenceStatus: 'persistence_success',
+    assetStatus: input.assetId ? 'ready' : undefined,
+    recoveryStatus: 'ready',
+    mediaRecoveryStatus: 'regenerated',
+    loading: false,
+    isRegenerating: false,
+    regenerating: false,
+    errorCode: null,
+    errorMessage: null,
+    lastError: null,
+    lastGenerationError: null,
+    ...(input.taskId ? { taskId: input.taskId } : {}),
+    generationJobId: input.generationJobId,
+    ...(input.assetId ? { assetId: input.assetId, outputAssetId: input.assetId } : {}),
+    resultVideoUrl: input.videoUrl,
+    assetUrl: input.videoUrl,
+    stableUrl: input.videoUrl,
+    resolvedUrl: input.videoUrl,
+    mediaPersistence: {
+      ...metadataRecord(metadata.mediaPersistence),
+      status: 'persisted',
+      persistenceStatus: 'persistence_success',
+      ...(input.assetId ? { assetId: input.assetId, outputAssetId: input.assetId } : {}),
+      stableUrl: input.videoUrl,
+      resolvedUrl: input.videoUrl,
+    },
+    generationJob: {
+      ...metadataRecord(metadata.generationJob),
+      id: input.generationJobId,
+      ...(input.assetId ? { outputAssetId: input.assetId } : {}),
+    },
+  }
+}
+
 function videoErrorMetadata(node: VisualCanvasNode, result: Pick<GenerateApiResult, 'errorCode' | 'message' | 'errorMessage' | 'httpStatus' | 'upstreamStatus' | 'upstreamMessage' | 'errorStage' | 'stageTrace' | 'executorKind' | 'generationStage' | 'stage' | 'rawCode' | 'requestId' | 'ossRequestId' | 'providerEndpoint' | 'providerRequestMethod' | 'providerHttpStatus' | 'providerFetchError' | 'providerFetchCause' | 'storageProvider' | 'bucket' | 'storageKey' | 'attemptedUploadKey' | 'mediaDownloadUrl' | 'sourceUrl' | 'requestUrl' | 'method' | 'hint' | 'generationRequestUrl' | 'generationRequestMethod' | 'generationHttpStatus' | 'generationFetchError' | 'generationResponseTextPreview' | 'model' | 'providerId' | 'generationJobId' | 'taskId' | 'missingEnv' | 'missingEnvKeys' | 'missingFields' | 'submittedInput' | 'providerResponse'>, providerId: string) {
   const visibleErrorCode = normalizeVisibleGenerateErrorCode(result) || result.errorCode || 'generation_failed'
   const requestUrl = result.generationRequestUrl || result.requestUrl
@@ -2706,6 +2754,9 @@ export function VisualCanvasWorkspace({
   const [spatialPrevis, setSpatialPrevis] = useState<SpatialPrevisState | null>(null)
   const [seedanceReceipts, setSeedanceReceipts] = useState<SeedanceDeliveryReceipt[]>([])
   const [isSpatialPrevisOpen, setIsSpatialPrevisOpen] = useState(false)
+  const spatialPrevisOpenRef = useRef(false)
+  const spatialPrevisPollAbortRef = useRef<AbortController | null>(null)
+  const [spatialPrevisTestPanelStatus, setSpatialPrevisTestPanelStatus] = useState<SpatialPrevisTestStatus | null>(null)
   const [spatialPrevisPanelRevision, setSpatialPrevisPanelRevision] = useState(0)
   const [isContinuityCheckerOpen, setIsContinuityCheckerOpen] = useState(false)
   const [isCharacterBibleOpen, setIsCharacterBibleOpen] = useState(false)
@@ -2868,6 +2919,14 @@ export function VisualCanvasWorkspace({
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<HTMLDivElement | null>(null)
   const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    spatialPrevisOpenRef.current = isSpatialPrevisOpen
+    if (!isSpatialPrevisOpen) {
+      spatialPrevisPollAbortRef.current?.abort()
+      spatialPrevisPollAbortRef.current = null
+    }
+  }, [isSpatialPrevisOpen])
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -3207,6 +3266,8 @@ export function VisualCanvasWorkspace({
 
   const closeCanvasPanel = useCallback(() => {
     if (spatialPrevisSaveInFlightRef.current) return
+    spatialPrevisPollAbortRef.current?.abort()
+    spatialPrevisPollAbortRef.current = null
     resetCanvasModalStates()
   }, [resetCanvasModalStates])
 
@@ -4125,7 +4186,7 @@ export function VisualCanvasWorkspace({
       })
       const data = await response.json().catch(() => ({})) as CanvasLoadResponse
       if (!response.ok) return 'failed'
-      const next = parseSpatialPrevisMetadata(data.workflow?.metadataJson) ?? normalizeSpatialPrevis({ projectId })
+      const next = parseSpatialPrevisMetadata(data.workflow?.metadataJson, projectId) ?? normalizeSpatialPrevis({ projectId })
       const responseServerVersion = data.serverUpdatedAt ?? data.workflow?.updatedAt
       if (responseServerVersion) serverSaveVersionRef.current = responseServerVersion
       setSpatialPrevis(next)
@@ -4165,6 +4226,11 @@ export function VisualCanvasWorkspace({
       source: 'upload',
     }
   }, [projectId, workflowId])
+
+  const handleUploadSpatialSceneAssets = useCallback(
+    (files: readonly File[]) => uploadSpatialSceneAssetFiles(files, handleUploadSpatialSceneAsset),
+    [handleUploadSpatialSceneAsset],
+  )
 
   const refreshSeedanceReceipts = useCallback(async () => {
     if (!projectId) return
@@ -4395,7 +4461,7 @@ export function VisualCanvasWorkspace({
           setCharacterBible(loadCharacterBible(ensureData.project.id, ensureData.workflow.metadataJson))
           setSceneBible(loadSceneBible(ensureData.project.id, ensureData.workflow.metadataJson))
           setCloudShotSequence(parseShotSequenceFromWorkflowMetadata(ensureData.workflow.metadataJson))
-          setSpatialPrevis(parseSpatialPrevisMetadata(ensureData.workflow.metadataJson))
+          setSpatialPrevis(parseSpatialPrevisMetadata(ensureData.workflow.metadataJson, ensureData.project.id))
           setSeedanceReceipts(seedanceReceiptsFromMetadata(ensureData.workflow.metadataJson))
           try {
             window.localStorage.setItem('creator-city:last-project-id', ensureData.project.id)
@@ -4488,7 +4554,7 @@ export function VisualCanvasWorkspace({
         setCharacterBible(loadCharacterBible(resolvedProjectId, data.workflow?.metadataJson))
         setSceneBible(loadSceneBible(resolvedProjectId, data.workflow?.metadataJson))
         setCloudShotSequence(parseShotSequenceFromWorkflowMetadata(data.workflow?.metadataJson))
-        setSpatialPrevis(parseSpatialPrevisMetadata(data.workflow?.metadataJson))
+        setSpatialPrevis(parseSpatialPrevisMetadata(data.workflow?.metadataJson, resolvedProjectId))
         setSeedanceReceipts(seedanceReceiptsFromMetadata(data.workflow?.metadataJson))
 
         // Persist so next visit to /create (without ?projectId) reopens this project
@@ -6028,6 +6094,177 @@ export function VisualCanvasWorkspace({
   const handleNodePatch = useCallback((nodeId: string, patch: Partial<VisualCanvasNode>) => {
     commitNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)))
   }, [commitNodes])
+
+  const handleRunSpatialPrevisTest = useCallback(async (
+    previs: SpatialPrevisState,
+    durationSec: SpatialPrevisTestDuration,
+  ): Promise<{ success: boolean; message: string }> => {
+    setSpatialPrevisTestPanelStatus(null)
+    if (!projectId || !workflowId) return { success: false, message: '请先完成项目同步。' }
+
+    const nodeId = `spatial-previs-test-${crypto.randomUUID()}`
+    const previsDelivery = buildPrevisDeliveryPackage(previs)
+    const sourceAssetIds = Object.freeze(previs.scene.references.map((reference) => reference.assetId))
+    const sourceReferenceIds = Object.freeze(previs.scene.references.map((reference) => reference.id))
+    const node = createNode('video', {
+      nodeId,
+      title: `三维预演测试 · ${durationSec} 秒`,
+      prompt: '空间预演内部测试',
+      model: 'spatial-previs-internal',
+      status: 'running',
+      metadataJson: Object.freeze({
+        spatialPrevisTest: true,
+        spatialPrevisTestNodeId: nodeId,
+        testDurationSec: durationSec,
+        previsDelivery,
+        sourceAssetIds,
+        sourceReferenceIds,
+      }),
+    })
+
+    const failNode = (generationJobId?: string) => {
+      const currentNode = latestNodesRef.current.find((item) => item.id === node.id)
+      if (!currentNode) return
+      if (generationJobId && metadataRecord(currentNode.metadataJson).generationJobId !== generationJobId) return
+      const message = '三维预演测试未能完成。'
+      handleNodePatch(node.id, {
+        status: 'error',
+        errorMessage: message,
+        resultPreview: '三维预演测试未完成',
+        outputLabel: '三维预演测试未完成',
+        metadataJson: {
+          ...metadataRecord(currentNode.metadataJson),
+          ...(generationJobId ? { generationJobId, generationJob: { id: generationJobId } } : {}),
+          loading: false,
+          errorCode: 'spatial_previs_test_failed',
+          errorMessage: message,
+        },
+      })
+      flushLocalSnapshot()
+      scheduleCanvasSave(0)
+    }
+
+    const saveResult = await handleSaveSpatialPrevis(previs)
+    if (saveResult !== 'success') {
+      const message = '三维预演测试未能完成。'
+      failNode()
+      return { success: false, message }
+    }
+
+    try {
+      const request = buildSpatialPrevisTestRequest(previs, node.id, durationSec)
+      const response = await fetch('/api/generate/seedance-previs', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          projectId,
+          workflowId,
+          model: 'spatial-previs-internal',
+          requestedMode: 'direct',
+          confirmedMode: 'direct',
+          acknowledgedFindingIds: [],
+          ...request,
+        }),
+      })
+      const data = await response.json().catch(() => null) as {
+        success?: boolean
+        generationJobId?: string
+        message?: string
+      } | null
+      const generationJobId = data?.generationJobId?.trim()
+      if (!response.ok || !data?.success || !generationJobId) {
+        const message = '三维预演测试未能完成。'
+        failNode()
+        return { success: false, message }
+      }
+
+      const currentNode = latestNodesRef.current.find((item) => item.id === node.id)
+      handleNodePatch(node.id, {
+        status: 'running',
+        resultPreview: '三维预演测试生成中',
+        outputLabel: '三维预演测试生成中',
+        metadataJson: {
+          ...metadataRecord(currentNode?.metadataJson),
+          generationJobId,
+          generationJob: { id: generationJobId },
+          generationStatus: 'generation_running',
+          loading: true,
+        },
+      })
+      flushLocalSnapshot()
+      scheduleCanvasSave(0)
+
+      spatialPrevisPollAbortRef.current?.abort()
+      const pollController = new AbortController()
+      spatialPrevisPollAbortRef.current = pollController
+      void (async () => {
+        let polls = 0
+        try {
+          for (; polls < MAX_VIDEO_GENERATION_POLLS; polls += 1) {
+            await delay(5000, pollController.signal)
+            if (pollController.signal.aborted || !spatialPrevisOpenRef.current) return
+            const statusResult = await pollVideoGenerationTask('volcengine-seedance-video', generationJobId, pollController.signal)
+            if (pollController.signal.aborted || !spatialPrevisOpenRef.current) return
+            if (isActiveGenerationStatus(statusResult.status)) continue
+
+            const latestNode = latestNodesRef.current.find((item) => item.id === node.id)
+            if (!latestNode) return
+            if (metadataRecord(latestNode.metadataJson).generationJobId !== generationJobId) return
+            if (!statusResult.success || statusResult.status === 'failed') {
+              failNode(generationJobId)
+              return
+            }
+
+            const videoUrl = statusResult.resultVideoUrl ?? statusResult.videoUrl ?? statusResult.result?.videoUrl
+            if (!videoUrl) {
+              failNode(generationJobId)
+              return
+            }
+            const assetId = statusResult.asset?.id ?? statusResult.assetId
+            const metadataJson = spatialPrevisTestSuccessMetadata(latestNode, {
+              generationJobId,
+              videoUrl,
+              assetId,
+              taskId: statusResult.taskId,
+            })
+            handleNodePatch(node.id, {
+              status: 'done',
+              resultVideoUrl: videoUrl,
+              assetId,
+              resultPreview: '三维预演测试已完成',
+              outputLabel: '三维预演测试已完成',
+              errorMessage: undefined,
+              metadataJson,
+              preview: { type: 'remote-video', url: videoUrl, poster: videoUrl, licenseType: 'original', attribution: '三维预演内部测试' },
+            })
+            flushLocalSnapshot()
+            scheduleCanvasSave(0)
+            return
+          }
+          if (polls >= MAX_VIDEO_GENERATION_POLLS) {
+            setSpatialPrevisTestPanelStatus({
+              kind: 'retryable',
+              message: '三维预演测试仍在生成中，可重新运行测试。',
+            })
+          }
+        } catch {
+          if (!pollController.signal.aborted) failNode(generationJobId)
+        } finally {
+          if (spatialPrevisPollAbortRef.current === pollController) {
+            spatialPrevisPollAbortRef.current = null
+          }
+        }
+      })()
+
+      return { success: true, message: '预演测试已提交。' }
+    } catch {
+      const message = '三维预演测试未能完成。'
+      failNode()
+      return { success: false, message }
+    }
+  }, [createNode, flushLocalSnapshot, handleNodePatch, handleSaveSpatialPrevis, projectId, scheduleCanvasSave, workflowId])
 
   const handleOpenGlobalStoryboardDirector = useCallback(() => {
     if (!flushDirectorBoardDrafts()) return
@@ -11952,6 +12189,9 @@ export function VisualCanvasWorkspace({
             seedanceReceipts={seedanceReceipts}
             onRetrySeedanceSegment={handleRetrySeedanceSegment}
             onUploadSceneAsset={handleUploadSpatialSceneAsset}
+            onUploadSceneAssets={handleUploadSpatialSceneAssets}
+            onRunSpatialPrevisTest={handleRunSpatialPrevisTest}
+            spatialPrevisTestStatus={spatialPrevisTestPanelStatus}
             onCreateDeliveryNode={handleCreateSpatialPrevisDeliveryNode}
             onDownloadDeliveryPackage={handleDownloadSpatialPrevisDeliveryPackage}
             onSaveDeliveryPackageToAssets={handleSaveSpatialPrevisDeliveryPackageToAssets}
