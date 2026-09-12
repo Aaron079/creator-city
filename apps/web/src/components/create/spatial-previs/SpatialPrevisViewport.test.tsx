@@ -14,6 +14,7 @@ import { chromium, type Browser, type Page } from '@playwright/test'
 import { PerspectiveCamera, Vector3 } from 'three'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { rotationFromTarget } from '@/lib/spatial-previs/camera'
+import { sampleCamera } from '@/lib/spatial-previs/sampler'
 import { applySpatialCameraAction } from './SpatialCameraControlStrip'
 import { applySpatialNudge, SpatialPrevisViewport } from './SpatialPrevisViewport'
 import { applyWhiteboxGroundDrag } from '@/lib/spatial-previs/whitebox-edit'
@@ -27,6 +28,7 @@ declare global {
       mount: (state: SpatialPrevisState, disabled?: boolean, currentTimeSec?: number) => void
       mountRigProof: (state: SpatialPrevisState, showCameraRig: boolean) => void
       lastChange: () => SpatialPrevisState | null
+      cameraRoute: () => Array<[number, number, number]>
       liveCameraPose: () => {
         position: Vec3
         rotation: { pitch: number; yaw: number; roll: number; order: string }
@@ -413,6 +415,19 @@ function renderedHarnessSource() {
       },
       lastChange() {
         return latestState
+      },
+      cameraRoute() {
+        const canvas = document.querySelector('[data-spatial-previs-viewport="true"] canvas')
+        const scene = canvas ? _roots.get(canvas)?.store.getState().scene : null
+        const points = []
+        scene?.traverse((object) => {
+          if (!object.isLine2 || object.material.color.getHexString() !== 'fbbf24') return
+          const starts = object.geometry.getAttribute('instanceStart')
+          const ends = object.geometry.getAttribute('instanceEnd')
+          for (let i = 0; i < starts.count; i++) points.push([starts.getX(i), starts.getY(i), starts.getZ(i)])
+          if (ends.count) points.push([ends.getX(ends.count - 1), ends.getY(ends.count - 1), ends.getZ(ends.count - 1)])
+        })
+        return points
       },
       liveCameraPose() {
         const liveCanvas = document.querySelectorAll('[data-spatial-previs-viewport="true"] canvas')[1]
@@ -1437,6 +1452,44 @@ test('rotates the selected Aerial camera ring at the active keyframe without cha
   }
 })
 
+test('keeps the rendered camera route on the actual LIVE trajectory including elevated intermediate positions', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const mismatches: string[] = []
+  try {
+    await prepareRenderedViewport(page)
+    const plans = stateWithTimedCameraPlans()
+    for (const mode of ['director', 'aerial'] as const) {
+      const track = mode === 'aerial' ? plans.masterTake.aerialCameraTrack : plans.masterTake.cameraTrack
+      for (const time of [0, 3, 6, 9, 12]) {
+        await mountRenderedViewport(page, plans, 2, false, time)
+        if (mode === 'aerial') {
+          await page.getByRole('button', { name: '航拍', exact: true }).click()
+          await page.waitForFunction(() => (window.__spatialPrevisViewportHarness.liveCameraPose()?.position.y ?? 0) > 8)
+        }
+        const route = await page.evaluate(() => window.__spatialPrevisViewportHarness.cameraRoute())
+        const live = await page.evaluate(() => window.__spatialPrevisViewportHarness.liveCameraPose())
+        assert.ok(live)
+        const expected = sampleCamera(track.keyframes, time).position
+        assert.ok(new Vector3(live.position.x, live.position.y, live.position.z).distanceTo(new Vector3(expected.x, expected.y, expected.z)) < 1e-6, 'LIVE must follow the stored trajectory')
+        assert.equal(route.length, track.keyframes.length)
+        const segment = time <= 6 ? 0 : 1
+        const progress = (time - track.keyframes[segment]!.timeSec) / 6
+        const displayed = new Vector3(...route[segment]!).lerp(new Vector3(...route[segment + 1]!), progress)
+        const error = displayed.distanceTo(new Vector3(expected.x, expected.y, expected.z))
+        console.log(JSON.stringify({ mode, time, displayed: displayed.toArray(), live: live.position, error }))
+        if (time === 3) {
+          await page.screenshot({ path: path.resolve(process.cwd(), `../../.superpowers/qa/spatial-studio/camera-route-${mode}.png`), fullPage: true })
+        }
+        if (error > 1e-5) mismatches.push(`${mode} ${time}s: ${error.toFixed(3)} scene units`)
+      }
+    }
+    assert.deepEqual(mismatches, [], 'Visible rail must coincide with the camera trajectory')
+  } finally {
+    await page.close()
+  }
+})
+
 test('drags a director route handle at its own keyframe time without changing the active playhead or aerial plan', async () => {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -1448,8 +1501,8 @@ test('drags a director route handle at its own keyframe time without changing th
     const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
     assert.ok(overviewCanvas)
 
-    const routePoint = worldPointInCanvas({ x: 2, y: 0, z: 4 }, overviewCanvas)
-    const destination = worldPointInCanvas({ x: 3.5, y: 0, z: 3 }, overviewCanvas)
+    const routePoint = worldPointInCanvas({ x: 2, y: 2.4, z: 4 }, overviewCanvas)
+    const destination = worldPointInCanvas({ x: 3.5, y: 2.4, z: 3 }, overviewCanvas)
     await page.mouse.move(routePoint.x, routePoint.y)
     await page.mouse.down()
     await page.mouse.move(destination.x, destination.y, { steps: 5 })
@@ -1464,6 +1517,8 @@ test('drags a director route handle at its own keyframe time without changing th
     assert.ok(changedRoutePoint)
     assert.notDeepEqual(changedRoutePoint.position, originalRoutePoint.position)
     assert.equal(changedRoutePoint.position.y, originalRoutePoint.position.y)
+    assert.ok(Math.abs(changedRoutePoint.position.x - 3.5) < 0.05, 'drag must stay under the pointer at camera height')
+    assert.ok(Math.abs(changedRoutePoint.position.z - 3) < 0.05, 'drag must not jump to a ground-plane intersection')
     assert.deepEqual(
       changed.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6),
       interactiveState.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6),

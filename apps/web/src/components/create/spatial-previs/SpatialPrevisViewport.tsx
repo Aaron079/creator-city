@@ -54,10 +54,6 @@ const WHITEBOX_COLORS: Record<WhiteboxEntity['kind'], string> = {
 }
 const GROUND_PLANE = new Plane(new Vector3(0, 1, 0), 0)
 
-function projectCameraRouteToGround(position: Vec3): Vec3 {
-  return { x: position.x, y: 0, z: position.z }
-}
-
 export function whiteboxEntityMaterialColor(kind: WhiteboxEntity['kind']) {
   return WHITEBOX_COLORS[kind]
 }
@@ -741,7 +737,7 @@ export function SpatialPrevisWorldGeometry({
 }) {
   const activeCameraTrack = selectSpatialPrevisCameraTrack(state, cameraMode)
   const cameraPath = useMemo(
-    () => activeCameraTrack.keyframes.map((keyframe) => tuple(projectCameraRouteToGround(keyframe.position))),
+    () => activeCameraTrack.keyframes.map((keyframe) => tuple(keyframe.position)),
     [activeCameraTrack.keyframes],
   )
   const anchors = useMemo(
@@ -829,7 +825,7 @@ export function SpatialPrevisWorldGeometry({
         <RoutePointHandle
           key={keyframe.id}
           kind="camera-route"
-          position={projectCameraRouteToGround(keyframe.position)}
+          position={keyframe.position}
           timeSec={keyframe.timeSec}
           selected={(selectedRoutePoint?.kind === 'camera'
             ? selectedRoutePoint.timeSec === keyframe.timeSec
@@ -1116,7 +1112,11 @@ export function SpatialPrevisViewport({ state: sourceState, currentTimeSec, disa
       return
     }
 
-    const point = event.ray.intersectPlane(GROUND_PLANE, new Vector3())
+    // Route handles live at camera height; projecting onto the floor would jump their X/Z.
+    const dragPlane = kind === 'camera-route'
+      ? new Plane(new Vector3(0, 1, 0), -drag.startY)
+      : GROUND_PLANE
+    const point = event.ray.intersectPlane(dragPlane, new Vector3())
     if (!point) return
     if (kind === 'actor-ground') {
       onChange(applyActorGroundDrag(state, drag.actorTrackId, currentTimeSec, { x: point.x, z: point.z }))
