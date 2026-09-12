@@ -480,6 +480,7 @@ export function SpatialPrevisDirectorPanel({
           state={state}
           currentTimeSec={currentTimeSec}
           disabled={isBusy}
+          isExportingVideo={isExportingVideo}
           cameraMode={cameraMode}
           onChange={handleStateChange}
           onCurrentTimeChange={handleCurrentTimeChange}

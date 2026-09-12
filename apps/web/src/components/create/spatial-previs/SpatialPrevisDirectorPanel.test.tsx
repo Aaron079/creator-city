@@ -249,6 +249,7 @@ test('commits the expanded duration and remapped panel playhead against the dest
     assert.equal(await playhead.inputValue(), '6')
     await page.getByRole('button', { name: '调整时长' }).focus()
     await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.activeElement?.textContent === '5s')
     await page.getByRole('button', { name: '180s', exact: true }).focus()
     await page.keyboard.press('Enter')
 
@@ -257,6 +258,7 @@ test('commits the expanded duration and remapped panel playhead against the dest
 
     await page.getByRole('button', { name: '调整时长' }).focus()
     await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.activeElement?.textContent === '5s')
     await page.getByRole('button', { name: '10s', exact: true }).focus()
     await page.keyboard.press('Enter')
     await page.waitForFunction(() => document.querySelector('output[aria-live="polite"]')?.textContent === '5s / 10s')

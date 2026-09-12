@@ -129,11 +129,15 @@ export function putCut(state: SpatialPrevisState, cameraId: string, timeSec: num
   const cuts: StudioCut[] = [...studio.cuts.filter(c => c.id !== id && Math.abs(c.timeSec - time) > 0.001), { id, cameraId, timeSec: time }].sort((a, b) => a.timeSec - b.timeSec)
   return updateStudio(state, { cuts })
 }
-export function sampleProgramCamera(state: SpatialPrevisState, time: number): CameraKeyframe | null {
+export function selectProgramCameraTrack(state: SpatialPrevisState, time: number) {
   const studio = studioOf(state)
   const cut = studio.cuts.filter(c => c.timeSec <= time).sort((a, b) => a.timeSec - b.timeSec).at(-1)
   const camera = studio.cameras.find(c => c.track.id === cut?.cameraId) ?? studio.cameras[0]
-  return camera ? sampleCamera(camera.track.keyframes, time) : null
+  return camera?.track ?? null
+}
+export function sampleProgramCamera(state: SpatialPrevisState, time: number): CameraKeyframe | null {
+  const track = selectProgramCameraTrack(state, time)
+  return track ? sampleCamera(track.keyframes, time) : null
 }
 export function retimeStudio(studio: SpatialStudio, scale: number): SpatialStudio {
   return {

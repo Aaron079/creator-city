@@ -30,10 +30,11 @@ export function StudioNumber({ label, value, onChange, min = -100, max = 100, st
 function VectorFields({ label, value, onChange, min = -100 }: { label: string; value: Vec3; onChange: (value: Vec3) => void; min?: number }) {
   return <div className={styles.vector}>{(['x', 'y', 'z'] as const).map(axis => <StudioNumber key={axis} label={`${label} ${axis.toUpperCase()}`} value={value[axis]} min={min} onChange={n => onChange({ ...value, [axis]: n })} />)}</div>
 }
-export function SpatialStudioTools({ state, time, tool, selection, cameraMode, selectedCameraId, program, disabled, onTool, onSelection, onChange, onTime, onCamera, onProgram }: {
+export function SpatialStudioTools({ state, time, tool, selection, cameraMode, selectedCameraId, program, disabled, onTool, onSelection, onChange, onTime, onCamera, onProgram, onPreview }: {
   state: SpatialPrevisState; time: number; tool: StudioTool | null; selection: StudioSelection; cameraMode: SpatialPrevisCameraMode; selectedCameraId: string; program: boolean; disabled: boolean
   onTool: (tool: StudioTool | null) => void; onSelection: (selection: StudioSelection) => void; onChange: (state: SpatialPrevisState) => void
   onTime?: (time: number) => void; onCamera: (id: string) => void; onProgram: (enabled: boolean) => void
+  onPreview: (enabled: boolean) => void
 }) {
   const root = useRef<HTMLDivElement>(null)
   const [restore, setRestore] = useState<SpatialPrevisState | null>(null)
@@ -128,10 +129,10 @@ export function SpatialStudioTools({ state, time, tool, selection, cameraMode, s
       </>}
       {tool === 'multicamera' && <>
         <button type="button" onClick={addCamera}><Copy size={14} />从当前机位添加</button>
-        <label className={styles.check}><input type="checkbox" checked={program} disabled={!studio.cameras.length} onChange={e => onProgram(e.target.checked)} />播放 / 导出剪辑结果</label>
-        <label>编辑机位<select aria-label="编辑机位" value={selectedCameraId} onChange={e => { onCamera(e.target.value); onProgram(false) }}><option value="">原始机位</option>{studio.cameras.map(c => <option key={c.track.id} value={c.track.id}>{c.name}</option>)}</select></label>
+        <label className={styles.check}><input type="checkbox" checked={program} disabled={!studio.cameras.length} onChange={e => onProgram(e.target.checked)} />导出剪辑结果</label>
+        <label>编辑机位<select aria-label="编辑机位" value={selectedCameraId} onChange={e => { onCamera(e.target.value); onPreview(false) }}><option value="">原始机位</option>{studio.cameras.map(c => <option key={c.track.id} value={c.track.id}>{c.name}</option>)}</select></label>
         {studio.cameras.map(c => <div className={styles.actions} key={c.track.id}>
-          <button type="button" onClick={() => change(updateStudio(putCut(state, c.track.id, time, crypto.randomUUID()), { programEnabled: true }))}><Aperture size={14} />切入 {c.name}</button>
+          <button type="button" onClick={() => { change(updateStudio(putCut(state, c.track.id, time, crypto.randomUUID()), { programEnabled: true })); onPreview(true) }}><Aperture size={14} />切入 {c.name}</button>
           <button type="button" aria-label={`移除${c.name}`} onClick={() => { change(updateStudio(state, { cameras: studio.cameras.filter(item => item !== c), cuts: studio.cuts.filter(cut => cut.cameraId !== c.track.id) })); if (selectedCameraId === c.track.id) onCamera('') }}><Trash2 size={14} /></button>
         </div>)}
         <div className={styles.cutline} aria-label="机位切点轨道">{studio.cuts.map(c => <input key={c.id} aria-label={`拖动切点 ${c.id}`} type="range" min={0} max={state.masterTake.durationSec} step={0.1} value={c.timeSec} onChange={e => change(putCut(state, c.cameraId, Number(e.target.value), c.id))} />)}</div>

@@ -73,6 +73,7 @@ test('renders compact first-level director controls without a persistent duplica
     onSelectionToolChange: () => undefined,
     onCurrentTimeChange: () => undefined,
   }))
+  assert.ok(markup.includes('人物走位'))
 
   assert.match(markup, /aria-label="导演镜头控制"/)
   for (const label of ['选择与拖拽', '摄影机位移与高度', '摄影机角度', '记录相机关键帧', '调整时长', '镜头参数', '相机动作', 'Director', '航拍']) {
@@ -84,7 +85,7 @@ test('renders compact first-level director controls without a persistent duplica
 })
 
 test('opens one director popover at a time and closes every popover on active click, Escape, or outside pointer', () => {
-  assert.deepEqual(DIRECTOR_CONTROL_POPOVERS, ['selection', 'duration', 'lens', 'camera-actions'])
+  assert.deepEqual(DIRECTOR_CONTROL_POPOVERS, ['selection', 'duration', 'lens', 'camera-actions', 'actor-route'])
 
   for (const popover of DIRECTOR_CONTROL_POPOVERS) {
     assert.equal(toggleDirectorPopover(null, popover), popover)

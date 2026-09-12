@@ -1,9 +1,9 @@
 'use client'
 
-import { Aperture, CircleDot, MousePointer2, Move3d, Rotate3d, Timer, Waypoints } from 'lucide-react'
+import { Aperture, CircleDot, Footprints, MousePointer2, Move3d, Rotate3d, Timer, Waypoints } from 'lucide-react'
 import * as React from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
-import { applyCameraLens, ensureCameraKeyframeAt } from '@/lib/spatial-previs/direct-manipulation'
+import { applyCameraLens, clearActorRoute, deleteActorRoutePoint, ensureActorKeyframeAt, ensureCameraKeyframeAt } from '@/lib/spatial-previs/direct-manipulation'
 import { setMasterTakeDuration } from '@/lib/spatial-previs/normalize'
 import type { ShotScale, SpatialPrevisCameraMode, SpatialPrevisState } from '@/lib/spatial-previs/types'
 import {
@@ -35,7 +35,7 @@ export const DIRECTOR_LENS_FAMILIES = [
   [150, 180, 200, 300, 400, 600],
 ] as const
 
-export const DIRECTOR_CONTROL_POPOVERS = ['selection', 'duration', 'lens', 'camera-actions'] as const
+export const DIRECTOR_CONTROL_POPOVERS = ['selection', 'duration', 'lens', 'camera-actions', 'actor-route'] as const
 
 type DirectorControlPopover = typeof DIRECTOR_CONTROL_POPOVERS[number]
 type DirectorSelectionTool = 'actor' | 'camera' | 'target'
@@ -264,6 +264,18 @@ export function SpatialPrevisDirectorControls({
         <CircleDot size={15} aria-hidden="true" />
       </DirectorToolButton>
       <DirectorToolButton
+        label="人物走位"
+        title="人物走位"
+        active={activePopover === 'actor-route'}
+        disabled={disabled || !actorSelectable}
+        ariaExpanded={activePopover === 'actor-route'}
+        ariaControls={popoverId('actor-route')}
+        buttonRef={(node) => { triggerRefs.current['actor-route'] = node }}
+        onClick={() => { onSelectionToolChange?.('actor'); togglePopover('actor-route') }}
+      >
+        <Footprints size={15} aria-hidden="true" />
+      </DirectorToolButton>
+      <DirectorToolButton
         label="调整时长"
         title="调整时长"
         active={activePopover === 'duration'}
@@ -275,7 +287,7 @@ export function SpatialPrevisDirectorControls({
       >
         <Timer size={15} aria-hidden="true" />
       </DirectorToolButton>
-      <div className="inline-flex overflow-hidden border border-white/12" role="group" aria-label="机位模式">
+      <div className="inline-flex shrink-0 overflow-hidden whitespace-nowrap border border-white/12" role="group" aria-label="机位模式">
         {([
           { label: 'Director', value: 'director' },
           { label: '航拍', value: 'aerial' },
@@ -323,6 +335,24 @@ export function SpatialPrevisDirectorControls({
 
       {activePopover ? (
         <div ref={popoverRef} id={activePanelId} role="dialog" tabIndex={-1} aria-label={`${activePopover} 控制`} className="absolute left-3 top-full z-20 mt-1.5 max-w-[calc(100vw-3rem)] border border-white/15 bg-[#10171d] p-2 shadow-2xl">
+          {activePopover === 'actor-route' ? (
+            <div className="flex flex-col gap-1 text-left text-[11px]" role="group" aria-label="人物走位操作">
+              <button type="button" disabled={disabled || !actorTrackId} className="px-2 py-1.5 text-left hover:bg-white/10" onClick={() => {
+                const next = ensureActorKeyframeAt(state, actorTrackId!, currentTimeSec)?.state
+                if (next && next !== state) onChange(next)
+                setActivePopover(null)
+              }}>记录走位点</button>
+              <button type="button" disabled={disabled || !state.masterTake.actorTracks.some(t => t.id === actorTrackId && t.keyframes.length > 1 && t.keyframes.some(k => k.timeSec === currentTimeSec))} className="px-2 py-1.5 text-left hover:bg-white/10 disabled:opacity-35" onClick={() => {
+                onChange(deleteActorRoutePoint(state, actorTrackId!, currentTimeSec))
+                setActivePopover(null)
+              }}>删除当前走位点</button>
+              <button type="button" disabled={disabled || !actorTrackId} className="px-2 py-1.5 text-left hover:bg-white/10" onClick={() => {
+                if (!window.confirm('清除所选人物的全部走位点，并保持当前位置？人物动作和摄影机轨道不会改变。')) return
+                onChange(clearActorRoute(state, actorTrackId!, currentTimeSec))
+                setActivePopover(null)
+              }}>清除走位，保持当前位置</button>
+            </div>
+          ) : null}
           {activePopover === 'selection' ? (
             <div className="flex items-center gap-1" role="group" aria-label="选择与拖拽对象">
               {([

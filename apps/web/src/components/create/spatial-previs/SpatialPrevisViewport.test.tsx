@@ -15,6 +15,8 @@ import { PerspectiveCamera, Vector3 } from 'three'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { rotationFromTarget } from '@/lib/spatial-previs/camera'
 import { sampleCamera } from '@/lib/spatial-previs/sampler'
+import { addDefaultActorTrack } from '@/lib/spatial-previs/normalize'
+import { addStudioCamera, putCut, updateStudio } from '@/lib/spatial-previs/studio'
 import { applySpatialCameraAction } from './SpatialCameraControlStrip'
 import { applySpatialNudge, SpatialPrevisViewport } from './SpatialPrevisViewport'
 import { applyWhiteboxGroundDrag } from '@/lib/spatial-previs/whitebox-edit'
@@ -25,10 +27,11 @@ const viewportSource = readFileSync(new URL('./SpatialPrevisViewport.tsx', impor
 declare global {
   interface Window {
     __spatialPrevisViewportHarness: {
-      mount: (state: SpatialPrevisState, disabled?: boolean, currentTimeSec?: number) => void
+      mount: (state: SpatialPrevisState, disabled?: boolean, currentTimeSec?: number, isExportingVideo?: boolean) => void
       mountRigProof: (state: SpatialPrevisState, showCameraRig: boolean) => void
       lastChange: () => SpatialPrevisState | null
       cameraRoute: () => Array<[number, number, number]>
+      actorHeads: () => Array<Array<[number, number, number]>>
       liveCameraPose: () => {
         position: Vec3
         rotation: { pitch: number; yaw: number; roll: number; order: string }
@@ -380,7 +383,7 @@ function renderedHarnessSource() {
     }
 
     window.__spatialPrevisViewportHarness = {
-      mount(state, disabled = true, currentTimeSec = 6) {
+      mount(state, disabled = true, currentTimeSec = 6, isExportingVideo = false) {
         root?.unmount()
         latestState = null
         const container = document.getElementById('root')
@@ -390,6 +393,7 @@ function renderedHarnessSource() {
           state,
           currentTimeSec,
           disabled,
+          isExportingVideo,
           onChange: (nextState) => { latestState = nextState },
         }))
       },
@@ -415,6 +419,18 @@ function renderedHarnessSource() {
       },
       lastChange() {
         return latestState
+      },
+      actorHeads() {
+        return Array.from(document.querySelectorAll('[data-spatial-previs-viewport="true"] canvas')).map(canvas => {
+          const scene = _roots.get(canvas)?.store.getState().scene
+          const heads = []
+          scene?.traverse(object => {
+            if (object.isMesh && object.material.color?.getHexString() === 'd6eff7') {
+              heads.push(object.getWorldPosition(new Vector3()).toArray())
+            }
+          })
+          return heads
+        })
       },
       cameraRoute() {
         const canvas = document.querySelector('[data-spatial-previs-viewport="true"] canvas')
@@ -1452,6 +1468,98 @@ test('rotates the selected Aerial camera ring at the active keyframe without cha
   }
 })
 
+test('opens saved multicamera projects on the editing camera and requires explicit cut preview', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    let project = addStudioCamera(stateWithWhitebox(), 'director', 'cut-camera')
+    project = updateStudio(project, {
+      programEnabled: true,
+      cameras: project.studio!.cameras.map(c => ({ ...c, track: { ...c.track, keyframes: c.track.keyframes.map(k => ({ ...k, position: { ...k.position, x: 8 }, focalLengthMm: 135 })) } })),
+    })
+    project = putCut(project, 'cut-camera', 0, 'cut-0')
+    await mountRenderedViewport(page, project, 2, false, 3)
+    const editingPose = await page.evaluate(() => window.__spatialPrevisViewportHarness.liveCameraPose())
+    assert.equal(editingPose?.position.x, 0, 'stored export cuts must not replace the editing camera on open')
+    await page.getByRole('button', { name: '剪辑预览', exact: true }).click()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.liveCameraPose()?.position.x === 8)
+    await page.getByRole('button', { name: '当前机位预览', exact: true }).click()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.liveCameraPose()?.position.x === 0)
+    assert.equal(await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange()), null, 'preview selection must not rewrite saved export settings or cuts')
+
+    await page.getByRole('button', { name: '多机位剪辑', exact: true }).click()
+    await page.getByRole('combobox', { name: '编辑机位' }).selectOption('cut-camera')
+    await page.getByRole('button', { name: '多机位剪辑', exact: true }).click()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.liveCameraPose()?.position.x === 8)
+    await page.getByRole('button', { name: '记录相机关键帧', exact: true }).click()
+    const recorded = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(recorded)
+    assert.deepEqual(recorded.studio!.cuts, project.studio!.cuts)
+    assert.deepEqual(recorded.masterTake.cameraTrack, project.masterTake.cameraTrack)
+    assert.equal(recorded.studio!.cameras[0]!.track.keyframes.find(k => k.timeSec === 3)?.focalLengthMm, 135)
+
+    await page.evaluate(p => window.__spatialPrevisViewportHarness.mount(p, true, 3, true), project)
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.liveCameraPose()?.position.x === 8)
+    await mountRenderedViewport(page, project, 2, false, 3)
+    assert.equal((await page.evaluate(() => window.__spatialPrevisViewportHarness.liveCameraPose()))?.position.x, 0)
+  } finally { await page.close() }
+})
+
+test('keeps a newly added actor at its anchor in both real 3D scenes while the camera moves', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    const project = addDefaultActorTrack(stateWithoutActors())
+    const cameraPositions = []
+    for (const time of [0, 3, 6, 12]) {
+      await mountRenderedViewport(page, project, 2, false, time)
+      const heads = await page.evaluate(() => window.__spatialPrevisViewportHarness.actorHeads())
+      assert.deepEqual(heads, [[[-2, 1.25, 1]], [[-2, 1.25, 1]]], 'the actor must remain in both world scenes without an authored travel path')
+      cameraPositions.push((await page.evaluate(() => window.__spatialPrevisViewportHarness.liveCameraPose()))?.position)
+    }
+    assert.notDeepEqual(cameraPositions[0], cameraPositions[2], 'the camera must actually move during this check')
+  } finally { await page.close() }
+})
+
+test('records actor route points and only clears an authored route after confirmation', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    const project = stateWithWhitebox()
+    await mountRenderedViewport(page, project, 2, false, 3)
+    await page.getByRole('button', { name: '人物走位', exact: true }).click()
+    await page.getByRole('button', { name: '记录走位点', exact: true }).click()
+    const recorded = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(recorded)
+    const keys = recorded.masterTake.actorTracks[0]!.keyframes
+    assert.ok(keys.some(k => k.timeSec === 3))
+    assert.deepEqual(keys.map(k => k.timeSec), keys.map(k => k.timeSec).sort((a, b) => a - b))
+    assert.deepEqual(recorded.masterTake.cameraTrack, project.masterTake.cameraTrack)
+    await mountRenderedViewport(page, recorded, 2, false, 3)
+    await page.getByRole('button', { name: '人物走位', exact: true }).click()
+    page.once('dialog', dialog => dialog.dismiss())
+    await page.getByRole('button', { name: '清除走位，保持当前位置', exact: true }).click()
+    assert.equal(await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange()), null)
+    if (!await page.getByRole('button', { name: '清除走位，保持当前位置', exact: true }).isVisible()) {
+      await page.getByRole('button', { name: '人物走位', exact: true }).click()
+    }
+    page.once('dialog', dialog => dialog.accept())
+    await page.getByRole('button', { name: '清除走位，保持当前位置', exact: true }).click()
+    const held = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(held)
+    assert.equal(held.masterTake.actorTracks[0]!.keyframes.length, 1)
+    assert.deepEqual(held.masterTake.actorTracks[0]!.keyframes[0]!.position, keys.find(k => k.timeSec === 3)!.position)
+    assert.deepEqual(held.masterTake.cameraTrack, project.masterTake.cameraTrack)
+    await mountRenderedViewport(page, held, 2, false, 0)
+    await page.getByRole('button', { name: '人物走位', exact: true }).click()
+    assert.equal(await page.getByRole('button', { name: '删除当前走位点', exact: true }).isDisabled(), true)
+    await page.screenshot({ path: path.resolve('../../.superpowers/qa/spatial-studio/actor-route-controls.png') })
+  } finally { await page.close() }
+})
+
 test('keeps the rendered camera route on the actual LIVE trajectory including elevated intermediate positions', async () => {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -1586,6 +1694,7 @@ test('operates director-control popovers through the rendered DOM and closes act
       ['调整时长', 'duration'],
       ['镜头参数', 'lens'],
       ['相机动作', 'camera-actions'],
+      ['人物走位', 'actor-route'],
     ] as const) {
       await assertDirectorPopoverDismissals(page, triggerName, popoverName)
     }
@@ -2345,6 +2454,7 @@ test('keeps actual director popovers keyboard-accessible and returns Escape focu
       ['调整时长', 'duration', '5s'],
       ['镜头参数', 'lens', '选择极近景'],
       ['相机动作', 'camera-actions', '推'],
+      ['人物走位', 'actor-route', '记录走位点'],
     ] as const) {
       const trigger = page.getByRole('button', { name: triggerName })
       const popover = page.getByRole('dialog', { name: `${popoverName} 控制` })

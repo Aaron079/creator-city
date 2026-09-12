@@ -68,8 +68,6 @@ function createCameraTrack(
 
 export function addDefaultActorTrack(state: SpatialPrevisState): SpatialPrevisState {
   const actorNumber = state.masterTake.actorTracks.length + 1
-  const durationSec = state.masterTake.durationSec
-  const midpoint = durationSec / 2
 
   return {
     ...state,
@@ -82,8 +80,6 @@ export function addDefaultActorTrack(state: SpatialPrevisState): SpatialPrevisSt
           anchorId: `actor-${actorNumber}`,
           keyframes: [
             { id: `actor-${actorNumber}-start`, timeSec: 0, position: { x: -2, y: 0, z: 1 }, action: 'idle' },
-            { id: `actor-${actorNumber}-mid`, timeSec: midpoint, position: { x: 0, y: 0, z: 0 }, action: 'walk' },
-            { id: `actor-${actorNumber}-end`, timeSec: durationSec, position: { x: 2, y: 0, z: -1 }, action: 'walk' },
           ],
         },
       ],

@@ -10,12 +10,48 @@ import {
   applyCameraTransform,
   applyObjectHeightDrag,
   ensureCameraKeyframeAt,
+  ensureActorKeyframeAt,
+  clearActorRoute,
+  deleteActorRoutePoint,
 } from './direct-manipulation'
 import { normalizeSpatialPrevis } from './normalize'
 import { cameraTargetFromPose, rotationFromTarget } from './camera'
+import { sampleActor, sampleCamera } from './sampler'
 import type { ActorKeyframe, CameraKeyframe, SpatialPrevisCameraMode, SpatialPrevisState, Vec3 } from './types'
 
 const CURRENT_TIME_SEC = 4.2
+
+test('records and removes only the selected actor route point and preserves the last anchor', () => {
+  const source = fixture()
+  const id = source.masterTake.actorTracks[0]!.id
+  const next = ensureActorKeyframeAt(source, id, 5)!.state
+  assert.deepEqual(next.masterTake.actorTracks[0]!.keyframes.map(k => k.timeSec), [0, 5, 10])
+  assert.deepEqual(sampleActor(next.masterTake.actorTracks[0]!, 5).position, sampleActor(source.masterTake.actorTracks[0]!, 5).position)
+  assert.equal(ensureActorKeyframeAt(next, id, 5)!.state, next)
+  assert.equal(ensureActorKeyframeAt(source, id, -1), null)
+  assert.deepEqual(deleteActorRoutePoint(next, id, 5), source)
+  const cleared = clearActorRoute(next, id, 5)
+  for (const t of [0, 2, 5, 10]) assert.deepEqual(sampleActor(cleared.masterTake.actorTracks[0]!, t).position, { x: 5, y: 0, z: 0 })
+  assert.equal(deleteActorRoutePoint(cleared, id, 0), cleared)
+  assert.deepEqual(cleared.masterTake.actorTracks[1], source.masterTake.actorTracks[1])
+  assert.deepEqual(cleared.masterTake.cameraTrack, source.masterTake.cameraTrack)
+  assert.deepEqual(cleared.studio, source.studio)
+  assert.equal(source.masterTake.actorTracks[0]!.keyframes.length, 2)
+})
+
+test('inserting camera points preserves continuous lens and pose samples without adding cuts', () => {
+  const source = fixture()
+  const next = ensureCameraKeyframeAt(ensureCameraKeyframeAt(source, 7)!.state, 3)!.state
+  assert.deepEqual(next.masterTake.cameraTrack.keyframes.map(k => k.timeSec), [0, 3, 7, 10])
+  for (const time of [0, 2.9, 3, 3.1, 6.9, 7, 7.1, 10]) {
+    const before = sampleCamera(source.masterTake.cameraTrack.keyframes, time)
+    const after = sampleCamera(next.masterTake.cameraTrack.keyframes, time)
+    assert.ok(Math.abs(before.focalLengthMm - after.focalLengthMm) < 1e-8)
+    for (const axis of ['x', 'y', 'z'] as const) assert.ok(Math.abs(before.position[axis] - after.position[axis]) < 1e-8)
+  }
+  assert.deepEqual(next.studio, source.studio)
+  assert.deepEqual(next.masterTake.actorTracks, source.masterTake.actorTracks)
+})
 
 function fixture(): SpatialPrevisState {
   const normalized = normalizeSpatialPrevis({

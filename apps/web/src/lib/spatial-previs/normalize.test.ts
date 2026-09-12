@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { addDefaultActorTrack, applyBeatPatch, normalizeSpatialPrevis, setMasterTakeDuration } from './normalize'
 import { rotationFromTarget } from './camera'
+import { sampleActor } from './sampler'
 import type { AspectRatio, SpatialPrevisScene } from './types'
 
 // @ts-expect-error verified coverage only permits full camera freedom
@@ -18,6 +19,16 @@ const unsupportedAspectRatio: AspectRatio = '4:3'
 void unsupportedAspectRatio
 
 describe('spatial previs normalization', () => {
+  test('keeps a newly added actor stationary until the user authors a route', () => {
+    const original = normalizeSpatialPrevis({ projectId: 'stationary-actor', durationSec: 180 })
+    const next = addDefaultActorTrack(original)
+    const actor = next.masterTake.actorTracks[0]!
+    for (const time of [0, 5, 30, 90, 180]) {
+      assert.deepEqual(sampleActor(actor, time).position, actor.keyframes[0]!.position)
+    }
+    assert.equal(actor.keyframes.length, 1)
+    assert.deepEqual(next.masterTake.cameraTrack, original.masterTake.cameraTrack)
+  })
   test('initializes version-4 asset, whitebox, and isolated camera state', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
 
@@ -146,8 +157,6 @@ describe('spatial previs normalization', () => {
       anchorId: 'actor-1',
       keyframes: [
         { id: 'actor-1-start', timeSec: 0, position: { x: -2, y: 0, z: 1 }, action: 'idle' },
-        { id: 'actor-1-mid', timeSec: 5, position: { x: 0, y: 0, z: 0 }, action: 'walk' },
-        { id: 'actor-1-end', timeSec: 10, position: { x: 2, y: 0, z: -1 }, action: 'walk' },
       ],
     })
   })
@@ -261,6 +270,8 @@ describe('spatial previs normalization', () => {
 
   test('clamps and remaps actor, director, aerial, and beat times when changing duration without mutation', () => {
     const state = addDefaultActorTrack(normalizeSpatialPrevis({ projectId: 'project-1', durationSec: 30 }))
+    const actor = state.masterTake.actorTracks[0]!
+    actor.keyframes = [0, 15, 30].map(timeSec => ({ ...actor.keyframes[0]!, id: `authored-${timeSec}`, timeSec, position: { x: timeSec / 10, y: 0, z: 0 } }))
     const source = structuredClone(state)
 
     const resized = setMasterTakeDuration(state, 60)

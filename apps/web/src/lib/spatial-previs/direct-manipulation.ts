@@ -62,7 +62,8 @@ function replaceCameraTrack(state: SpatialPrevisState, mode: unknown, nextTrack:
   }
 }
 
-function ensureActorKeyframeAt(state: SpatialPrevisState, actorTrackId: string, timeSec: number): StateKeyframe<ActorKeyframe> | null {
+export function ensureActorKeyframeAt(state: SpatialPrevisState, actorTrackId: string, timeSec: number): StateKeyframe<ActorKeyframe> | null {
+  if (!isValidCameraOperationTime(state, timeSec)) return null
   const track = state.masterTake.actorTracks.find((item) => item.id === actorTrackId)
   if (!track || track.keyframes.length === 0) return null
   const existing = exactKeyframe(track.keyframes, timeSec)
@@ -76,12 +77,29 @@ function ensureActorKeyframeAt(state: SpatialPrevisState, actorTrackId: string, 
       masterTake: {
         ...state.masterTake,
         actorTracks: state.masterTake.actorTracks.map((item) => item.id === actorTrackId
-          ? { ...item, keyframes: [...item.keyframes, keyframe] }
+          ? { ...item, keyframes: [...item.keyframes, keyframe].sort((a, b) => a.timeSec - b.timeSec) }
           : item),
       },
     },
     keyframe,
   }
+}
+
+export function clearActorRoute(state: SpatialPrevisState, actorTrackId: string, timeSec: number): SpatialPrevisState {
+  const track = state.masterTake.actorTracks.find(item => item.id === actorTrackId)
+  if (!track?.keyframes.length || !isValidCameraOperationTime(state, timeSec)) return state
+  const pose = sampleActor(track, timeSec)
+  return { ...state, masterTake: { ...state.masterTake, actorTracks: state.masterTake.actorTracks.map(item => item !== track ? item : {
+    ...item, keyframes: [{ ...pose, id: item.keyframes[0]!.id, timeSec: 0 }],
+  }) } }
+}
+
+export function deleteActorRoutePoint(state: SpatialPrevisState, actorTrackId: string, timeSec: number): SpatialPrevisState {
+  const track = state.masterTake.actorTracks.find(item => item.id === actorTrackId)
+  if (!track || track.keyframes.length <= 1 || !track.keyframes.some(k => k.timeSec === timeSec)) return state
+  return { ...state, masterTake: { ...state.masterTake, actorTracks: state.masterTake.actorTracks.map(item => item !== track ? item : {
+    ...item, keyframes: item.keyframes.filter(k => k.timeSec !== timeSec),
+  }) } }
 }
 
 function updateActorKeyframe(
@@ -148,7 +166,7 @@ export function ensureCameraKeyframeAt(
     target: { ...sampled.target },
     rotation: { ...sampled.rotation },
   }
-  return { state: replaceCameraTrack(state, mode, { ...track, keyframes: [...track.keyframes, keyframe] }), keyframe }
+  return { state: replaceCameraTrack(state, mode, { ...track, keyframes: [...track.keyframes, keyframe].sort((a, b) => a.timeSec - b.timeSec) }), keyframe }
 }
 
 export function applyActorGroundDrag(

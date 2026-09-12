@@ -60,7 +60,7 @@ before(async () => {
         <button onClick={()=>localStorage.setItem('studio',JSON.stringify({spatialPrevis:state}))}>验收保存</button>
         <button onClick={()=>setState(parseSpatialPrevisMetadata(JSON.parse(localStorage.getItem('studio'))))}>验收重载</button>
         <button disabled={busy} onClick={async()=>{setBusy(true);try{const blob=await exportPrevisWebM({canvas,durationSec:5,fps:15,onTime:setTime});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='studio-test.webm';a.click()}finally{setBusy(false)}}}>验收导出</button>
-      </div><SpatialPrevisViewport state={state} currentTimeSec={time} onChange={setState} onCurrentTimeChange={setTime} onLiveCanvas={setCanvas} disabled={busy}/></main>
+      </div><SpatialPrevisViewport state={state} currentTimeSec={time} onChange={setState} onCurrentTimeChange={setTime} onLiveCanvas={setCanvas} disabled={busy} isExportingVideo={busy}/></main>
     }
     createRoot(document.getElementById('root')).render(<App/>)
   `
@@ -229,6 +229,11 @@ test('mobile tools fit the viewport and toggle or Escape close', { timeout: 60_0
       assert.equal(await page.getByRole('button', { name, exact: true }).getAttribute('aria-expanded'), 'false')
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    const modeTextHeight = await page.getByRole('button', { name: '航拍', exact: true }).evaluate(button => {
+      const range = document.createRange(); range.selectNodeContents(button)
+      return range.getBoundingClientRect().height
+    })
+    assert.ok(modeTextHeight < 20, 'the aerial mode label must stay on one line after adding actor controls')
     await page.screenshot({ path: path.join(evidence, '06-mobile.png'), fullPage: true })
   } finally { await page.close() }
 })
