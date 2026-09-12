@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { rotationFromTarget } from './camera'
 import type { SpatialPrevisState } from './types'
 import {
   buildSpatialPrevisTestRequest,
@@ -7,7 +8,7 @@ import {
 } from './test-delivery'
 
 const state: SpatialPrevisState = {
-  version: 3,
+  version: 4,
   projectId: 'project-test-delivery',
   scene: {
     sourceMode: 'multi-view',
@@ -45,8 +46,15 @@ const state: SpatialPrevisState = {
     cameraTrack: {
       id: 'camera-track-1',
       keyframes: [
-        { id: 'camera-start', timeSec: 0, position: { x: 0, y: 2, z: 8 }, target: { x: 0, y: 1, z: 0 }, focalLengthMm: 35, intent: 'static' },
-        { id: 'camera-end', timeSec: 20, position: { x: 20, y: 2, z: 8 }, target: { x: 20, y: 1, z: 0 }, focalLengthMm: 55, intent: 'follow' },
+        { id: 'camera-start', timeSec: 0, position: { x: 0, y: 2, z: 8 }, target: { x: 0, y: 1, z: 0 }, rotation: rotationFromTarget({ x: 0, y: 2, z: 8 }, { x: 0, y: 1, z: 0 }), focalLengthMm: 35, shotScale: 'medium', motionBaseline: 'static', intent: 'static' },
+        { id: 'camera-end', timeSec: 20, position: { x: 20, y: 2, z: 8 }, target: { x: 20, y: 1, z: 0 }, rotation: rotationFromTarget({ x: 20, y: 2, z: 8 }, { x: 20, y: 1, z: 0 }), focalLengthMm: 55, shotScale: 'wide', motionBaseline: 'follow', intent: 'follow' },
+      ],
+    },
+    aerialCameraTrack: {
+      id: 'aerial-camera-track-1',
+      keyframes: [
+        { id: 'aerial-start', timeSec: 0, position: { x: 0, y: 9, z: 8 }, target: { x: 0, y: 1, z: 0 }, rotation: rotationFromTarget({ x: 0, y: 9, z: 8 }, { x: 0, y: 1, z: 0 }), focalLengthMm: 24, shotScale: 'wide', motionBaseline: 'static', intent: 'static' },
+        { id: 'aerial-end', timeSec: 20, position: { x: 20, y: 10, z: 8 }, target: { x: 20, y: 1, z: 0 }, rotation: rotationFromTarget({ x: 20, y: 10, z: 8 }, { x: 20, y: 1, z: 0 }), focalLengthMm: 24, shotScale: 'wide', motionBaseline: 'rise', intent: 'crane' },
       ],
     },
     beats: [{ id: 'master-beat', label: 'Master beat', startSec: 0, endSec: 20 }],
@@ -62,6 +70,7 @@ test('builds a sampled 10 second internal test and derives its asset references'
   assert.equal(testTake.masterTake.durationSec, 10)
   assert.equal(testTake.masterTake.id, 'master-take-1@test-10')
   assert.deepEqual(testTake.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 5, 10])
+  assert.deepEqual(testTake.masterTake.aerialCameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 5, 10])
   assert.deepEqual(testTake.masterTake.actorTracks[0]?.keyframes.map((keyframe) => keyframe.timeSec), [0, 5, 10])
   assert.deepEqual(testTake.masterTake.actorTracks[0]?.keyframes[2]?.position, { x: 10, y: 0, z: 0 })
   assert.equal(request.nodeId, 'canvas-test-1')

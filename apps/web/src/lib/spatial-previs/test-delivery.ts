@@ -53,6 +53,7 @@ export function createSpatialPrevisTestTake(
       id: `${state.masterTake.id}@test-${durationSec}`,
       durationSec,
       cameraTrack: sampledCameraTrack(state.masterTake.cameraTrack, durationSec),
+      aerialCameraTrack: sampledCameraTrack(state.masterTake.aerialCameraTrack, durationSec),
       actorTracks: state.masterTake.actorTracks.map((track) => sampledActorTrack(track, durationSec)),
       beats: [{ id: 'test-take', label: '预演测试', startSec: 0, endSec: durationSec }],
     },

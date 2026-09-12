@@ -44,12 +44,37 @@ export type CameraFreedom = 'corridor-only' | 'full' | 'disabled'
 
 export type CameraIntent = 'push' | 'pull' | 'pan-tilt' | 'dolly' | 'follow' | 'crane' | 'static'
 
+export type SpatialPrevisCameraMode = 'director' | 'aerial'
+
+export type CameraRotation = {
+  pitch: number
+  yaw: number
+  roll: number
+}
+
+export type ShotScale =
+  | 'extreme-close-up'
+  | 'close-up'
+  | 'near'
+  | 'medium-close'
+  | 'medium'
+  | 'medium-wide'
+  | 'wide'
+  | 'long'
+  | 'extreme-long'
+  | 'establishing'
+
+export type CameraMotionBaseline = 'push' | 'pull' | 'pan' | 'move' | 'follow' | 'rise' | 'fall' | 'static'
+
 export type CameraKeyframe = {
   id: string
   timeSec: number
   position: Vec3
   target: Vec3
+  rotation: CameraRotation
   focalLengthMm: number
+  shotScale: ShotScale
+  motionBaseline: CameraMotionBaseline
   intent: CameraIntent
 }
 
@@ -84,6 +109,7 @@ export type MasterTake = {
   aspectRatio: AspectRatio
   actorTracks: ActorTrack[]
   cameraTrack: CameraTrack
+  aerialCameraTrack: CameraTrack
   beats: SpatialPrevisBeat[]
 }
 
@@ -106,7 +132,7 @@ export type SpatialCoverage =
   | { mode: 'unavailable'; cameraFreedom: 'disabled' }
 
 export type SpatialPrevisState = {
-  version: 3
+  version: 4
   projectId: string
   scene: SpatialPrevisScene
   masterTake: MasterTake

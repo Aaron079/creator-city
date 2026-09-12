@@ -1,8 +1,10 @@
 'use client'
 
 import * as React from 'react'
+import { cameraTrackForMode, rotationFromTarget } from '@/lib/spatial-previs/camera'
+import { ensureCameraKeyframeAt, isValidCameraOperationTime } from '@/lib/spatial-previs/direct-manipulation'
 import { sampleActor } from '@/lib/spatial-previs/sampler'
-import type { CameraKeyframe, SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
+import type { CameraKeyframe, CameraMotionBaseline, SpatialPrevisCameraMode, SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
 
 const KEYFRAME_EPSILON = 1e-6
 const POSITION_DELTA = 0.35
@@ -12,13 +14,19 @@ export const SPATIAL_CAMERA_ACTIONS = ['推', '拉', '摇', '移', '跟', '升',
 
 export type SpatialCameraAction = typeof SPATIAL_CAMERA_ACTIONS[number]
 
+function isSpatialPrevisCameraMode(mode: unknown): mode is SpatialPrevisCameraMode {
+  return mode === 'director' || mode === 'aerial'
+}
+
 type SpatialCameraControlStripProps = {
   state: SpatialPrevisState
   currentTimeSec: number
   actorTrackId?: string
+  mode?: SpatialPrevisCameraMode
   disabled?: boolean
   disabledReason?: string
   onChange: (next: SpatialPrevisState) => void
+  onActionSelected?: () => void
 }
 
 function exactCameraKeyframe(keyframes: CameraKeyframe[], timeSec: number) {
@@ -27,9 +35,8 @@ function exactCameraKeyframe(keyframes: CameraKeyframe[], timeSec: number) {
 }
 
 function actorPosition(state: SpatialPrevisState, timeSec: number, actorTrackId?: string) {
-  const track = actorTrackId
-    ? state.masterTake.actorTracks.find((item) => item.id === actorTrackId)
-    : state.masterTake.actorTracks[0]
+  if (!actorTrackId) return null
+  const track = state.masterTake.actorTracks.find((item) => item.id === actorTrackId)
   return track?.keyframes.length ? sampleActor(track, timeSec).position : null
 }
 
@@ -63,65 +70,69 @@ function cameraPatch(
   keyframe: CameraKeyframe,
   action: SpatialCameraAction,
   actorPosition: Vec3 | null,
-): Pick<CameraKeyframe, 'position' | 'target' | 'focalLengthMm' | 'intent'> {
+): Pick<CameraKeyframe, 'position' | 'target' | 'rotation' | 'focalLengthMm' | 'motionBaseline' | 'intent'> {
   const forward = direction(keyframe.position, keyframe.target)
   const right = lateralDirection(forward)
 
+  const withMetadata = (
+    patch: Pick<CameraKeyframe, 'position' | 'target' | 'focalLengthMm' | 'intent'>,
+    motionBaseline: CameraMotionBaseline,
+  ) => ({ ...patch, rotation: { ...rotationFromTarget(patch.position, patch.target), roll: keyframe.rotation.roll }, motionBaseline })
+
   switch (action) {
     case '推':
-      return {
+      return withMetadata({
         position: addVector(keyframe.position, scaleVector(forward, POSITION_DELTA)),
         target: { ...keyframe.target },
         focalLengthMm: keyframe.focalLengthMm,
         intent: 'push',
-      }
+      }, 'push')
     case '拉':
-      return {
+      return withMetadata({
         position: addVector(keyframe.position, scaleVector(forward, -POSITION_DELTA)),
         target: { ...keyframe.target },
         focalLengthMm: keyframe.focalLengthMm,
         intent: 'pull',
-      }
+      }, 'pull')
     case '摇':
-      return {
+      return withMetadata({
         position: { ...keyframe.position },
         target: addVector(addVector(keyframe.target, scaleVector(right, TARGET_DELTA)), { x: 0, y: 0.12, z: 0 }),
         focalLengthMm: keyframe.focalLengthMm,
         intent: 'pan-tilt',
-      }
+      }, 'pan')
     case '移':
-      return {
+      return withMetadata({
         position: addVector(keyframe.position, scaleVector(right, POSITION_DELTA)),
         target: addVector(keyframe.target, scaleVector(right, POSITION_DELTA)),
         focalLengthMm: keyframe.focalLengthMm,
         intent: 'dolly',
-      }
+      }, 'move')
     case '跟': {
-      const focus = actorPosition ? { ...actorPosition, y: actorPosition.y + 1 } : addVector(keyframe.target, scaleVector(forward, POSITION_DELTA))
-      const rigDestination = actorPosition
-        ? addVector(actorPosition, { x: -forward.x * 3, y: 1.6, z: -forward.z * 3 })
-        : addVector(keyframe.position, scaleVector(forward, POSITION_DELTA))
-      return {
+      if (!actorPosition) throw new Error('Follow action requires an actor')
+      const focus = { ...actorPosition, y: actorPosition.y + 1 }
+      const rigDestination = addVector(actorPosition, { x: -forward.x * 3, y: 1.6, z: -forward.z * 3 })
+      return withMetadata({
         position: stepToward(keyframe.position, rigDestination, POSITION_DELTA),
         target: stepToward(keyframe.target, focus, POSITION_DELTA),
         focalLengthMm: keyframe.focalLengthMm,
         intent: 'follow',
-      }
+      }, 'follow')
     }
     case '升':
-      return {
+      return withMetadata({
         position: addVector(keyframe.position, { x: 0, y: POSITION_DELTA, z: 0 }),
         target: addVector(keyframe.target, { x: 0, y: POSITION_DELTA, z: 0 }),
         focalLengthMm: keyframe.focalLengthMm,
         intent: 'crane',
-      }
+      }, 'rise')
     case '降':
-      return {
+      return withMetadata({
         position: addVector(keyframe.position, { x: 0, y: -POSITION_DELTA, z: 0 }),
         target: addVector(keyframe.target, { x: 0, y: -POSITION_DELTA, z: 0 }),
         focalLengthMm: keyframe.focalLengthMm,
         intent: 'crane',
-      }
+      }, 'fall')
   }
 }
 
@@ -130,19 +141,24 @@ export function applySpatialCameraAction(
   currentTimeSec: number,
   action: SpatialCameraAction,
   actorTrackId?: string,
+  mode: SpatialPrevisCameraMode = 'director',
 ): SpatialPrevisState {
-  const keyframe = exactCameraKeyframe(state.masterTake.cameraTrack.keyframes, currentTimeSec)
-  if (!keyframe) return state
+  if (!SPATIAL_CAMERA_ACTIONS.includes(action) || !isSpatialPrevisCameraMode(mode)) return state
+  if (!isValidCameraOperationTime(state, currentTimeSec)) return state
+  const actor = actorPosition(state, currentTimeSec, actorTrackId)
+  if (action === '跟' && !actor) return state
 
-  const patch = cameraPatch(keyframe, action, actorPosition(state, currentTimeSec, actorTrackId))
+  const ensured = ensureCameraKeyframeAt(state, mode, currentTimeSec)
+  if (!ensured) return state
+  const track = cameraTrackForMode(ensured.state.masterTake, mode)
+  const patch = cameraPatch(ensured.keyframe, action, actor)
   return {
-    ...state,
+    ...ensured.state,
     masterTake: {
-      ...state.masterTake,
-      cameraTrack: {
-        ...state.masterTake.cameraTrack,
-        keyframes: state.masterTake.cameraTrack.keyframes.map((item) => item === keyframe ? { ...item, ...patch } : item),
-      },
+      ...ensured.state.masterTake,
+      ...(mode === 'aerial'
+        ? { aerialCameraTrack: { ...track, keyframes: track.keyframes.map((item) => item === ensured.keyframe ? { ...item, ...patch } : item) } }
+        : { cameraTrack: { ...track, keyframes: track.keyframes.map((item) => item === ensured.keyframe ? { ...item, ...patch } : item) } }),
     },
   }
 }
@@ -152,15 +168,17 @@ export function dispatchSpatialCameraAction({
   currentTimeSec,
   action,
   actorTrackId,
+  mode = 'director',
   onChange,
 }: {
   state: SpatialPrevisState
   currentTimeSec: number
   action: SpatialCameraAction
   actorTrackId?: string
+  mode?: SpatialPrevisCameraMode
   onChange: (next: SpatialPrevisState) => void
 }) {
-  const next = applySpatialCameraAction(state, currentTimeSec, action, actorTrackId)
+  const next = applySpatialCameraAction(state, currentTimeSec, action, actorTrackId, mode)
   if (next !== state) onChange(next)
 }
 
@@ -168,13 +186,16 @@ export function SpatialCameraControlStrip({
   state,
   currentTimeSec,
   actorTrackId,
+  mode = 'director',
   disabled = false,
   disabledReason,
   onChange,
+  onActionSelected,
 }: SpatialCameraControlStripProps) {
-  const hasExactKeyframe = Boolean(exactCameraKeyframe(state.masterTake.cameraTrack.keyframes, currentTimeSec))
-  const isDisabled = disabled || !hasExactKeyframe
-  const status = disabledReason ?? (hasExactKeyframe ? '当前相机关键帧可编辑' : '当前时间没有可编辑的相机关键帧')
+  const hasValidMode = isSpatialPrevisCameraMode(mode)
+  const hasExactKeyframe = hasValidMode && Boolean(exactCameraKeyframe(cameraTrackForMode(state.masterTake, mode).keyframes, currentTimeSec))
+  const isDisabled = disabled || !hasValidMode
+  const status = disabledReason ?? (!hasValidMode ? '当前相机模式无效' : hasExactKeyframe ? '当前相机关键帧可编辑' : '当前时间将创建相机关键帧')
 
   return (
     <section className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-[#0b1014] px-3 py-2" aria-label="局部相机控制">
@@ -187,7 +208,8 @@ export function SpatialCameraControlStrip({
             aria-label={action}
             disabled={isDisabled}
             onClick={() => {
-              dispatchSpatialCameraAction({ state, currentTimeSec, action, actorTrackId, onChange })
+              onActionSelected?.()
+              dispatchSpatialCameraAction({ state, currentTimeSec, action, actorTrackId, mode, onChange })
             }}
             className="h-7 min-w-8 rounded-md border border-white/12 bg-white/[0.045] px-2 text-xs font-medium text-white/72 transition hover:border-cyan-200/35 hover:bg-cyan-200/[0.09] hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-35"
           >

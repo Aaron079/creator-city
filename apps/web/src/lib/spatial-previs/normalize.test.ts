@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { addDefaultActorTrack, applyBeatPatch, normalizeSpatialPrevis } from './normalize'
+import { addDefaultActorTrack, applyBeatPatch, normalizeSpatialPrevis, setMasterTakeDuration } from './normalize'
+import { rotationFromTarget } from './camera'
 import type { AspectRatio, SpatialPrevisScene } from './types'
 
 // @ts-expect-error verified coverage only permits full camera freedom
@@ -17,13 +18,25 @@ const unsupportedAspectRatio: AspectRatio = '4:3'
 void unsupportedAspectRatio
 
 describe('spatial previs normalization', () => {
-  test('initializes version-3 asset and whitebox scene state', () => {
+  test('initializes version-4 asset, whitebox, and isolated camera state', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
 
-    assert.equal(state.version, 3)
+    assert.equal(state.version, 4)
     assert.deepEqual(state.scene.references, [])
     assert.deepEqual(state.scene.assetSets, [])
     assert.deepEqual(state.scene.whitebox.entities, [])
+    assert.equal(state.masterTake.cameraTrack.id, 'camera-track')
+    assert.equal(state.masterTake.aerialCameraTrack.id, 'aerial-camera-track')
+    assert.ok(state.masterTake.cameraTrack.keyframes.every((keyframe) => (
+      keyframe.position.y === 1.6
+      && keyframe.rotation.pitch === 0
+      && keyframe.rotation.yaw === 0
+      && keyframe.rotation.roll === 0
+      && keyframe.focalLengthMm === 35
+      && keyframe.shotScale === 'medium'
+      && keyframe.motionBaseline === 'static'
+    )))
+    assert.ok(state.masterTake.aerialCameraTrack.keyframes.every((keyframe) => keyframe.position.y === 9))
   })
 
   test('applies a beat patch to the existing shared camera track', () => {
@@ -48,6 +61,32 @@ describe('spatial previs normalization', () => {
     assert.deepEqual(keyframe?.position, position)
     assert.deepEqual(keyframe?.target, target)
     assert.deepEqual(state.masterTake.cameraTrack.keyframes.find((item) => item.timeSec === midpoint)?.position, { x: 0, y: 1.6, z: 8 })
+  })
+
+  test('preserves a beat keyframe roll when recalculating pitch and yaw', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1', durationSec: 30 })
+    const beat = state.masterTake.beats[0]
+    assert.ok(beat)
+    const midpoint = (beat.startSec + beat.endSec) / 2
+    const rolledState: typeof state = {
+      ...state,
+      masterTake: {
+        ...state.masterTake,
+        cameraTrack: {
+          ...state.masterTake.cameraTrack,
+          keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.timeSec === midpoint
+            ? { ...keyframe, rotation: { ...keyframe.rotation, roll: 0.4 } }
+            : keyframe),
+        },
+      },
+    }
+
+    const patched = applyBeatPatch(rolledState, beat.id, {
+      position: { x: 4, y: 2, z: 8 },
+      target: { x: 1, y: 1, z: 0 },
+    })
+
+    assert.equal(patched.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === midpoint)?.rotation.roll, 0.4)
   })
 
   test('maps scene source coverage to its supported camera freedom', () => {
@@ -172,7 +211,7 @@ describe('spatial previs normalization', () => {
     )
   })
 
-  test('rejects a beat patch when no camera keyframe matches its midpoint', () => {
+  test('upserts an immutable director midpoint keyframe when a beat patch has no camera keyframe', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
     const beat = state.masterTake.beats[0]
     assert.ok(beat)
@@ -190,13 +229,20 @@ describe('spatial previs normalization', () => {
       },
     }
 
-    assert.throws(
-      () => applyBeatPatch(missingMidpointState, beat.id, {
-        position: { x: 2, y: 3, z: 4 },
-        target: { x: 0, y: 1, z: 0 },
-      }),
-      /No camera keyframe at midpoint for beat: beat-entry/,
-    )
+    const patch = { position: { x: 2, y: 3, z: 4 }, target: { x: 0, y: 1, z: 0 } }
+    const patched = applyBeatPatch(missingMidpointState, beat.id, patch)
+
+    assert.equal(patched.masterTake.cameraTrack.keyframes.length, missingMidpointState.masterTake.cameraTrack.keyframes.length + 1)
+    assert.deepEqual(patched.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 15), {
+      ...state.masterTake.cameraTrack.keyframes[1],
+      id: 'camera-track@15',
+      timeSec: 15,
+      ...patch,
+      rotation: rotationFromTarget(patch.position, patch.target),
+    })
+    assert.deepEqual(missingMidpointState.masterTake.cameraTrack.keyframes, [
+      ...state.masterTake.cameraTrack.keyframes.map((keyframe, index) => ({ ...keyframe, timeSec: (index + 1) * 10 })),
+    ])
   })
 
   test('defaults and clamps duration without mutating the source input', () => {
@@ -211,5 +257,48 @@ describe('spatial previs normalization', () => {
     assert.equal(normalizeSpatialPrevis({ ...input, durationSec: -1 }).masterTake.durationSec, 5)
     assert.equal(normalizeSpatialPrevis(input).masterTake.durationSec, 180)
     assert.deepEqual(input, source)
+  })
+
+  test('clamps and remaps actor, director, aerial, and beat times when changing duration without mutation', () => {
+    const state = addDefaultActorTrack(normalizeSpatialPrevis({ projectId: 'project-1', durationSec: 30 }))
+    const source = structuredClone(state)
+
+    const resized = setMasterTakeDuration(state, 60)
+
+    assert.equal(resized.masterTake.durationSec, 60)
+    assert.deepEqual(resized.masterTake.actorTracks[0]?.keyframes.map((keyframe) => keyframe.timeSec), [0, 30, 60])
+    assert.deepEqual(resized.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 30, 60])
+    assert.deepEqual(resized.masterTake.aerialCameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 30, 60])
+    assert.deepEqual(resized.masterTake.beats.map((beat) => [beat.startSec, beat.endSec]), [[0, 60]])
+    const clampedLow = setMasterTakeDuration(state, -1)
+    const clampedHigh = setMasterTakeDuration(state, 999)
+
+    assert.equal(clampedLow.masterTake.durationSec, 5)
+    assert.deepEqual(clampedLow.masterTake.actorTracks[0]?.keyframes.map((keyframe) => keyframe.timeSec), [0, 2.5, 5])
+    assert.deepEqual(clampedLow.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 2.5, 5])
+    assert.deepEqual(clampedLow.masterTake.aerialCameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 2.5, 5])
+    assert.deepEqual(clampedLow.masterTake.beats.map((beat) => [beat.startSec, beat.endSec]), [[0, 5]])
+    assert.equal(clampedHigh.masterTake.durationSec, 180)
+    assert.deepEqual(clampedHigh.masterTake.actorTracks[0]?.keyframes.map((keyframe) => keyframe.timeSec), [0, 90, 180])
+    assert.deepEqual(clampedHigh.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 90, 180])
+    assert.deepEqual(clampedHigh.masterTake.aerialCameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 90, 180])
+    assert.deepEqual(clampedHigh.masterTake.beats.map((beat) => [beat.startSec, beat.endSec]), [[0, 180]])
+    assert.deepEqual(state, source)
+
+    const actorKeyframe = resized.masterTake.actorTracks[0]?.keyframes[0]
+    const directorKeyframe = resized.masterTake.cameraTrack.keyframes[0]
+    const aerialKeyframe = resized.masterTake.aerialCameraTrack.keyframes[0]
+    assert.ok(actorKeyframe)
+    assert.ok(directorKeyframe)
+    assert.ok(aerialKeyframe)
+    actorKeyframe.position.x = 999
+    directorKeyframe.position.x = 999
+    directorKeyframe.target.y = 999
+    directorKeyframe.rotation.roll = 999
+    aerialKeyframe.position.x = 999
+    aerialKeyframe.target.y = 999
+    aerialKeyframe.rotation.roll = 999
+
+    assert.deepEqual(state, source)
   })
 })

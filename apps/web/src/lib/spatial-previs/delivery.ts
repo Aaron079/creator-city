@@ -1,4 +1,5 @@
 import type {
+  CameraTrack,
   MasterTake,
   SpatialPrevisScene,
   SpatialPrevisState,
@@ -15,6 +16,18 @@ export type PrevisDeliveryPackage = Readonly<{
 
 function cloneVec3(value: Vec3): Vec3 {
   return { ...value }
+}
+
+function cloneCameraTrack(track: CameraTrack): CameraTrack {
+  return {
+    ...track,
+    keyframes: track.keyframes.map((keyframe) => ({
+      ...keyframe,
+      position: cloneVec3(keyframe.position),
+      target: cloneVec3(keyframe.target),
+      rotation: { ...keyframe.rotation },
+    })),
+  }
 }
 
 function cloneScene(scene: SpatialPrevisScene): SpatialPrevisScene {
@@ -46,14 +59,8 @@ function cloneMasterTake(masterTake: MasterTake): MasterTake {
         position: cloneVec3(keyframe.position),
       })),
     })),
-    cameraTrack: {
-      ...masterTake.cameraTrack,
-      keyframes: masterTake.cameraTrack.keyframes.map((keyframe) => ({
-        ...keyframe,
-        position: cloneVec3(keyframe.position),
-        target: cloneVec3(keyframe.target),
-      })),
-    },
+    cameraTrack: cloneCameraTrack(masterTake.cameraTrack),
+    aerialCameraTrack: cloneCameraTrack(masterTake.aerialCameraTrack),
     beats: masterTake.beats.map((beat) => ({ ...beat })),
   }
 }

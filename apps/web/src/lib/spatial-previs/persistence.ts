@@ -1,4 +1,5 @@
 import { normalizeSpatialPrevis } from './normalize'
+import { clampFocalLength, isValidFocalLength, rotationFromTarget } from './camera'
 import { isRenderableMediaUrl } from '../media/renderable-url'
 import type {
   ActorKeyframe,
@@ -20,11 +21,12 @@ const SOURCE_MODES = new Set(['single-image-exterior', 'multi-view', 'video-scan
 const ASPECT_RATIOS = new Set(['16:9', '9:16', '1:1'])
 const EDITOR_MODES = new Set(['continuous', 'beats'])
 const CAMERA_INTENTS = new Set(['push', 'pull', 'pan-tilt', 'dolly', 'follow', 'crane', 'static'])
+const SHOT_SCALES = new Set(['extreme-close-up', 'close-up', 'near', 'medium-close', 'medium', 'medium-wide', 'wide', 'long', 'extreme-long', 'establishing'])
+const CAMERA_MOTION_BASELINES = new Set(['push', 'pull', 'pan', 'move', 'follow', 'rise', 'fall', 'static'])
 const REFERENCE_MEDIA_TYPES = new Set(['image', 'video'])
 const REFERENCE_SOURCES = new Set(['project', 'library', 'upload'])
 const ASSET_ROLES = new Set(['scene', 'character', 'prop', 'reference'])
 const WHITEBOX_ENTITY_KINDS = new Set(['floor', 'wall', 'opening', 'volume', 'furniture', 'referencePlane', 'prop'])
-const MIDPOINT_EPSILON = 1e-6
 const MIN_DURATION_SEC = 5
 const MAX_DURATION_SEC = 180
 
@@ -194,9 +196,18 @@ function coverageMatches(value: unknown, expected: SpatialPrevisState['scene']['
     && max.z === expected.corridor.max.z
 }
 
-function cameraTrack(value: unknown): CameraTrack | null {
+function motionBaselineForIntent(intent: CameraKeyframe['intent']): CameraKeyframe['motionBaseline'] {
+  switch (intent) {
+    case 'pan-tilt': return 'pan'
+    case 'dolly': return 'move'
+    case 'crane': return 'rise'
+    default: return intent
+  }
+}
+
+function cameraTrack(value: unknown, legacy: boolean): CameraTrack | null {
   const item = record(value)
-  if (!item || !Array.isArray(item.keyframes)) return null
+  if (!item || !Array.isArray(item.keyframes) || item.keyframes.length === 0) return null
   const id = string(item.id)
   if (!id) return null
   const keyframes: CameraKeyframe[] = []
@@ -211,13 +222,46 @@ function cameraTrack(value: unknown): CameraTrack | null {
     if (!keyframeId || timeSec === null || !position || !target || focalLengthMm === null || !CAMERA_INTENTS.has(keyframe.intent as string)) {
       return null
     }
+    const intent = keyframe.intent as CameraKeyframe['intent']
+    if (legacy) {
+      keyframes.push({
+        id: keyframeId,
+        timeSec,
+        position,
+        target,
+        rotation: rotationFromTarget(position, target),
+        focalLengthMm: clampFocalLength(focalLengthMm),
+        shotScale: 'medium',
+        motionBaseline: motionBaselineForIntent(intent),
+        intent,
+      })
+      continue
+    }
+
+    const rotation = record(keyframe.rotation)
+    const pitch = rotation && number(rotation.pitch)
+    const yaw = rotation && number(rotation.yaw)
+    const roll = rotation && number(rotation.roll)
+    if (
+      pitch === null
+      || yaw === null
+      || roll === null
+      || !isValidFocalLength(focalLengthMm)
+      || !SHOT_SCALES.has(keyframe.shotScale as string)
+      || !CAMERA_MOTION_BASELINES.has(keyframe.motionBaseline as string)
+    ) {
+      return null
+    }
     keyframes.push({
       id: keyframeId,
       timeSec,
       position,
       target,
+      rotation: { pitch, yaw, roll },
       focalLengthMm,
-      intent: keyframe.intent as CameraKeyframe['intent'],
+      shotScale: keyframe.shotScale as CameraKeyframe['shotScale'],
+      motionBaseline: keyframe.motionBaseline as CameraKeyframe['motionBaseline'],
+      intent,
     })
   }
   return { id, keyframes }
@@ -266,6 +310,7 @@ function beats(value: unknown): SpatialPrevisBeat[] | null {
 
 function timelineIsExecutable(
   cameraTrack: CameraTrack,
+  aerialCameraTrack: CameraTrack,
   actorTracks: ActorTrack[],
   beats: SpatialPrevisBeat[],
   durationSec: number,
@@ -273,8 +318,8 @@ function timelineIsExecutable(
   if (
     durationSec < MIN_DURATION_SEC
     || durationSec > MAX_DURATION_SEC
-    || cameraTrack.keyframes.length === 0
     || cameraTrack.keyframes.some((keyframe) => keyframe.timeSec < 0 || keyframe.timeSec > durationSec)
+    || aerialCameraTrack.keyframes.some((keyframe) => keyframe.timeSec < 0 || keyframe.timeSec > durationSec)
     || actorTracks.some((track) => track.keyframes.some(
       (keyframe) => keyframe.timeSec < 0 || keyframe.timeSec > durationSec,
     ))
@@ -282,24 +327,16 @@ function timelineIsExecutable(
     return false
   }
 
-  return beats.every((beat) => {
-    if (
-      beat.startSec < 0
-      || beat.startSec > beat.endSec
-      || beat.endSec > durationSec
-    ) {
-      return false
-    }
-    const midpoint = (beat.startSec + beat.endSec) / 2
-    return cameraTrack.keyframes.filter(
-      (keyframe) => Math.abs(keyframe.timeSec - midpoint) <= MIDPOINT_EPSILON,
-    ).length === 1
-  })
+  return beats.every((beat) => (
+    beat.startSec >= 0
+    && beat.startSec <= beat.endSec
+    && beat.endSec <= durationSec
+  ))
 }
 
 function state(value: unknown): SpatialPrevisState | null {
   const candidate = record(value)
-  if (!candidate || (candidate.version !== 1 && candidate.version !== 2 && candidate.version !== 3)) return null
+  if (!candidate || (candidate.version !== 1 && candidate.version !== 2 && candidate.version !== 3 && candidate.version !== 4)) return null
   const projectId = string(candidate.projectId)
   const scene = record(candidate.scene)
   const masterTake = record(candidate.masterTake)
@@ -330,10 +367,14 @@ function state(value: unknown): SpatialPrevisState | null {
   })
 
   const parsedActorTracks = actorTracks(masterTake.actorTracks)
-  const parsedCameraTrack = cameraTrack(masterTake.cameraTrack)
+  const legacy = candidate.version !== 4
+  const parsedCameraTrack = cameraTrack(masterTake.cameraTrack, legacy)
+  const parsedAerialCameraTrack = legacy
+    ? normalized.masterTake.aerialCameraTrack
+    : cameraTrack(masterTake.aerialCameraTrack, false)
   const parsedBeats = beats(masterTake.beats)
   const parsedReferences = candidate.version === 1 ? [] : references(scene.references)
-  const parsedAssetSets = candidate.version === 3
+  const parsedAssetSets = candidate.version === 3 || candidate.version === 4
     ? parsedReferences && assetSets(scene.assetSets, parsedReferences)
     : parsedReferences?.map((reference, index) => ({
       id: `asset-set-legacy-${index + 1}`,
@@ -347,11 +388,12 @@ function state(value: unknown): SpatialPrevisState | null {
     !coverageMatches(scene.coverage, normalized.scene.coverage)
     || !parsedActorTracks
     || !parsedCameraTrack
+    || !parsedAerialCameraTrack
     || !parsedBeats
     || !parsedReferences
     || !parsedAssetSets
     || !parsedWhitebox
-    || !timelineIsExecutable(parsedCameraTrack, parsedActorTracks, parsedBeats, durationSec)
+    || !timelineIsExecutable(parsedCameraTrack, parsedAerialCameraTrack, parsedActorTracks, parsedBeats, durationSec)
   ) {
     return null
   }
@@ -369,6 +411,7 @@ function state(value: unknown): SpatialPrevisState | null {
       id: masterTakeId,
       actorTracks: parsedActorTracks,
       cameraTrack: parsedCameraTrack,
+      aerialCameraTrack: parsedAerialCameraTrack,
       beats: parsedBeats,
     },
   }

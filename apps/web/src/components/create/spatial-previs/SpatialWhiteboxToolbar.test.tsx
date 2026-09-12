@@ -12,7 +12,7 @@ import {
 } from './SpatialWhiteboxToolbar'
 
 const state: SpatialPrevisState = {
-  version: 3,
+  version: 4,
   projectId: 'project-previs-01',
   scene: {
     sourceMode: 'multi-view',
@@ -38,6 +38,7 @@ const state: SpatialPrevisState = {
     aspectRatio: '16:9',
     actorTracks: [],
     cameraTrack: { id: 'camera-track', keyframes: [] },
+    aerialCameraTrack: { id: 'aerial-camera-track', keyframes: [] },
     beats: [],
   },
   editorMode: 'continuous',

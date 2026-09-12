@@ -1,4 +1,5 @@
 import type { ActorKeyframe, ActorTrack, CameraKeyframe, Vec3 } from './types'
+import { interpolateShortestAngle } from './camera'
 
 function interpolateVec3(start: Vec3, end: Vec3, progress: number): Vec3 {
   return {
@@ -13,6 +14,7 @@ function cloneKeyframe(keyframe: CameraKeyframe): CameraKeyframe {
     ...keyframe,
     position: { ...keyframe.position },
     target: { ...keyframe.target },
+    rotation: { ...keyframe.rotation },
   }
 }
 
@@ -73,10 +75,15 @@ export function sampleCamera(keyframes: CameraKeyframe[], timeSec: number): Came
 
   const progress = (timeSec - start.timeSec) / (end.timeSec - start.timeSec)
   return {
-    ...cloneKeyframe(end),
+    ...cloneKeyframe(start),
     timeSec,
     position: interpolateVec3(start.position, end.position, progress),
     target: interpolateVec3(start.target, end.target, progress),
+    rotation: {
+      pitch: interpolateShortestAngle(start.rotation.pitch, end.rotation.pitch, progress),
+      yaw: interpolateShortestAngle(start.rotation.yaw, end.rotation.yaw, progress),
+      roll: interpolateShortestAngle(start.rotation.roll, end.rotation.roll, progress),
+    },
     focalLengthMm: start.focalLengthMm + (end.focalLengthMm - start.focalLengthMm) * progress,
   }
 }

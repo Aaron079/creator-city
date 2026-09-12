@@ -2,13 +2,18 @@
 
 import * as React from 'react'
 import { sampleCamera } from '@/lib/spatial-previs/sampler'
-import type { CameraKeyframe, SpatialPrevisBeat, SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
+import type { CameraKeyframe, SpatialPrevisBeat, SpatialPrevisCameraMode, SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
+
+const CURVE_VIEWBOX_HEIGHT = 28
 
 type SpatialPrevisTimelineProps = {
   state: SpatialPrevisState
   currentTimeSec: number
   disabled?: boolean
+  cameraMode?: SpatialPrevisCameraMode
   onCurrentTimeChange: (timeSec: number) => void
+  onCameraKeyframeRetime?: (keyframeId: string, timeSec: number) => void
+  onActorKeyframeRetime?: (actorTrackId: string, keyframeId: string, timeSec: number) => void
   onBeatPatch: (beatId: string, patch: { position: Vec3; target: Vec3 }) => void
 }
 
@@ -41,32 +46,112 @@ export function commitSpatialNumericDraft(draft: string, previousValue: number) 
   return Number.isFinite(parsed) ? parsed : previousValue
 }
 
-function TimelineTrack({
+function curveCoordinates(keyframes: Array<{ timeSec: number; position: Vec3 }>, durationSec: number) {
+  const zValues = keyframes.map((keyframe) => keyframe.position.z)
+  const minZ = Math.min(...zValues)
+  const maxZ = Math.max(...zValues)
+  const span = maxZ - minZ
+  return keyframes.map((keyframe) => {
+    const x = timelinePosition(keyframe.timeSec, durationSec)
+    const y = span < 1e-6 ? 14 : 23 - ((keyframe.position.z - minZ) / span) * 18
+    return { x, y }
+  })
+}
+
+function CurveTrack({
   label,
+  kind,
   keyframes,
   durationSec,
   disabled = false,
   onSelectTime,
+  onRetime,
 }: {
   label: string
-  keyframes: Array<{ id: string; timeSec: number }>
+  kind: 'actor' | 'camera'
+  keyframes: Array<{ id: string; timeSec: number; position: Vec3 }>
   durationSec: number
   disabled?: boolean
   onSelectTime: (timeSec: number) => void
+  onRetime?: (keyframeId: string, timeSec: number) => void
 }) {
+  const dragRef = React.useRef<{ id: string; pointerId: number; moved: boolean } | null>(null)
+  const suppressClickRef = React.useRef<string | null>(null)
+  const stroke = kind === 'camera' ? '#fbbf24' : '#22d3ee'
+  const coordinates = curveCoordinates(keyframes, durationSec)
+  const resolveTime = (clientX: number, element: HTMLButtonElement) => {
+    const rect = element.parentElement?.getBoundingClientRect()
+    if (!rect || rect.width <= 0) return 0
+    return clampSpatialPrevisTime(((clientX - rect.left) / rect.width) * durationSec, durationSec)
+  }
+
   return (
-    <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2" data-timeline-row={label}>
+    <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2" data-spatial-curve={kind}>
       <span className="truncate text-[11px] font-medium text-white/52">{label}</span>
-      <div className="relative h-7 border-y border-white/[0.06] bg-white/[0.02]">
-        {keyframes.map((keyframe) => (
+      <div className="relative h-9 border-y border-white/[0.06] bg-white/[0.02]">
+        <svg viewBox={`0 0 100 ${CURVE_VIEWBOX_HEIGHT}`} preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
+          <polyline points={coordinates.map(({ x, y }) => `${x},${y}`).join(' ')} fill="none" stroke={stroke} strokeWidth="1.2" opacity="0.82" vectorEffect="non-scaling-stroke" />
+        </svg>
+        {keyframes.map((keyframe, index) => (
           <button
             key={keyframe.id}
             type="button"
-            aria-label={`${label} ${formatTime(keyframe.timeSec)}`}
+            aria-label={`调整${label}关键帧 ${index + 1}，${formatTime(keyframe.timeSec)}`}
+            aria-keyshortcuts="ArrowLeft ArrowRight Home End"
             disabled={disabled}
-            onClick={() => onSelectTime(keyframe.timeSec)}
-            className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-cyan-100/60 bg-cyan-200/35 transition hover:bg-cyan-100/75 focus:outline-none focus:ring-1 focus:ring-cyan-100"
-            style={{ left: `${timelinePosition(keyframe.timeSec, durationSec)}%` }}
+            onPointerDown={(event) => {
+              if (disabled) return
+              event.currentTarget.setPointerCapture(event.pointerId)
+              dragRef.current = { id: keyframe.id, pointerId: event.pointerId, moved: false }
+            }}
+            onPointerMove={(event) => {
+              const drag = dragRef.current
+              if (!drag || drag.id !== keyframe.id || drag.pointerId !== event.pointerId || !onRetime) return
+              drag.moved = true
+              const timeSec = resolveTime(event.clientX, event.currentTarget)
+              onRetime(keyframe.id, timeSec)
+              onSelectTime(timeSec)
+            }}
+            onPointerUp={(event) => {
+              const drag = dragRef.current
+              if (!drag || drag.id !== keyframe.id || drag.pointerId !== event.pointerId) return
+              event.currentTarget.releasePointerCapture(event.pointerId)
+              dragRef.current = null
+              if (drag.moved) suppressClickRef.current = keyframe.id
+              else onSelectTime(keyframe.timeSec)
+            }}
+            onPointerCancel={() => { dragRef.current = null }}
+            onKeyDown={(event) => {
+              if (disabled || !onRetime) return
+              const step = event.shiftKey ? 1 : 0.5
+              const nextTimeSec = event.key === 'ArrowLeft'
+                ? keyframe.timeSec - step
+                : event.key === 'ArrowRight'
+                  ? keyframe.timeSec + step
+                  : event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? durationSec
+                      : null
+              if (nextTimeSec === null) return
+              event.preventDefault()
+              const timeSec = clampSpatialPrevisTime(nextTimeSec, durationSec)
+              onRetime(keyframe.id, timeSec)
+              onSelectTime(timeSec)
+            }}
+            onClick={() => {
+              if (suppressClickRef.current === keyframe.id) {
+                suppressClickRef.current = null
+                return
+              }
+              onSelectTime(keyframe.timeSec)
+            }}
+            className="absolute h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/75 bg-[#0b1014] shadow-[0_0_0_2px_rgba(8,15,20,0.75)] transition hover:scale-110 focus:outline-none focus:ring-1 focus:ring-white"
+            style={{
+              left: `${timelinePosition(keyframe.timeSec, durationSec)}%`,
+              top: `${((coordinates[index]?.y ?? 14) / CURVE_VIEWBOX_HEIGHT) * 100}%`,
+              borderColor: stroke,
+            }}
           />
         ))}
       </div>
@@ -139,9 +224,13 @@ function ContinuousTimeline({
   currentTimeSec,
   disabled = false,
   onCurrentTimeChange,
+  cameraMode = 'director',
+  onCameraKeyframeRetime,
+  onActorKeyframeRetime,
 }: Omit<SpatialPrevisTimelineProps, 'onBeatPatch'>) {
   const { masterTake } = state
   const durationSec = masterTake.durationSec
+  const activeCameraTrack = cameraMode === 'aerial' ? masterTake.aerialCameraTrack : masterTake.cameraTrack
 
   return (
     <section aria-label="连续走位时间线" className="space-y-3">
@@ -178,22 +267,26 @@ function ContinuousTimeline({
         </div>
       </div>
 
-      <div className="space-y-2" aria-label="演员与相机轨道">
-        <TimelineTrack
+      <div className="space-y-2" aria-label="演员与相机曲线">
+        <CurveTrack
           label="相机"
-          keyframes={masterTake.cameraTrack.keyframes}
+          kind="camera"
+          keyframes={activeCameraTrack.keyframes}
           durationSec={durationSec}
           disabled={disabled}
           onSelectTime={onCurrentTimeChange}
+          onRetime={onCameraKeyframeRetime}
         />
         {masterTake.actorTracks.map((track, index) => (
-          <TimelineTrack
+          <CurveTrack
             key={track.id}
             label={`演员 ${index + 1}`}
+            kind="actor"
             keyframes={track.keyframes}
             durationSec={durationSec}
             disabled={disabled}
             onSelectTime={onCurrentTimeChange}
+            onRetime={(keyframeId, timeSec) => onActorKeyframeRetime?.(track.id, keyframeId, timeSec)}
           />
         ))}
       </div>
@@ -242,7 +335,10 @@ export function SpatialPrevisTimeline({
   state,
   currentTimeSec,
   disabled = false,
+  cameraMode = 'director',
   onCurrentTimeChange,
+  onCameraKeyframeRetime,
+  onActorKeyframeRetime,
   onBeatPatch,
 }: SpatialPrevisTimelineProps) {
   const safeCurrentTimeSec = clampSpatialPrevisTime(currentTimeSec, state.masterTake.durationSec)
@@ -253,7 +349,15 @@ export function SpatialPrevisTimeline({
   return (
     <section data-spatial-previs-timeline="true" data-master-take-id={state.masterTake.id} className="rounded-lg border border-white/12 bg-[#0b1014] p-3 text-white">
       {state.editorMode === 'continuous' ? (
-        <ContinuousTimeline state={state} currentTimeSec={safeCurrentTimeSec} disabled={disabled} onCurrentTimeChange={selectTime} />
+        <ContinuousTimeline
+          state={state}
+          currentTimeSec={safeCurrentTimeSec}
+          disabled={disabled}
+          cameraMode={cameraMode}
+          onCurrentTimeChange={selectTime}
+          onCameraKeyframeRetime={onCameraKeyframeRetime}
+          onActorKeyframeRetime={onActorKeyframeRetime}
+        />
       ) : (
         <BeatTimeline state={state} disabled={disabled} onBeatPatch={onBeatPatch} />
       )}

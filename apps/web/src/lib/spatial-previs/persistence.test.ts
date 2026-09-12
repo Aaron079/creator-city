@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
+import { rotationFromTarget } from './camera'
 import { normalizeSpatialPrevis } from './normalize'
 import {
   parseSpatialPrevisMetadata,
@@ -45,7 +46,7 @@ describe('spatial previs persistence', () => {
     assert.equal(parseSpatialPrevisMetadata(metadata, 'project-2'), null)
   })
 
-  test('migrates a persisted version-1 spatial previs state to version 3', () => {
+  test('migrates a persisted version-1 spatial previs state to version 4', () => {
     const state = normalizeSpatialPrevis({
       projectId: 'project-1',
       sourceMode: 'video-scan',
@@ -65,13 +66,13 @@ describe('spatial previs persistence', () => {
     })
 
     assert.deepEqual(parsed, state)
-    assert.equal(parsed?.version, 3)
+    assert.equal(parsed?.version, 4)
     assert.deepEqual(parsed?.scene.references, [])
     assert.deepEqual(parsed?.scene.assetSets, [])
     assert.deepEqual(parsed?.scene.whitebox.entities, [])
   })
 
-  test('migrates version-2 references and whitebox geometry to version 3', () => {
+  test('migrates version-2 references and whitebox geometry to version 4', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
     const { assetSets, ...legacyScene } = state.scene
 
@@ -112,7 +113,7 @@ describe('spatial previs persistence', () => {
 
     const parsed = parseSpatialPrevisMetadata({ spatialPrevis: persisted })
 
-    assert.equal(parsed?.version, 3)
+    assert.equal(parsed?.version, 4)
     assert.deepEqual(parsed?.scene.references, references)
     assert.deepEqual(parsed?.scene.assetSets, [{
       id: 'asset-set-legacy-1',
@@ -126,8 +127,27 @@ describe('spatial previs persistence', () => {
     assert.deepEqual(parsed?.scene.whitebox.entities, [{ ...entity, label: 'floor-1', confidence: 1 }])
   })
 
-  test('restores a valid version-3 scene with prop whitebox geometry', () => {
+  test('migrates a version-3 director track without losing target data and adds aerial camera defaults', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const legacyMidpoint = {
+      position: { x: 7, y: 2, z: -4 },
+      target: { x: -2, y: 3, z: 1 },
+      focalLengthMm: 85,
+      intent: 'follow' as const,
+    }
+    const legacyCameraTrack = {
+      ...state.masterTake.cameraTrack,
+      keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe, index) => ({
+        id: keyframe.id,
+        timeSec: keyframe.timeSec,
+        position: index === 1 ? legacyMidpoint.position : keyframe.position,
+        target: index === 1 ? legacyMidpoint.target : keyframe.target,
+        focalLengthMm: index === 1 ? legacyMidpoint.focalLengthMm : keyframe.focalLengthMm,
+        intent: index === 1 ? legacyMidpoint.intent : keyframe.intent,
+      })),
+    }
+    const { aerialCameraTrack, ...legacyMasterTake } = state.masterTake
+    void aerialCameraTrack
     const persisted = {
       ...state,
       version: 3 as const,
@@ -159,9 +179,57 @@ describe('spatial previs persistence', () => {
           }],
         },
       },
+      masterTake: { ...legacyMasterTake, cameraTrack: legacyCameraTrack },
     }
+    const source = structuredClone(persisted)
+    const parsed = parseSpatialPrevisMetadata({ spatialPrevis: persisted })
 
-    assert.deepEqual(parseSpatialPrevisMetadata({ spatialPrevis: persisted }), persisted)
+    assert.equal(parsed?.version, 4)
+    assert.deepEqual(parsed?.masterTake.cameraTrack.keyframes[1]?.position, legacyMidpoint.position)
+    assert.deepEqual(parsed?.masterTake.cameraTrack.keyframes[1]?.target, legacyMidpoint.target)
+    assert.equal(parsed?.masterTake.cameraTrack.keyframes[1]?.focalLengthMm, legacyMidpoint.focalLengthMm)
+    assert.equal(parsed?.masterTake.cameraTrack.keyframes[1]?.intent, legacyMidpoint.intent)
+    assert.deepEqual(parsed?.masterTake.cameraTrack.keyframes[1]?.rotation, rotationFromTarget(legacyMidpoint.position, legacyMidpoint.target))
+    assert.equal(parsed?.masterTake.cameraTrack.keyframes[1]?.shotScale, 'medium')
+    assert.equal(parsed?.masterTake.cameraTrack.keyframes[1]?.motionBaseline, 'follow')
+    assert.equal(parsed?.masterTake.aerialCameraTrack.id, 'aerial-camera-track')
+    assert.ok(parsed?.masterTake.aerialCameraTrack.keyframes.every((keyframe) => keyframe.position.y === 9))
+    assert.deepEqual(persisted, source)
+  })
+
+  test('clamps legacy focal lengths into v4 values that save and reparse', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const { aerialCameraTrack, ...legacyMasterTake } = state.masterTake
+    void aerialCameraTrack
+
+    for (const [legacyFocalLengthMm, expectedFocalLengthMm] of [[7, 8], [700, 600]]) {
+      const persisted = {
+        ...state,
+        version: 3 as const,
+        masterTake: {
+          ...legacyMasterTake,
+          cameraTrack: {
+            ...state.masterTake.cameraTrack,
+            keyframes: state.masterTake.cameraTrack.keyframes.map((keyframe) => ({
+              id: keyframe.id,
+              timeSec: keyframe.timeSec,
+              position: keyframe.position,
+              target: keyframe.target,
+              focalLengthMm: legacyFocalLengthMm,
+              intent: keyframe.intent,
+            })),
+          },
+        },
+      }
+
+      const parsed = parseSpatialPrevisMetadata({ spatialPrevis: persisted })
+      const reparsed = parsed && parseSpatialPrevisMetadata(spatialPrevisMetadata({}, parsed))
+
+      assert.ok(parsed)
+      assert.ok(reparsed)
+      assert.equal(parsed.masterTake.cameraTrack.keyframes[0]?.focalLengthMm, expectedFocalLengthMm)
+      assert.equal(reparsed.masterTake.cameraTrack.keyframes[0]?.focalLengthMm, expectedFocalLengthMm)
+    }
   })
 
   test('returns null for duplicate scene reference ids in version 2 and version 3', () => {
@@ -386,17 +454,10 @@ describe('spatial previs persistence', () => {
     }
   })
 
-  test('returns null for restored timelines that cannot be sampled or patched', () => {
+  test('restores in-range timelines without requiring camera keyframes at beat midpoints', () => {
     const state = normalizeSpatialPrevis({ projectId: 'project-1' })
     const midpoint = state.masterTake.durationSec / 2
-    const nonExecutableTimelines = [
-      {
-        ...state,
-        masterTake: {
-          ...state.masterTake,
-          cameraTrack: { ...state.masterTake.cameraTrack, keyframes: [] },
-        },
-      },
+    const timelines = [
       {
         ...state,
         masterTake: {
@@ -421,8 +482,29 @@ describe('spatial previs persistence', () => {
       },
     ]
 
-    for (const spatialPrevis of nonExecutableTimelines) {
-      assert.equal(parseSpatialPrevisMetadata({ spatialPrevis }), null)
+    for (const spatialPrevis of timelines) {
+      assert.ok(parseSpatialPrevisMetadata({ spatialPrevis }))
+    }
+  })
+
+  test('rejects empty director and aerial tracks in v4 and legacy persisted states', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const emptyV4Tracks = [
+      { ...state.masterTake, cameraTrack: { ...state.masterTake.cameraTrack, keyframes: [] } },
+      { ...state.masterTake, aerialCameraTrack: { ...state.masterTake.aerialCameraTrack, keyframes: [] } },
+    ]
+
+    for (const masterTake of emptyV4Tracks) {
+      assert.equal(parseSpatialPrevisMetadata({ spatialPrevis: { ...state, masterTake } }), null)
+    }
+    for (const version of [1, 2, 3]) {
+      assert.equal(parseSpatialPrevisMetadata({
+        spatialPrevis: {
+          ...state,
+          version,
+          masterTake: { ...state.masterTake, cameraTrack: { ...state.masterTake.cameraTrack, keyframes: [] } },
+        },
+      }), null)
     }
   })
 
@@ -525,6 +607,22 @@ describe('spatial previs persistence', () => {
     ]
 
     for (const spatialPrevis of invalidTimelines) {
+      assert.equal(parseSpatialPrevisMetadata({ spatialPrevis }), null)
+    }
+  })
+
+  test('rejects malformed version-4 camera rotations, scales, baselines, and focal lengths', () => {
+    const state = normalizeSpatialPrevis({ projectId: 'project-1' })
+    const malformedStates = [
+      { ...state, masterTake: { ...state.masterTake, cameraTrack: { ...state.masterTake.cameraTrack, keyframes: [{ ...state.masterTake.cameraTrack.keyframes[0]!, rotation: { pitch: Number.NaN, yaw: 0, roll: 0 } }] } } },
+      { ...state, masterTake: { ...state.masterTake, cameraTrack: { ...state.masterTake.cameraTrack, keyframes: [{ ...state.masterTake.cameraTrack.keyframes[0]!, shotScale: 'macro' }] } } },
+      { ...state, masterTake: { ...state.masterTake, cameraTrack: { ...state.masterTake.cameraTrack, keyframes: [{ ...state.masterTake.cameraTrack.keyframes[0]!, motionBaseline: 'zoom' }] } } },
+      { ...state, masterTake: { ...state.masterTake, cameraTrack: { ...state.masterTake.cameraTrack, keyframes: [{ ...state.masterTake.cameraTrack.keyframes[0]!, focalLengthMm: 7 }] } } },
+      { ...state, masterTake: { ...state.masterTake, aerialCameraTrack: { ...state.masterTake.aerialCameraTrack, keyframes: [{ ...state.masterTake.aerialCameraTrack.keyframes[0]!, focalLengthMm: 601 }] } } },
+      { ...state, masterTake: { ...state.masterTake, aerialCameraTrack: { ...state.masterTake.aerialCameraTrack, keyframes: [{ ...state.masterTake.aerialCameraTrack.keyframes[0]!, focalLengthMm: 700 }] } } },
+    ]
+
+    for (const spatialPrevis of malformedStates) {
       assert.equal(parseSpatialPrevisMetadata({ spatialPrevis }), null)
     }
   })

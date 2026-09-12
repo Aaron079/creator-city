@@ -10,24 +10,35 @@ function keyframe(
   target: CameraKeyframe['target'],
   focalLengthMm: number,
   intent: CameraKeyframe['intent'],
+  options: Partial<Pick<CameraKeyframe, 'rotation' | 'shotScale' | 'motionBaseline'>> = {},
 ): CameraKeyframe {
-  return { id, timeSec, position, target, focalLengthMm, intent }
+  return {
+    id,
+    timeSec,
+    position,
+    target,
+    rotation: options.rotation ?? { pitch: 0, yaw: 0, roll: 0 },
+    focalLengthMm,
+    shotScale: options.shotScale ?? 'medium',
+    motionBaseline: options.motionBaseline ?? 'static',
+    intent,
+  }
 }
 
 describe('camera sampling', () => {
-  test('interpolates the midpoint and uses the latest segment intent', () => {
+  test('interpolates the midpoint and uses the segment-start camera metadata', () => {
     const sampled = sampleCamera([
       keyframe('start', 0, { x: 0, y: 2, z: 8 }, { x: 0, y: 1, z: 0 }, 24, 'push'),
       keyframe('end', 10, { x: 10, y: 4, z: 2 }, { x: 2, y: 3, z: -4 }, 50, 'dolly'),
     ], 5)
 
     assert.deepEqual(sampled, keyframe(
-      'end',
+      'start',
       5,
       { x: 5, y: 3, z: 5 },
       { x: 1, y: 2, z: -2 },
       37,
-      'dolly',
+      'push',
     ))
   })
 
@@ -72,12 +83,12 @@ describe('camera sampling', () => {
 
     assert.deepEqual(sampleCamera(keyframes, 5), latest)
     assert.deepEqual(sampleCamera(keyframes, 7.5), keyframe(
-      'next',
+      'latest',
       7.5,
       { x: 7, y: 4, z: 0 },
       { x: 2, y: 3, z: 1 },
       50,
-      'dolly',
+      'crane',
     ))
   })
 
@@ -99,7 +110,7 @@ describe('camera sampling', () => {
     const keyframes = [end, start]
     const source = structuredClone(keyframes)
 
-    assert.equal(sampleCamera(keyframes, 5).intent, 'dolly')
+    assert.equal(sampleCamera(keyframes, 5).intent, 'push')
     assert.deepEqual(keyframes, source)
   })
 
@@ -117,6 +128,7 @@ describe('camera sampling', () => {
       sampled.id = `mutated-${timeSec}`
       sampled.position.x = 999
       sampled.target.z = -999
+      sampled.rotation.yaw = 999
 
       assert.deepEqual(keyframes, source)
     }
@@ -133,7 +145,35 @@ describe('camera sampling', () => {
 
     assert.ok(Object.values(sampled.position).every(Number.isFinite))
     assert.ok(Object.values(sampled.target).every(Number.isFinite))
+    assert.ok(Object.values(sampled.rotation).every(Number.isFinite))
     assert.ok(Number.isFinite(sampled.focalLengthMm))
+    assert.deepEqual(keyframes, source)
+  })
+
+  test('interpolates camera rotation via the shortest angle without mutating keyframes', () => {
+    const keyframes = [
+      keyframe('start', 0, { x: 0, y: 2, z: 8 }, { x: 0, y: 1, z: 0 }, 24, 'push', {
+        rotation: { pitch: -0.2, yaw: (350 * Math.PI) / 180, roll: -0.1 },
+        shotScale: 'wide',
+        motionBaseline: 'move',
+      }),
+      keyframe('end', 10, { x: 10, y: 4, z: 2 }, { x: 2, y: 3, z: -4 }, 50, 'dolly', {
+        rotation: { pitch: 0.2, yaw: (10 * Math.PI) / 180, roll: 0.1 },
+        shotScale: 'close-up',
+        motionBaseline: 'pull',
+      }),
+    ]
+    const source = structuredClone(keyframes)
+
+    const sampled = sampleCamera(keyframes, 5)
+
+    assert.equal(sampled.id, 'start')
+    assert.equal(sampled.shotScale, 'wide')
+    assert.equal(sampled.motionBaseline, 'move')
+    assert.equal(sampled.intent, 'push')
+    assert.ok(Math.abs(sampled.rotation.pitch) < 1e-12)
+    assert.ok(Math.abs(sampled.rotation.yaw - (2 * Math.PI)) < 1e-12)
+    assert.ok(Math.abs(sampled.rotation.roll) < 1e-12)
     assert.deepEqual(keyframes, source)
   })
 

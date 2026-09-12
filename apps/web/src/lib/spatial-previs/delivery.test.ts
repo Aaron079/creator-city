@@ -3,11 +3,12 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { rotationFromTarget } from './camera'
 import { buildPrevisDeliveryPackage } from './delivery'
 import type { SpatialPrevisState } from './types'
 
 const state: SpatialPrevisState = {
-  version: 3,
+  version: 4,
   projectId: 'project-previs-delivery',
   scene: {
     sourceMode: 'multi-view',
@@ -59,8 +60,25 @@ const state: SpatialPrevisState = {
         timeSec: 0,
         position: { x: 0, y: 1.6, z: 6 },
         target: { x: 0, y: 1.2, z: 0 },
+        rotation: rotationFromTarget({ x: 0, y: 1.6, z: 6 }, { x: 0, y: 1.2, z: 0 }),
         focalLengthMm: 35,
+        shotScale: 'medium',
+        motionBaseline: 'follow',
         intent: 'follow',
+      }],
+    },
+    aerialCameraTrack: {
+      id: 'aerial-camera-track-1',
+      keyframes: [{
+        id: 'aerial-camera-keyframe-1',
+        timeSec: 0,
+        position: { x: 0, y: 9, z: 6 },
+        target: { x: 0, y: 1.2, z: 0 },
+        rotation: rotationFromTarget({ x: 0, y: 9, z: 6 }, { x: 0, y: 1.2, z: 0 }),
+        focalLengthMm: 24,
+        shotScale: 'wide',
+        motionBaseline: 'rise',
+        intent: 'crane',
       }],
     },
     beats: [{ id: 'beat-1', label: 'Arrival', startSec: 0, endSec: 10 }],
@@ -96,4 +114,18 @@ test('serializes whitebox, references, and tracks without provider capability', 
 
   assert.equal(delivery.scene.whitebox.entities[0]!.position.x, 0)
   assert.equal(delivery.masterTake.cameraTrack.keyframes[0]!.target.z, 0)
+})
+
+test('freezes both camera plans including rotation, shot scale, and motion baseline', () => {
+  const delivery = buildPrevisDeliveryPackage(state)
+  const aerial = delivery.masterTake.aerialCameraTrack.keyframes[0]
+
+  assert.deepEqual(delivery.masterTake.aerialCameraTrack, state.masterTake.aerialCameraTrack)
+  assert.notEqual(delivery.masterTake.aerialCameraTrack, state.masterTake.aerialCameraTrack)
+  assert.notEqual(aerial?.rotation, state.masterTake.aerialCameraTrack.keyframes[0]?.rotation)
+  assert.equal(Object.isFrozen(delivery.masterTake.cameraTrack.keyframes[0]!.rotation), true)
+  assert.equal(Object.isFrozen(aerial?.rotation), true)
+  assert.equal(Object.isFrozen(state.masterTake.aerialCameraTrack.keyframes[0]?.rotation), false)
+  assert.equal(aerial?.shotScale, 'wide')
+  assert.equal(aerial?.motionBaseline, 'rise')
 })

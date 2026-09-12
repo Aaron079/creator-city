@@ -8,10 +8,12 @@ import { buildSeedanceTakePackage } from '@/lib/seedance-previs/package'
 import type { SeedanceDeliveryReceipt } from '@/lib/seedance-previs/receipts'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
 import { buildPrevisDeliveryPackage, type PrevisDeliveryPackage } from '@/lib/spatial-previs/delivery'
+import { exportPrevisWebM } from '@/lib/spatial-previs/video-export'
 import { addSpatialSceneAssetSet } from '@/lib/spatial-previs/asset-sets'
 import { applyBeatPatch } from '@/lib/spatial-previs/normalize'
+import { retimeActorKeyframe, retimeCameraKeyframe } from '@/lib/spatial-previs/timeline'
 import type { SpatialPrevisTestDuration } from '@/lib/spatial-previs/test-delivery'
-import type { BeatPatch, SpatialAssetRole, SpatialPrevisMode, SpatialPrevisState, SpatialSceneReference, Vec3 } from '@/lib/spatial-previs/types'
+import type { BeatPatch, SpatialAssetRole, SpatialPrevisCameraMode, SpatialPrevisMode, SpatialPrevisState, SpatialSceneReference, Vec3 } from '@/lib/spatial-previs/types'
 import { replaceWhiteboxDraft } from '@/lib/spatial-previs/whitebox'
 import { SpatialPrevisSceneAssets } from './SpatialPrevisSceneAssets'
 import { SpatialPrevisTimeline, clampSpatialPrevisTime } from './SpatialPrevisTimeline'
@@ -158,6 +160,7 @@ export function SpatialPrevisDirectorPanel({
 }: SpatialPrevisDirectorPanelProps) {
   const [state, setState] = useState(initialState)
   const [currentTimeSec, setCurrentTimeSec] = useState(() => clampSpatialPrevisTime(0, initialState.masterTake.durationSec))
+  const [cameraMode, setCameraMode] = useState<SpatialPrevisCameraMode>('director')
   const [beatError, setBeatError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
@@ -171,10 +174,15 @@ export function SpatialPrevisDirectorPanel({
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(seedanceReceipts.at(-1)?.deliveryId ?? null)
   const [deliveryStatus, setDeliveryStatus] = useState<string | null>(null)
   const [isSavingDeliveryPackage, setIsSavingDeliveryPackage] = useState(false)
+  const [liveCanvas, setLiveCanvas] = useState<HTMLCanvasElement | null>(null)
+  const [isExportingVideo, setIsExportingVideo] = useState(false)
+  const [videoExportProgress, setVideoExportProgress] = useState<number | null>(null)
   const [testStatus, setTestStatus] = useState<SpatialPrevisTestStatus>({ kind: 'idle' })
   const displayedTestStatus = spatialPrevisTestStatus ?? testStatus
   const [capability, setCapability] = useState<SeedanceCapability>(standardSeedanceCapability)
   const saveGuard = useRef(createSpatialPrevisSaveGuard())
+  const videoExportAbortRef = useRef<AbortController | null>(null)
+  const isMountedRef = useRef(true)
   const tabId = useId()
   const timelinePanelId = `spatial-previs-${tabId}-timeline`
   const tabIds: Record<SpatialPrevisMode, string> = {
@@ -182,7 +190,7 @@ export function SpatialPrevisDirectorPanel({
     beats: `spatial-previs-${tabId}-beats-tab`,
   }
   const tabRefs = useRef<Record<SpatialPrevisMode, HTMLButtonElement | null>>({ continuous: null, beats: null })
-  const isBusy = isSaving || isReloading || isSceneAssetsUploading
+  const isBusy = isSaving || isReloading || isSceneAssetsUploading || isExportingVideo
   const risks = useMemo(() => assessAuthoringRisks(
     state.scene.coverage,
     state.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.position),
@@ -213,31 +221,42 @@ export function SpatialPrevisDirectorPanel({
     setSelectedDeliveryId(seedanceReceipts.at(-1)?.deliveryId ?? null)
   }, [seedanceReceipts, selectedDeliveryId])
 
+  useEffect(() => {
+    // React development strict mode replays effects; a remount remains exportable.
+    isMountedRef.current = true
+
+    return () => {
+      isMountedRef.current = false
+      videoExportAbortRef.current?.abort()
+    }
+  }, [])
+
   const handleStateChange = (next: SpatialPrevisState) => {
     if (!canMutateSpatialPrevisEditor(isBusy)) return
     setState(next)
+    setCurrentTimeSec((current) => clampSpatialPrevisTime(current, next.masterTake.durationSec))
     setBeatError(null)
   }
 
   const handleWhiteboxChange = (next: SpatialPrevisState) => {
-    if (isSpatialWhiteboxToolbarDisabled(isSaving, isReloading, isSceneAssetsUploading)) return
+    if (!canMutateSpatialPrevisEditor(isBusy)) return
     setState(next)
     setBeatError(null)
   }
 
-  const handleCurrentTimeChange = (timeSec: number) => {
+  const handleCurrentTimeChange = (timeSec: number, destinationDurationSec = state.masterTake.durationSec) => {
     if (!canMutateSpatialPrevisEditor(isBusy)) return
-    setCurrentTimeSec(clampSpatialPrevisTime(timeSec, state.masterTake.durationSec))
+    setCurrentTimeSec(clampSpatialPrevisTime(timeSec, destinationDurationSec))
   }
 
   const handleSceneReferencesChange = (references: SpatialSceneReference[]) => {
-    if (!canReplaceSpatialPrevisSceneReferences(isSaving, isReloading)) return
+    if (isSaving || isReloading || isExportingVideo) return
     setState((current) => replaceWhiteboxDraft(current, references))
     setBeatError(null)
   }
 
   const handleAddSceneAssetSet = (references: readonly SpatialSceneReference[], role: SpatialAssetRole) => {
-    if (!canReplaceSpatialPrevisSceneReferences(isSaving, isReloading)) return
+    if (isSaving || isReloading || isExportingVideo) return
     setState((current) => addSpatialSceneAssetSet(current, references, role))
     setBeatError(null)
   }
@@ -339,6 +358,49 @@ export function SpatialPrevisDirectorPanel({
       setIsSavingDeliveryPackage(false)
     }
   }
+
+  const handleExportPrevisVideo = async () => {
+    if (isBusy || !liveCanvas) {
+      setDeliveryStatus('Live 摄影机画面尚未准备好。')
+      return
+    }
+    const originalTimeSec = currentTimeSec
+    const controller = new AbortController()
+    videoExportAbortRef.current = controller
+    setIsExportingVideo(true)
+    setVideoExportProgress(0)
+    setDeliveryStatus('正在录制预演视频…')
+    try {
+      const blob = await exportPrevisWebM({
+        canvas: liveCanvas,
+        durationSec: state.masterTake.durationSec,
+        fps: 30,
+        signal: controller.signal,
+        onTime: (timeSec) => {
+          setCurrentTimeSec(clampSpatialPrevisTime(timeSec, state.masterTake.durationSec))
+          setVideoExportProgress(timeSec / state.masterTake.durationSec)
+        },
+      })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `spatial-previs-${state.masterTake.id}.webm`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      URL.revokeObjectURL(url)
+      setDeliveryStatus('预演视频已导出。')
+    } catch (error) {
+      if (isMountedRef.current) setDeliveryStatus(error instanceof Error ? error.message : '预演视频导出失败。')
+    } finally {
+      if (videoExportAbortRef.current === controller) videoExportAbortRef.current = null
+      if (isMountedRef.current) {
+        setCurrentTimeSec(originalTimeSec)
+        setVideoExportProgress(null)
+        setIsExportingVideo(false)
+      }
+    }
+  }
   const selectedReceipt = seedanceReceipts.find((receipt) => receipt.deliveryId === selectedDeliveryId) ?? null
 
   return (
@@ -378,7 +440,7 @@ export function SpatialPrevisDirectorPanel({
         />
         <SpatialWhiteboxToolbar
           state={state}
-          disabled={isSpatialWhiteboxToolbarDisabled(isSaving, isReloading, isSceneAssetsUploading)}
+          disabled={isBusy}
           onChange={handleWhiteboxChange}
         />
         <div className="inline-flex overflow-hidden rounded-md border border-white/12" role="tablist" aria-label="预演编辑模式">
@@ -414,13 +476,29 @@ export function SpatialPrevisDirectorPanel({
           </button>
         </div>
 
-        <SpatialPrevisViewport state={state} currentTimeSec={currentTimeSec} disabled={isBusy} onChange={handleStateChange} />
+        <SpatialPrevisViewport
+          state={state}
+          currentTimeSec={currentTimeSec}
+          disabled={isBusy}
+          cameraMode={cameraMode}
+          onChange={handleStateChange}
+          onCurrentTimeChange={handleCurrentTimeChange}
+          onCameraModeChange={setCameraMode}
+          onLiveCanvas={setLiveCanvas}
+        />
         <div role="tabpanel" id={timelinePanelId} aria-labelledby={tabIds[state.editorMode]}>
           <SpatialPrevisTimeline
             state={state}
             currentTimeSec={currentTimeSec}
             disabled={isBusy}
+            cameraMode={cameraMode}
             onCurrentTimeChange={handleCurrentTimeChange}
+            onCameraKeyframeRetime={(keyframeId, timeSec) => {
+              handleStateChange(retimeCameraKeyframe(state, cameraMode, keyframeId, timeSec))
+            }}
+            onActorKeyframeRetime={(actorTrackId, keyframeId, timeSec) => {
+              handleStateChange(retimeActorKeyframe(state, actorTrackId, keyframeId, timeSec))
+            }}
             onBeatPatch={handleBeatPatch}
           />
         </div>
@@ -428,7 +506,7 @@ export function SpatialPrevisDirectorPanel({
         {beatError ? <p role="alert" className="text-[11px] text-amber-200/80">{beatError}</p> : null}
         {saveError ? <p role="alert" className="text-[11px] text-amber-200/80">{saveError}</p> : null}
         {saveSuccess ? <p role="status" className="text-[11px] text-emerald-200/80">{saveSuccess}</p> : null}
-        {isBusy ? <p role="status" className="text-[11px] text-indigo-100/75">正在保存预演，编辑已锁定。</p> : null}
+        {isBusy ? <p role="status" className="text-[11px] text-indigo-100/75">{isExportingVideo ? '正在导出预演视频，编辑已锁定。' : '正在保存预演，编辑已锁定。'}</p> : null}
         {saveConflict ? (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border border-amber-300/20 bg-amber-300/[0.08] px-2.5 py-2 text-[11px] text-amber-100/85">
             <span>保存冲突：服务器预演已更新，未覆盖服务器数据。</span>
@@ -463,33 +541,40 @@ export function SpatialPrevisDirectorPanel({
           ) : <p className="mt-1.5 text-[11px] text-white/38">暂无覆盖风险。</p>}
         </section>
 
-        {(onDownloadDeliveryPackage || onSaveDeliveryPackageToAssets) ? (
-          <section aria-label="预演交付" className="border-t border-white/[0.08] pt-3">
-            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">预演交付</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {onDownloadDeliveryPackage ? (
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={handleDownloadDeliveryPackage}
-                  className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] font-medium text-white/72 disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  下载交付包
-                </button>
-              ) : null}
-              {onSaveDeliveryPackageToAssets ? (
-                <button
-                  type="button"
-                  disabled={isBusy || isSavingDeliveryPackage}
-                  onClick={() => { void handleSaveDeliveryPackageToAssets() }}
-                  className="rounded-md border border-indigo-200/30 bg-indigo-300/[0.1] px-2.5 py-1.5 text-[11px] font-medium text-indigo-50 disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  {isSavingDeliveryPackage ? '保存中…' : '保存到素材库'}
-                </button>
-              ) : null}
-            </div>
-          </section>
-        ) : null}
+        <section aria-label="预演交付" className="border-t border-white/[0.08] pt-3">
+          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">预演交付</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={isBusy || !liveCanvas}
+              onClick={() => { void handleExportPrevisVideo() }}
+              className="rounded-md border border-cyan-200/30 bg-cyan-200/[0.08] px-2.5 py-1.5 text-[11px] font-medium text-cyan-50 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              {isExportingVideo && videoExportProgress !== null ? `导出 ${Math.round(videoExportProgress * 100)}%` : '导出预演视频'}
+            </button>
+            {onDownloadDeliveryPackage ? (
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={handleDownloadDeliveryPackage}
+                className="rounded-md border border-white/15 px-2.5 py-1.5 text-[11px] font-medium text-white/72 disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                下载交付包
+              </button>
+            ) : null}
+            {onSaveDeliveryPackageToAssets ? (
+              <button
+                type="button"
+                disabled={isBusy || isSavingDeliveryPackage}
+                onClick={() => { void handleSaveDeliveryPackageToAssets() }}
+                className="rounded-md border border-indigo-200/30 bg-indigo-300/[0.1] px-2.5 py-1.5 text-[11px] font-medium text-indigo-50 disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                {isSavingDeliveryPackage ? '保存中…' : '保存到素材库'}
+              </button>
+            ) : null}
+          </div>
+          {deliveryStatus ? <p role="status" className="mt-2 text-[11px] text-indigo-100/75">{deliveryStatus}</p> : null}
+        </section>
 
         {onDeliverToSeedance ? (
           <details
@@ -549,7 +634,6 @@ export function SpatialPrevisDirectorPanel({
                 <SeedanceChainReviewPanel receipt={selectedReceipt} onRetry={onRetrySeedanceSegment} />
               </div>
             ) : null}
-            {deliveryStatus ? <p role="status" className="mt-2 text-[11px] text-indigo-100/75">{deliveryStatus}</p> : null}
             </section>
           </details>
         ) : null}

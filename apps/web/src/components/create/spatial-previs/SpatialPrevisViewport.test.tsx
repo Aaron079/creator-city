@@ -13,6 +13,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { chromium, type Browser, type Page } from '@playwright/test'
 import { PerspectiveCamera, Vector3 } from 'three'
 import { assessAuthoringRisks } from '@/lib/spatial-previs/coverage'
+import { rotationFromTarget } from '@/lib/spatial-previs/camera'
 import { applySpatialCameraAction } from './SpatialCameraControlStrip'
 import { applySpatialNudge, SpatialPrevisViewport } from './SpatialPrevisViewport'
 import { applyWhiteboxGroundDrag } from '@/lib/spatial-previs/whitebox-edit'
@@ -23,15 +24,20 @@ const viewportSource = readFileSync(new URL('./SpatialPrevisViewport.tsx', impor
 declare global {
   interface Window {
     __spatialPrevisViewportHarness: {
-      mount: (state: SpatialPrevisState, disabled?: boolean) => void
+      mount: (state: SpatialPrevisState, disabled?: boolean, currentTimeSec?: number) => void
       mountRigProof: (state: SpatialPrevisState, showCameraRig: boolean) => void
       lastChange: () => SpatialPrevisState | null
+      liveCameraPose: () => {
+        position: Vec3
+        rotation: { pitch: number; yaw: number; roll: number; order: string }
+        forward: Vec3
+      } | null
     }
   }
 }
 
 const state: SpatialPrevisState = {
-  version: 3,
+  version: 4,
   projectId: 'project-previs-01',
   scene: {
     sourceMode: 'multi-view',
@@ -56,10 +62,14 @@ const state: SpatialPrevisState = {
     cameraTrack: {
       id: 'camera-track',
       keyframes: [
-        { id: 'camera-start', timeSec: 0, position: { x: 0, y: 1.6, z: 8 }, target: { x: -2, y: 1, z: 1 }, focalLengthMm: 35, intent: 'static' },
-        { id: 'camera-beat', timeSec: 6, position: { x: 0, y: 1.8, z: 5 }, target: { x: 0, y: 1, z: -1 }, focalLengthMm: 50, intent: 'push' },
-        { id: 'camera-end', timeSec: 12, position: { x: 2, y: 2.4, z: 4 }, target: { x: 2, y: 1, z: -2 }, focalLengthMm: 65, intent: 'follow' },
+        { id: 'camera-start', timeSec: 0, position: { x: 0, y: 1.6, z: 8 }, target: { x: -2, y: 1, z: 1 }, rotation: rotationFromTarget({ x: 0, y: 1.6, z: 8 }, { x: -2, y: 1, z: 1 }), focalLengthMm: 35, shotScale: 'medium', motionBaseline: 'static', intent: 'static' },
+        { id: 'camera-beat', timeSec: 6, position: { x: 0, y: 1.8, z: 5 }, target: { x: 0, y: 1, z: -1 }, rotation: rotationFromTarget({ x: 0, y: 1.8, z: 5 }, { x: 0, y: 1, z: -1 }), focalLengthMm: 50, shotScale: 'medium', motionBaseline: 'push', intent: 'push' },
+        { id: 'camera-end', timeSec: 12, position: { x: 2, y: 2.4, z: 4 }, target: { x: 2, y: 1, z: -2 }, rotation: rotationFromTarget({ x: 2, y: 2.4, z: 4 }, { x: 2, y: 1, z: -2 }), focalLengthMm: 65, shotScale: 'wide', motionBaseline: 'follow', intent: 'follow' },
       ],
+    },
+    aerialCameraTrack: {
+      id: 'aerial-camera-track',
+      keyframes: [{ id: 'aerial-camera-start', timeSec: 0, position: { x: 0, y: 9, z: 8 }, target: { x: 0, y: 1, z: 0 }, rotation: rotationFromTarget({ x: 0, y: 9, z: 8 }, { x: 0, y: 1, z: 0 }), focalLengthMm: 24, shotScale: 'wide', motionBaseline: 'static', intent: 'static' }],
     },
     beats: [{ id: 'beat-01', label: 'Arrival', startSec: 0, endSec: 12 }],
   },
@@ -88,6 +98,51 @@ function stateWithTwoActors(): SpatialPrevisState {
   }
 }
 
+function stateWithTimedCameraPlans(): SpatialPrevisState {
+  const aerialStart = state.masterTake.aerialCameraTrack.keyframes[0]!
+  const aerialMiddlePosition = { x: 3, y: 10, z: 6 }
+  const aerialMiddleTarget = { x: 0, y: 1, z: -1 }
+  const aerialEndPosition = { x: 5, y: 11, z: 4 }
+  const aerialEndTarget = { x: 2, y: 1, z: -2 }
+
+  return {
+    ...state,
+    masterTake: {
+      ...state.masterTake,
+      aerialCameraTrack: {
+        ...state.masterTake.aerialCameraTrack,
+        keyframes: [
+          aerialStart,
+          {
+            ...aerialStart,
+            id: 'aerial-camera-beat',
+            timeSec: 6,
+            position: aerialMiddlePosition,
+            target: aerialMiddleTarget,
+            rotation: rotationFromTarget(aerialMiddlePosition, aerialMiddleTarget),
+            focalLengthMm: 32,
+            shotScale: 'medium-wide',
+            motionBaseline: 'push',
+            intent: 'push',
+          },
+          {
+            ...aerialStart,
+            id: 'aerial-camera-end',
+            timeSec: 12,
+            position: aerialEndPosition,
+            target: aerialEndTarget,
+            rotation: rotationFromTarget(aerialEndPosition, aerialEndTarget),
+            focalLengthMm: 50,
+            shotScale: 'long',
+            motionBaseline: 'follow',
+            intent: 'follow',
+          },
+        ],
+      },
+    },
+  }
+}
+
 function stateWithWhitebox(): SpatialPrevisState {
   return {
     ...state,
@@ -103,6 +158,22 @@ function stateWithWhitebox(): SpatialPrevisState {
           { id: 'prop-pedestal', label: 'prop-pedestal', confidence: 1, kind: 'prop', position: { x: 1, y: 0.6, z: 2 }, rotationY: 0, size: { x: 1, y: 1.2, z: 1 }, sourceAssetIds: ['reference-1'] },
           { id: 'reference-plane', label: 'reference-plane', confidence: 1, kind: 'referencePlane', position: { x: 4, y: 2, z: -2 }, rotationY: 0.2, size: { x: 3, y: 2, z: 0.08 }, sourceAssetIds: ['reference-1'] },
         ],
+      },
+    },
+  }
+}
+
+function stateWithDirectorCameraRoll(roll: number): SpatialPrevisState {
+  const fullWorld = stateWithWhitebox()
+  return {
+    ...fullWorld,
+    masterTake: {
+      ...fullWorld.masterTake,
+      cameraTrack: {
+        ...fullWorld.masterTake.cameraTrack,
+        keyframes: fullWorld.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.timeSec === 6
+          ? { ...keyframe, rotation: { ...keyframe.rotation, roll } }
+          : keyframe),
       },
     },
   }
@@ -161,7 +232,10 @@ function stateWithNearDegenerateCameraGuide(): SpatialPrevisState {
           timeSec: 6,
           position: { x: 0, y: 1.8, z: 5 },
           target: { x: 0, y: 1.8, z: 4.965 },
+          rotation: rotationFromTarget({ x: 0, y: 1.8, z: 5 }, { x: 0, y: 1.8, z: 4.965 }),
           focalLengthMm: 50,
+          shotScale: 'medium',
+          motionBaseline: 'static',
           intent: 'static',
         }],
       },
@@ -227,10 +301,18 @@ type ScreenshotDifference = {
   accumulatedLumaDifference: number
 }
 
+type TransformAxis = 'X' | 'Y' | 'Z' | 'E'
+
+type TransformAxisHit = {
+  axis: TransformAxis
+  x: number
+  y: number
+}
+
 function worldPointInCanvas(point: Vec3, canvas: Rectangle) {
-  const camera = new PerspectiveCamera(48, canvas.width / canvas.height, 0.1, 100)
-  camera.position.set(10, 8, 12)
-  camera.lookAt(0, 1, 0)
+  const camera = new PerspectiveCamera(52, canvas.width / canvas.height, 0.1, 100)
+  camera.position.set(12, 11, 15)
+  camera.lookAt(0, 3, 0)
   camera.updateMatrixWorld()
 
   const projected = new Vector3(point.x, point.y, point.z).project(camera)
@@ -250,7 +332,7 @@ const FEATURE_RENDER_FLOORS = {
   whiteboxLive: { changedPixels: 3_500, accumulatedColorDifference: 400_000 },
   actorOverview: { changedPixels: 1_400, accumulatedColorDifference: 250_000 },
   actorLive: { changedPixels: 800, accumulatedColorDifference: 150_000 },
-  cameraRigOverview: { changedPixels: 1_000, accumulatedColorDifference: 200_000 },
+  cameraRigOverview: { changedPixels: 850, accumulatedColorDifference: 160_000 },
 }
 
 function assertMaterialRenderDifference(
@@ -284,7 +366,8 @@ function renderedHarnessSource() {
   return `
     import * as React from 'react'
     import { createRoot } from 'react-dom/client'
-    import { Canvas } from '@react-three/fiber'
+    import { Canvas, _roots } from '@react-three/fiber'
+    import { Vector3 } from 'three'
     import { SpatialPrevisViewport, SpatialPrevisWorldGeometry } from ${JSON.stringify(componentPath)}
 
     let root = null
@@ -295,14 +378,15 @@ function renderedHarnessSource() {
     }
 
     window.__spatialPrevisViewportHarness = {
-      mount(state, disabled = true) {
+      mount(state, disabled = true, currentTimeSec = 6) {
         root?.unmount()
+        latestState = null
         const container = document.getElementById('root')
         container.replaceChildren()
         root = createRoot(container)
         root.render(React.createElement(SpatialPrevisViewport, {
           state,
-          currentTimeSec: 6,
+          currentTimeSec,
           disabled,
           onChange: (nextState) => { latestState = nextState },
         }))
@@ -330,6 +414,17 @@ function renderedHarnessSource() {
       lastChange() {
         return latestState
       },
+      liveCameraPose() {
+        const liveCanvas = document.querySelectorAll('[data-spatial-previs-viewport="true"] canvas')[1]
+        const camera = liveCanvas ? _roots.get(liveCanvas)?.store.getState().camera : null
+        if (!camera) return null
+        const forward = camera.getWorldDirection(new Vector3())
+        return {
+          position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+          rotation: { pitch: camera.rotation.x, yaw: camera.rotation.y, roll: camera.rotation.z, order: camera.rotation.order },
+          forward: { x: forward.x, y: forward.y, z: forward.z },
+        }
+      },
     }
   `
 }
@@ -346,16 +441,55 @@ async function prepareRenderedViewport(page: Page) {
   await page.addScriptTag({ path: bundlePath })
 }
 
-async function mountRenderedViewport(page: Page, state: SpatialPrevisState, expectedCanvases = 2, disabled = true) {
-  await page.evaluate(({ nextState, nextDisabled }) => {
-    window.__spatialPrevisViewportHarness.mount(nextState, nextDisabled)
-  }, { nextState: state, nextDisabled: disabled })
+async function mountRenderedViewport(page: Page, state: SpatialPrevisState, expectedCanvases = 2, disabled = true, currentTimeSec = 6) {
+  await page.evaluate(({ nextState, nextDisabled, nextCurrentTimeSec }) => {
+    window.__spatialPrevisViewportHarness.mount(nextState, nextDisabled, nextCurrentTimeSec)
+  }, { nextState: state, nextDisabled: disabled, nextCurrentTimeSec: currentTimeSec })
   await page.waitForFunction(() => {
     const canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas'))
     return canvases.every((canvas) => canvas.width > 0 && canvas.height > 0 && canvas.getBoundingClientRect().width > 0 && canvas.getBoundingClientRect().height > 0)
   }, { polling: 'raf' })
   await page.waitForFunction((count) => document.querySelectorAll('[data-spatial-previs-viewport="true"] canvas').length === count, expectedCanvases)
-  await page.waitForTimeout(150)
+  await page.evaluate(`new Promise((resolve) => {
+    let remainingFrames = 12
+    const nextFrame = () => {
+      remainingFrames -= 1
+      if (remainingFrames === 0) resolve()
+      else requestAnimationFrame(nextFrame)
+    }
+    requestAnimationFrame(nextFrame)
+  })`)
+}
+
+async function selectDirectorDragTool(page: Page, tool: '机位' | '视线') {
+  await page.getByRole('button', { name: '选择与拖拽' }).click()
+  await page.getByRole('button', { name: tool, exact: true }).click()
+  await page.getByRole('button', { name: tool === '机位' ? '摄影机位移与高度' : '摄影机角度' })
+    .waitFor({ state: 'visible' })
+  await page.waitForFunction((name) => document.querySelector(`button[aria-label="${name}"]`)?.getAttribute('aria-pressed') === 'true', tool === '机位' ? '摄影机位移与高度' : '摄影机角度')
+  await page.evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`)
+}
+
+async function assertDirectorPopoverDismissals(page: Page, triggerName: string, popoverName: string) {
+  const trigger = page.getByRole('button', { name: triggerName })
+  const popover = page.getByRole('dialog', { name: `${popoverName} 控制` })
+
+  await trigger.click()
+  await popover.waitFor()
+  assert.equal(await trigger.getAttribute('aria-pressed'), 'true')
+  await trigger.click()
+  await popover.waitFor({ state: 'detached' })
+  assert.equal(await trigger.getAttribute('aria-pressed'), 'false')
+
+  await trigger.click()
+  await popover.waitFor()
+  await page.mouse.click(720, 760)
+  await popover.waitFor({ state: 'detached' })
+
+  await trigger.click()
+  await popover.waitFor()
+  await page.keyboard.press('Escape')
+  await popover.waitFor({ state: 'detached' })
 }
 
 async function renderedViewportEvidence(page: Page): Promise<RenderedViewportEvidence> {
@@ -503,6 +637,48 @@ async function screenshotPixelDifference(
   })()`) as Promise<ScreenshotDifference>
 }
 
+async function findTransformAxisHits(
+  page: Page,
+  canvas: ReturnType<Page['locator']>,
+  origin: { x: number; y: number },
+  requiredAxes: TransformAxis[],
+) {
+  const hits = new Map<TransformAxis, TransformAxisHit>()
+  const required = new Set(requiredAxes)
+  const searchRadius = required.has('E') ? 112 : 64
+
+  for (let y = -searchRadius; y <= searchRadius && hits.size < required.size; y += 8) {
+    for (let x = -searchRadius; x <= searchRadius && hits.size < required.size; x += 8) {
+      await page.mouse.move(origin.x + x, origin.y + y)
+      const axis = await canvas.evaluate((element) => element.dataset.spatialPrevisTransformAxis ?? '')
+      if (required.has(axis as TransformAxis) && !hits.has(axis as TransformAxis)) {
+        hits.set(axis as TransformAxis, { axis: axis as TransformAxis, x: origin.x + x, y: origin.y + y })
+      }
+    }
+  }
+
+  assert.deepEqual([...hits.keys()].sort(), [...required].sort(), `expected usable TransformControls axes ${JSON.stringify(requiredAxes)}, received ${JSON.stringify([...hits.values()])}`)
+  return hits
+}
+
+function cameraFrameAt(state: SpatialPrevisState, mode: 'director' | 'aerial') {
+  const track = mode === 'director' ? state.masterTake.cameraTrack : state.masterTake.aerialCameraTrack
+  return track.keyframes.find((keyframe) => keyframe.timeSec === 6)
+}
+
+function assertOnlyActiveCameraFrameChanged(next: SpatialPrevisState, source: SpatialPrevisState, mode: 'director' | 'aerial') {
+  const nextTrack = mode === 'director' ? next.masterTake.cameraTrack : next.masterTake.aerialCameraTrack
+  const sourceTrack = mode === 'director' ? source.masterTake.cameraTrack : source.masterTake.aerialCameraTrack
+  const inactiveTrack = mode === 'director' ? next.masterTake.aerialCameraTrack : next.masterTake.cameraTrack
+  const sourceInactiveTrack = mode === 'director' ? source.masterTake.aerialCameraTrack : source.masterTake.cameraTrack
+
+  assert.notDeepEqual(cameraFrameAt(next, mode), cameraFrameAt(source, mode))
+  assert.deepEqual(inactiveTrack, sourceInactiveTrack)
+  for (const sourceFrame of sourceTrack.keyframes.filter((keyframe) => keyframe.timeSec !== 6)) {
+    assert.deepEqual(nextTrack.keyframes.find((keyframe) => keyframe.id === sourceFrame.id), sourceFrame)
+  }
+}
+
 test.before(async () => {
   temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'spatial-previs-viewport-'))
   const entryPath = path.join(temporaryDirectory, 'entry.tsx')
@@ -591,6 +767,45 @@ test('renders an actual nonblank overview and live WebGL world at desktop and mo
   }
 })
 
+test('applies stored camera roll to the live Three camera and live frame while retaining its focus target', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const withoutRoll = stateWithDirectorCameraRoll(0)
+    const withRoll = stateWithDirectorCameraRoll(0.7)
+    const storedFrame = withRoll.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)
+    assert.ok(storedFrame)
+
+    await mountRenderedViewport(page, withoutRoll)
+    const liveFrameWithoutRoll = (await canvasScreenshots(page, 2))[1]
+    assert.ok(liveFrameWithoutRoll)
+
+    await mountRenderedViewport(page, withRoll)
+    const liveFrameWithRoll = (await canvasScreenshots(page, 2))[1]
+    assert.ok(liveFrameWithRoll)
+    const liveCamera = await page.evaluate(() => window.__spatialPrevisViewportHarness.liveCameraPose())
+    assert.ok(liveCamera)
+
+    const expectedForward = new Vector3(
+      storedFrame.target.x - storedFrame.position.x,
+      storedFrame.target.y - storedFrame.position.y,
+      storedFrame.target.z - storedFrame.position.z,
+    ).normalize()
+    const actualForward = new Vector3(liveCamera.forward.x, liveCamera.forward.y, liveCamera.forward.z)
+    assert.deepEqual(liveCamera.position, storedFrame.position)
+    assert.equal(liveCamera.rotation.order, 'YXZ')
+    assert.ok(Math.abs(liveCamera.rotation.roll - 0.7) < 1e-6)
+    assert.ok(actualForward.distanceTo(expectedForward) < 1e-6)
+
+    const difference = await screenshotPixelDifference(page, liveFrameWithoutRoll, liveFrameWithRoll)
+    assertMaterialRenderDifference(difference, 'live camera roll frame', 800, 120_000)
+  } finally {
+    await page.close()
+  }
+})
+
 test('changes actual overview and live WebGL pixels when whitebox or actor geometry is removed', async () => {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -613,7 +828,7 @@ test('changes actual overview and live WebGL pixels when whitebox or actor geome
     // Hold the local selection at camera in both actor variants so the overview cannot
     // count the selected-camera color as actor evidence.
     await mountRenderedViewport(page, stateWithWhitebox(), 2, false)
-    await page.getByRole('button', { name: '相机' }).click()
+    await selectDirectorDragTool(page, '机位')
     await page.waitForTimeout(150)
     const actorWorld = await canvasScreenshots(page, 2)
 
@@ -874,7 +1089,7 @@ test('moves the selected physical camera over the overview ground with a pointer
     await prepareRenderedViewport(page)
     const interactiveState = stateWithWhitebox()
     await mountRenderedViewport(page, interactiveState, 2, false)
-    await page.getByRole('button', { name: '相机', exact: true }).click()
+    await selectDirectorDragTool(page, '机位')
     const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
     assert.ok(overviewCanvas)
 
@@ -882,6 +1097,10 @@ test('moves the selected physical camera over the overview ground with a pointer
     const cameraDestination = worldPointInCanvas({ x: 1.8, y: 0, z: 2.5 }, overviewCanvas)
     await page.mouse.move(cameraBody.x, cameraBody.y)
     await page.mouse.down()
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas')
+      return canvas && getComputedStyle(canvas).cursor === 'grabbing'
+    })
     await page.mouse.move(cameraDestination.x, cameraDestination.y, { steps: 5 })
     await page.mouse.up()
     await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
@@ -910,7 +1129,7 @@ test('raises the selected physical camera with an overview-canvas pointer drag',
     await prepareRenderedViewport(page)
     const interactiveState = stateWithWhitebox()
     await mountRenderedViewport(page, interactiveState, 2, false)
-    await page.getByRole('button', { name: '相机', exact: true }).click()
+    await selectDirectorDragTool(page, '机位')
     const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
     assert.ok(overviewCanvas)
 
@@ -946,7 +1165,7 @@ test('moves the selected camera target through an actual overview-canvas pointer
     await prepareRenderedViewport(page)
     const interactiveState = stateWithWhitebox()
     await mountRenderedViewport(page, interactiveState, 2, false)
-    await page.getByRole('button', { name: '目标', exact: true }).click()
+    await selectDirectorDragTool(page, '视线')
     const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
     assert.ok(overviewCanvas)
 
@@ -970,6 +1189,563 @@ test('moves the selected camera target through an actual overview-canvas pointer
     assert.equal(changedCamera.focalLengthMm, originalCamera.focalLengthMm)
     assert.equal(changedCamera.intent, 'pan-tilt')
     assertOtherCameraFramesUnchanged(changed, interactiveState)
+  } finally {
+    await page.close()
+  }
+})
+
+test('renders selected transform gizmos and route handles into the actual overview WebGL scene', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithWhitebox()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    const actorSelection = (await canvasScreenshots(page, 2))[0]
+    assert.ok(actorSelection)
+
+    await selectDirectorDragTool(page, '机位')
+    const cameraSelection = (await canvasScreenshots(page, 2))[0]
+    assert.ok(cameraSelection)
+    const cameraDifference = await screenshotPixelDifference(page, actorSelection, cameraSelection)
+    assertMaterialRenderDifference(cameraDifference, 'camera TransformControls overview visibility', 600, 70_000)
+
+    await selectDirectorDragTool(page, '视线')
+    const targetSelection = (await canvasScreenshots(page, 2))[0]
+    assert.ok(targetSelection)
+    const targetDifference = await screenshotPixelDifference(page, cameraSelection, targetSelection)
+    assertMaterialRenderDifference(targetDifference, 'target TransformControls overview visibility', 600, 70_000)
+  } finally {
+    await page.close()
+  }
+})
+
+test('uses a selected actor TransformControls axis without moving another actor and restores OrbitControls after cancellation', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithTwoActors()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+    const canvas = page.locator('[data-spatial-previs-viewport="true"] canvas').first()
+
+    await canvas.evaluate((element) => {
+      if (element.dataset.spatialPrevisOrbitControls !== 'enabled') {
+        throw new Error(`expected enabled OrbitControls, received ${element.dataset.spatialPrevisOrbitControls ?? 'missing'}`)
+      }
+    })
+
+    const transformAxis = worldPointInCanvas({ x: 0.75, y: 0, z: -1 }, overviewCanvas)
+    await page.mouse.move(transformAxis.x, transformAxis.y)
+    const transformAxisHits: Array<{ x: number; y: number; axis: string }> = []
+    for (let y = -32; y <= 32; y += 8) {
+      for (let x = -32; x <= 32; x += 8) {
+        await page.mouse.move(transformAxis.x + x, transformAxis.y + y)
+        const axis = await canvas.evaluate((element) => element.dataset.spatialPrevisTransformAxis ?? '')
+        if (axis) transformAxisHits.push({ x, y, axis })
+      }
+    }
+    const xAxisHit = transformAxisHits.find((hit) => hit.axis === 'X')
+    assert.ok(xAxisHit, `expected a usable TransformControls X-axis hit, received ${JSON.stringify(transformAxisHits)}`)
+    const xAxis = {
+      x: transformAxis.x + xAxisHit.x,
+      y: transformAxis.y + xAxisHit.y,
+    }
+
+    await page.mouse.move(xAxis.x, xAxis.y)
+    const actualAxis = await canvas.evaluate((element) => element.dataset.spatialPrevisTransformAxis)
+    const actualPointerTarget = await page.evaluate((point) => {
+      const element = document.elementFromPoint(point.x, point.y)
+      const rect = element?.getBoundingClientRect()
+      return {
+        tagName: element?.tagName ?? null,
+        spatialViewport: element?.closest('[data-spatial-previs-viewport]') !== null,
+        rect: rect ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } : null,
+      }
+    }, xAxis)
+    assert.equal(actualAxis, 'X', `expected the real pointer to hover X at ${JSON.stringify(xAxis)}, target ${JSON.stringify(actualPointerTarget)}`)
+    await page.mouse.down()
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas')
+      return canvas?.dataset.spatialPrevisOrbitControls === 'disabled'
+    })
+    await page.mouse.move(xAxis.x + 72, xAxis.y, { steps: 5 })
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    assert.notDeepEqual(
+      changed.masterTake.actorTracks.find((track) => track.id === 'actor-track-lead')?.keyframes.find((keyframe) => keyframe.timeSec === 6)?.position,
+      interactiveState.masterTake.actorTracks.find((track) => track.id === 'actor-track-lead')?.keyframes.find((keyframe) => keyframe.timeSec === 6)?.position,
+    )
+    assert.deepEqual(
+      changed.masterTake.actorTracks.find((track) => track.id === 'actor-track-support'),
+      interactiveState.masterTake.actorTracks.find((track) => track.id === 'actor-track-support'),
+    )
+
+    await canvas.evaluate((element, point) => {
+      element.dispatchEvent(new PointerEvent('pointercancel', {
+        bubbles: true,
+        cancelable: true,
+        clientX: point.x,
+        clientY: point.y,
+        pointerId: 1,
+      }))
+    }, xAxis)
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas')
+      return canvas?.dataset.spatialPrevisOrbitControls === 'enabled'
+    })
+  } finally {
+    await page.mouse.up().catch(() => undefined)
+    await page.close()
+  }
+})
+
+test('moves each selected Director camera translation axis at the active keyframe without changing the aerial plan', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    for (const axis of ['X', 'Y', 'Z'] as const) {
+      const interactiveState = stateWithTimedCameraPlans()
+      const originalFrame = cameraFrameAt(interactiveState, 'director')
+      assert.ok(originalFrame)
+
+      await mountRenderedViewport(page, interactiveState, 2, false)
+      await selectDirectorDragTool(page, '机位')
+      const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+      assert.ok(overviewCanvas)
+      const canvas = page.locator('[data-spatial-previs-viewport="true"] canvas').first()
+      const axisHits = await findTransformAxisHits(
+        page,
+        canvas,
+        worldPointInCanvas(originalFrame.position, overviewCanvas),
+        ['X', 'Y', 'Z'],
+      )
+      const axisHit = axisHits.get(axis)
+      assert.ok(axisHit)
+      const liveBefore = (await canvasScreenshots(page, 2))[1]
+      assert.ok(liveBefore)
+
+      await page.mouse.move(axisHit.x, axisHit.y)
+      assert.equal(await canvas.evaluate((element) => element.dataset.spatialPrevisTransformAxis), axis)
+      await page.mouse.down()
+      await page.waitForFunction(() => document.querySelector<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas')?.dataset.spatialPrevisOrbitControls === 'disabled')
+      await page.mouse.move(axisHit.x + 72, axisHit.y - 36, { steps: 6 })
+      await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+      const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+      assert.ok(changed)
+      const changedFrame = cameraFrameAt(changed, 'director')
+      assert.ok(changedFrame)
+      assert.notEqual(changedFrame.position[axis.toLowerCase() as keyof Vec3], originalFrame.position[axis.toLowerCase() as keyof Vec3])
+      assertOnlyActiveCameraFrameChanged(changed, interactiveState, 'director')
+
+      if (axis === 'X') {
+        await canvas.evaluate((element, point) => {
+          element.dispatchEvent(new PointerEvent('pointercancel', {
+            bubbles: true,
+            cancelable: true,
+            clientX: point.x,
+            clientY: point.y,
+            pointerId: 1,
+          }))
+        }, axisHit)
+      }
+      await page.mouse.up()
+      await page.waitForFunction(() => document.querySelector<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas')?.dataset.spatialPrevisOrbitControls === 'enabled')
+
+      await mountRenderedViewport(page, changed, 2, false)
+      const liveAfter = (await canvasScreenshots(page, 2))[1]
+      assert.ok(liveAfter)
+      const difference = await screenshotPixelDifference(page, liveBefore, liveAfter)
+      assertMaterialRenderDifference(difference, `Director camera ${axis} transform live frame`, 400, 60_000)
+    }
+  } finally {
+    await page.mouse.up().catch(() => undefined)
+    await page.close()
+  }
+})
+
+test('rotates the selected Aerial camera ring at the active keyframe without changing the Director plan', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithTimedCameraPlans()
+    const originalFrame = cameraFrameAt(interactiveState, 'aerial')
+    assert.ok(originalFrame)
+
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    await page.getByRole('button', { name: '航拍', exact: true }).click()
+    await selectDirectorDragTool(page, '视线')
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+    const canvas = page.locator('[data-spatial-previs-viewport="true"] canvas').first()
+    const [rotationRing] = (await findTransformAxisHits(
+      page,
+      canvas,
+      worldPointInCanvas(originalFrame.position, overviewCanvas),
+      ['E'],
+    )).values()
+    assert.ok(rotationRing)
+    const liveBefore = (await canvasScreenshots(page, 2))[1]
+    assert.ok(liveBefore)
+
+    await page.mouse.move(rotationRing.x, rotationRing.y)
+    assert.equal(await canvas.evaluate((element) => element.dataset.spatialPrevisTransformAxis), 'E')
+    await page.mouse.down()
+    await page.waitForFunction(() => document.querySelector<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas')?.dataset.spatialPrevisOrbitControls === 'disabled')
+    await page.mouse.move(rotationRing.x + 56, rotationRing.y - 28, { steps: 6 })
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const changedFrame = cameraFrameAt(changed, 'aerial')
+    assert.ok(changedFrame)
+    assert.notDeepEqual(changedFrame.rotation, originalFrame.rotation)
+    assertOnlyActiveCameraFrameChanged(changed, interactiveState, 'aerial')
+
+    await canvas.evaluate((element, point) => {
+      element.dispatchEvent(new PointerEvent('pointercancel', {
+        bubbles: true,
+        cancelable: true,
+        clientX: point.x,
+        clientY: point.y,
+        pointerId: 1,
+      }))
+    }, rotationRing)
+    await page.mouse.up()
+    await page.waitForFunction(() => document.querySelector<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas')?.dataset.spatialPrevisOrbitControls === 'enabled')
+
+    await mountRenderedViewport(page, changed, 2, false)
+    await page.getByRole('button', { name: '航拍', exact: true }).click()
+    const liveAfter = (await canvasScreenshots(page, 2))[1]
+    assert.ok(liveAfter)
+    const difference = await screenshotPixelDifference(page, liveBefore, liveAfter)
+    assertMaterialRenderDifference(difference, 'Aerial camera rotation live frame', 400, 60_000)
+  } finally {
+    await page.mouse.up().catch(() => undefined)
+    await page.close()
+  }
+})
+
+test('drags a director route handle at its own keyframe time without changing the active playhead or aerial plan', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithWhitebox()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+
+    const routePoint = worldPointInCanvas({ x: 2, y: 0, z: 4 }, overviewCanvas)
+    const destination = worldPointInCanvas({ x: 3.5, y: 0, z: 3 }, overviewCanvas)
+    await page.mouse.move(routePoint.x, routePoint.y)
+    await page.mouse.down()
+    await page.mouse.move(destination.x, destination.y, { steps: 5 })
+    await page.mouse.up()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed, 'camera route handle drag must publish a plan update')
+    const originalRoutePoint = interactiveState.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 12)
+    const changedRoutePoint = changed.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 12)
+    assert.ok(originalRoutePoint)
+    assert.ok(changedRoutePoint)
+    assert.notDeepEqual(changedRoutePoint.position, originalRoutePoint.position)
+    assert.equal(changedRoutePoint.position.y, originalRoutePoint.position.y)
+    assert.deepEqual(
+      changed.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6),
+      interactiveState.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6),
+    )
+    assert.deepEqual(changed.masterTake.aerialCameraTrack, interactiveState.masterTake.aerialCameraTrack)
+  } finally {
+    await page.close()
+  }
+})
+
+test('drags a selected actor route handle at its own keyframe time without changing the playhead or another actor track', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithTwoActors()
+    await mountRenderedViewport(page, interactiveState, 2, false, 5)
+    const overviewCanvas = (await renderedViewportEvidence(page)).canvases[0]?.rect
+    assert.ok(overviewCanvas)
+
+    // The final route point lies under the live preview overlay; exercise the
+    // unobscured start point while the playhead remains at five seconds.
+    const routePoint = worldPointInCanvas({ x: -2, y: 0, z: 1 }, overviewCanvas)
+    const destination = worldPointInCanvas({ x: -3.5, y: 0, z: 0 }, overviewCanvas)
+    await page.mouse.move(routePoint.x, routePoint.y)
+    await page.mouse.down()
+    await page.mouse.move(destination.x, destination.y, { steps: 5 })
+    await page.mouse.up()
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed, 'actor route handle drag must publish a selected-keyframe update')
+    const changedLead = changed.masterTake.actorTracks.find((track) => track.id === 'actor-track-lead')
+    assert.ok(changedLead)
+    const originalLead = interactiveState.masterTake.actorTracks.find((track) => track.id === 'actor-track-lead')
+    assert.ok(originalLead)
+    assert.notDeepEqual(
+      changedLead.keyframes.find((keyframe) => keyframe.timeSec === 0),
+      originalLead.keyframes.find((keyframe) => keyframe.timeSec === 0),
+    )
+    assert.equal(changedLead.keyframes.some((keyframe) => keyframe.timeSec === 5), false)
+    assert.deepEqual(
+      changedLead.keyframes.filter((keyframe) => keyframe.timeSec !== 0),
+      originalLead.keyframes.filter((keyframe) => keyframe.timeSec !== 0),
+    )
+    assert.deepEqual(
+      changed.masterTake.actorTracks.find((track) => track.id === 'actor-track-support'),
+      interactiveState.masterTake.actorTracks.find((track) => track.id === 'actor-track-support'),
+    )
+  } finally {
+    await page.close()
+  }
+})
+
+test('operates director-control popovers through the rendered DOM and closes actions after every preset', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    await mountRenderedViewport(page, stateWithWhitebox(), 2, false)
+    for (const [triggerName, popoverName] of [
+      ['选择与拖拽', 'selection'],
+      ['调整时长', 'duration'],
+      ['镜头参数', 'lens'],
+      ['相机动作', 'camera-actions'],
+    ] as const) {
+      await assertDirectorPopoverDismissals(page, triggerName, popoverName)
+    }
+
+    const actionsTrigger = page.getByRole('button', { name: '相机动作' })
+    const actionsPopover = page.getByRole('dialog', { name: 'camera-actions 控制' })
+    for (const action of ['推', '拉', '摇', '移', '跟', '升', '降']) {
+      await actionsTrigger.click()
+      await actionsPopover.waitFor()
+      await page.getByRole('button', { name: action, exact: true }).click()
+      await actionsPopover.waitFor({ state: 'detached', timeout: 1_000 })
+    }
+  } finally {
+    await page.close()
+  }
+})
+
+test('dismisses the actions popover through the rendered DOM when Follow is a no-op', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    await mountRenderedViewport(page, stateWithoutActors(), 2, false)
+    await page.getByRole('button', { name: '相机动作' }).click()
+    const actionsPopover = page.getByRole('dialog', { name: 'camera-actions 控制' })
+    await actionsPopover.waitFor()
+    await page.getByRole('button', { name: '跟', exact: true }).click()
+    await actionsPopover.waitFor({ state: 'detached', timeout: 1_000 })
+    assert.equal(await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange()), null)
+  } finally {
+    await page.close()
+  }
+})
+
+test('routes rendered aerial camera actions only to the aerial track', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithWhitebox()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    const directorMode = page.getByRole('button', { name: 'Director', exact: true })
+    const aerialMode = page.getByRole('button', { name: '航拍', exact: true })
+
+    assert.equal(await directorMode.getAttribute('aria-pressed'), 'true')
+    assert.equal(await aerialMode.getAttribute('aria-pressed'), 'false')
+    await aerialMode.click()
+    assert.equal(await aerialMode.getAttribute('aria-pressed'), 'true')
+    assert.equal(await directorMode.getAttribute('aria-pressed'), 'false')
+    await directorMode.click()
+    assert.equal(await directorMode.getAttribute('aria-pressed'), 'true')
+    assert.equal(await aerialMode.getAttribute('aria-pressed'), 'false')
+
+    await aerialMode.click()
+    await page.getByRole('button', { name: '相机动作' }).click()
+    const actionsPopover = page.getByRole('dialog', { name: 'camera-actions 控制' })
+    await actionsPopover.waitFor()
+    await page.getByRole('button', { name: '推', exact: true }).click()
+    await actionsPopover.waitFor({ state: 'detached' })
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    assert.deepEqual(changed.masterTake.cameraTrack, interactiveState.masterTake.cameraTrack)
+    assert.notDeepEqual(changed.masterTake.aerialCameraTrack, interactiveState.masterTake.aerialCameraTrack)
+  } finally {
+    await page.close()
+  }
+})
+
+test('remaps every timed plan through the rendered 180s duration control', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithTimedCameraPlans()
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    await page.getByRole('button', { name: '调整时长' }).click()
+    const durationPopover = page.getByRole('dialog', { name: 'duration 控制' })
+    await durationPopover.waitFor()
+    await page.getByRole('button', { name: '180s', exact: true }).click()
+    await durationPopover.waitFor({ state: 'detached' })
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    assert.equal(changed.masterTake.durationSec, 180)
+    assert.deepEqual(changed.masterTake.actorTracks[0]?.keyframes.map((keyframe) => keyframe.timeSec), [0, 90, 180])
+    assert.deepEqual(changed.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 90, 180])
+    assert.deepEqual(changed.masterTake.aerialCameraTrack.keyframes.map((keyframe) => keyframe.timeSec), [0, 90, 180])
+    assert.deepEqual(changed.masterTake.beats.map((beat) => [beat.startSec, beat.endSec]), [[0, 180]])
+    assert.deepEqual(changed.masterTake.cameraTrack.keyframes.map((keyframe) => [keyframe.id, keyframe.focalLengthMm]), [
+      ['camera-start', 35],
+      ['camera-beat', 50],
+      ['camera-end', 65],
+    ])
+    assert.deepEqual(changed.masterTake.aerialCameraTrack.keyframes.map((keyframe) => [keyframe.id, keyframe.focalLengthMm]), [
+      ['aerial-camera-start', 24],
+      ['aerial-camera-beat', 32],
+      ['aerial-camera-end', 50],
+    ])
+  } finally {
+    await page.close()
+  }
+})
+
+test('applies rendered shot-scale and common-focal selections only to the active director plan', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithTimedCameraPlans()
+    const lensTrigger = page.getByRole('button', { name: '镜头参数' })
+    const lensPopover = page.getByRole('dialog', { name: 'lens 控制' })
+
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    await lensTrigger.click()
+    await lensPopover.waitFor()
+    await page.getByRole('button', { name: '选择特写' }).click()
+    await lensPopover.waitFor({ state: 'detached' })
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+    const shotScaleChanged = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(shotScaleChanged)
+    assert.equal(shotScaleChanged.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)?.shotScale, 'close-up')
+    assert.deepEqual(shotScaleChanged.masterTake.aerialCameraTrack, interactiveState.masterTake.aerialCameraTrack)
+
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    await lensTrigger.click()
+    await lensPopover.waitFor()
+    await page.getByRole('button', { name: '选择 35 mm' }).click()
+    await lensPopover.waitFor({ state: 'detached' })
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+    const focalChanged = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(focalChanged)
+    assert.equal(focalChanged.masterTake.cameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)?.focalLengthMm, 35)
+    assert.deepEqual(focalChanged.masterTake.aerialCameraTrack, interactiveState.masterTake.aerialCameraTrack)
+  } finally {
+    await page.close()
+  }
+})
+
+test('applies a valid rendered custom focal length only to aerial and leaves invalid input untouched', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    const interactiveState = stateWithTimedCameraPlans()
+    const beforeInvalidInput = structuredClone(interactiveState)
+    const aerialMode = page.getByRole('button', { name: '航拍', exact: true })
+    const lensTrigger = page.getByRole('button', { name: '镜头参数' })
+    const lensPopover = page.getByRole('dialog', { name: 'lens 控制' })
+
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    await aerialMode.click()
+    assert.equal(await aerialMode.getAttribute('aria-pressed'), 'true')
+    await lensTrigger.click()
+    await lensPopover.waitFor()
+    await page.getByRole('spinbutton', { name: '自定义焦段' }).fill('73')
+    await page.getByRole('button', { name: '应用自定义焦段' }).click()
+    await lensPopover.waitFor({ state: 'detached' })
+    await page.waitForFunction(() => window.__spatialPrevisViewportHarness.lastChange() !== null)
+    const validChanged = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(validChanged)
+    assert.equal(validChanged.masterTake.aerialCameraTrack.keyframes.find((keyframe) => keyframe.timeSec === 6)?.focalLengthMm, 73)
+    assert.deepEqual(validChanged.masterTake.cameraTrack, interactiveState.masterTake.cameraTrack)
+
+    await mountRenderedViewport(page, interactiveState, 2, false)
+    await aerialMode.click()
+    await lensTrigger.click()
+    await lensPopover.waitFor()
+    await page.getByRole('spinbutton', { name: '自定义焦段' }).fill('7')
+    await page.getByRole('button', { name: '应用自定义焦段' }).click()
+    await lensPopover.waitFor({ state: 'detached' })
+    assert.equal(await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange()), null)
+    assert.deepEqual(interactiveState, beforeInvalidInput)
+  } finally {
+    await page.close()
+  }
+})
+
+test('records one exact current-time keyframe only in the active rendered camera plan', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    for (const mode of ['director', 'aerial'] as const) {
+      const interactiveState = stateWithTimedCameraPlans()
+      await prepareRenderedViewport(page)
+      await mountRenderedViewport(page, interactiveState, 2, false, 5)
+      if (mode === 'aerial') await page.getByRole('button', { name: '航拍', exact: true }).click()
+
+      const lensPopover = page.getByRole('dialog', { name: 'lens 控制' })
+      const record = page.getByRole('button', { name: '记录相机关键帧' })
+      await page.getByRole('button', { name: '镜头参数' }).click()
+      await lensPopover.waitFor()
+      await record.click()
+      await lensPopover.waitFor({ state: 'detached' })
+      assert.equal(await record.getAttribute('aria-pressed'), 'false')
+      await page.waitForTimeout(100)
+
+      const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+      assert.ok(changed, `recording ${mode} at a non-keyframe time must publish the active plan`)
+      const activeTrack = mode === 'director' ? changed.masterTake.cameraTrack : changed.masterTake.aerialCameraTrack
+      const sourceActiveTrack = mode === 'director' ? interactiveState.masterTake.cameraTrack : interactiveState.masterTake.aerialCameraTrack
+      const inactiveTrack = mode === 'director' ? changed.masterTake.aerialCameraTrack : changed.masterTake.cameraTrack
+      const sourceInactiveTrack = mode === 'director' ? interactiveState.masterTake.aerialCameraTrack : interactiveState.masterTake.cameraTrack
+      assert.equal(activeTrack.keyframes.filter((keyframe) => keyframe.timeSec === 5).length, 1)
+      assert.equal(activeTrack.keyframes.length, sourceActiveTrack.keyframes.length + 1)
+      assert.deepEqual(inactiveTrack, sourceInactiveTrack)
+    }
   } finally {
     await page.close()
   }
@@ -1034,22 +1810,22 @@ describe('SpatialPrevisViewport', () => {
     assert.doesNotMatch(viewportSource, /<Line\b[^>]*data-spatial/)
   })
 
-  test('uses pointer-first spatial blocking instead of persistent transform-control squares', () => {
-    assert.doesNotMatch(viewportSource, /TransformControls/)
-    assert.match(viewportSource, /function DirectGroundDrag/)
-    assert.match(viewportSource, /function VerticalDragGuide/)
-    assert.match(viewportSource, /function CameraTargetDragHandle/)
-    assert.match(viewportSource, /function pointerHandlers/)
+  test('uses Drei TransformControls and restrained route handles in the actual R3F world', () => {
+    assert.match(viewportSource, /@react-three\/drei\/core\/TransformControls/)
+    assert.match(viewportSource, /<TransformControls/)
+    assert.match(viewportSource, /onObjectChange/)
+    assert.match(viewportSource, /onMouseDown/)
+    assert.match(viewportSource, /onMouseUp/)
+    assert.match(viewportSource, /applyCameraTransform/)
+    assert.match(viewportSource, /applyCameraRoutePointDrag/)
+    assert.match(viewportSource, /spatialRouteHandle/)
     assert.match(viewportSource, /function DirectDragCancellationGuard/)
     assert.match(viewportSource, /addEventListener\('pointercancel'/)
     assert.match(viewportSource, /addEventListener\('lostpointercapture'/)
-    assert.match(viewportSource, /spatialDirectHandle: 'vertical'/)
-    assert.match(viewportSource, /spatialDirectHandle: 'camera-target'/)
-    assert.match(viewportSource, /event\.ray\.intersectPlane/)
     assert.match(viewportSource, /applyActorGroundDrag/)
     assert.match(viewportSource, /applyCameraDollyDrag/)
+    assert.match(viewportSource, /applyObjectHeightDrag/)
     assert.match(viewportSource, /applyCameraTargetDrag/)
-    assert.match(viewportSource, /onDragStateChange/)
   })
 
   test('keeps the physical camera rig out of the live preview world', () => {
@@ -1059,15 +1835,17 @@ describe('SpatialPrevisViewport', () => {
     )
   })
 
-  test('renders the spatial viewport contract and familiar local camera actions', () => {
+test('renders director controls at the top of the spatial viewport without a persistent duplicate camera strip', () => {
     const markup = renderToStaticMarkup(
       createElement(SpatialPrevisViewport, { state, currentTimeSec: 6, onChange: () => undefined }),
     )
 
     assert.equal(markup.match(/data-spatial-previs-viewport="([^"]+)"/)?.[1], 'true')
     assert.equal(markup.match(/data-spatial-camera-preview="([^"]+)"/)?.[1], 'true')
-    assert.match(markup, /aria-label="推"/)
-    assert.match(markup, /aria-label="跟"/)
+    assert.match(markup, /aria-label="导演镜头控制"/)
+    assert.ok(markup.indexOf('aria-label="导演镜头控制"') < markup.indexOf('data-spatial-camera-preview="true"'))
+    assert.doesNotMatch(markup, /aria-label="局部相机控制"/)
+    assert.doesNotMatch(markup, /aria-label="推"/)
   })
 
   test('keeps unavailable coverage advisory-only while camera actions and nudges remain editable', () => {
@@ -1215,7 +1993,7 @@ describe('SpatialPrevisViewport', () => {
     assert.equal(dollyFrame.intent, 'dolly')
     assertOtherCameraFramesUnchanged(dolly, actionState)
 
-    const follow = applySpatialCameraAction(actionState, 6, '跟')
+    const follow = applySpatialCameraAction(actionState, 6, '跟', 'actor-track-lead')
     const followFrame = follow.masterTake.cameraTrack.keyframes[1]!
     assert.notDeepEqual(followFrame.position, original.position)
     assert.notDeepEqual(followFrame.target, original.target)
@@ -1362,6 +2140,49 @@ describe('SpatialPrevisViewport', () => {
     }), source)
   })
 
+  test('keeps the director camera track unchanged when aerial camera or target nudges are active', () => {
+    const source = {
+      ...stateWithTwoActors(),
+      masterTake: {
+        ...state.masterTake,
+        aerialCameraTrack: {
+          ...state.masterTake.aerialCameraTrack,
+          keyframes: [
+            state.masterTake.aerialCameraTrack.keyframes[0]!,
+            {
+              ...state.masterTake.aerialCameraTrack.keyframes[0]!,
+              id: 'aerial-camera-middle',
+              timeSec: 6,
+              position: { x: 4, y: 9, z: 7 },
+              target: { x: 1, y: 1.2, z: -2 },
+              rotation: rotationFromTarget({ x: 4, y: 9, z: 7 }, { x: 1, y: 1.2, z: -2 }),
+            },
+          ],
+        },
+      },
+    }
+
+    const cameraNudge = applySpatialNudge(source, {
+      currentTimeSec: 6,
+      selection: 'camera',
+      axis: 'y+',
+      cameraMode: 'aerial',
+    })
+    assert.deepEqual(cameraNudge.masterTake.cameraTrack, source.masterTake.cameraTrack)
+    assert.equal(cameraNudge.masterTake.aerialCameraTrack.keyframes[1]?.position.y, 9.1)
+    assert.deepEqual(cameraNudge.masterTake.aerialCameraTrack.keyframes[1]?.target, source.masterTake.aerialCameraTrack.keyframes[1]?.target)
+
+    const targetNudge = applySpatialNudge(source, {
+      currentTimeSec: 6,
+      selection: 'target',
+      axis: 'z-',
+      cameraMode: 'aerial',
+    })
+    assert.deepEqual(targetNudge.masterTake.cameraTrack, source.masterTake.cameraTrack)
+    assert.deepEqual(targetNudge.masterTake.aerialCameraTrack.keyframes[1]?.position, source.masterTake.aerialCameraTrack.keyframes[1]?.position)
+    assert.equal(targetNudge.masterTake.aerialCameraTrack.keyframes[1]?.target.z, -2.1)
+  })
+
   test('dispatches an exact selected-keyframe nudge through the button handler', async () => {
     const spatialViewportModule = await import('./SpatialPrevisViewport') as {
       dispatchSpatialNudge?: (input: {
@@ -1399,7 +2220,7 @@ describe('SpatialPrevisViewport', () => {
     assert.equal(changed, null)
   })
 
-  test('dispatches a local camera action through the strip handler only when a keyframe exists', async () => {
+  test('dispatches a local camera action through the strip handler at existing and intermediate times', async () => {
     const spatialControlModule = await import('./SpatialCameraControlStrip') as {
       dispatchSpatialCameraAction?: (input: {
         state: SpatialPrevisState
@@ -1410,23 +2231,91 @@ describe('SpatialPrevisViewport', () => {
     }
     assert.equal(typeof spatialControlModule.dispatchSpatialCameraAction, 'function')
 
-    let changed: SpatialPrevisState | null = null
+    let existingChanged: SpatialPrevisState | null = null
     spatialControlModule.dispatchSpatialCameraAction!({
       state,
       currentTimeSec: 6,
       action: '推',
-      onChange: (next) => { changed = next },
+      onChange: (next) => { existingChanged = next },
     })
-    assert.ok(changed)
-    assert.notEqual(changed, state)
+    assert.ok(existingChanged)
+    assert.notEqual(existingChanged, state)
 
-    changed = null
+    const originalKeyframeCount = state.masterTake.cameraTrack.keyframes.length
+    const intermediateChanges: SpatialPrevisState[] = []
     spatialControlModule.dispatchSpatialCameraAction!({
       state,
       currentTimeSec: 5,
       action: '推',
-      onChange: (next) => { changed = next },
+      onChange: (next) => { intermediateChanges.push(next) },
     })
-    assert.equal(changed, null)
+    const changed = intermediateChanges[0]
+    assert.ok(changed)
+    assert.notEqual(changed, state)
+    const intermediateKeyframes = changed.masterTake.cameraTrack.keyframes.filter((keyframe) => keyframe.timeSec === 5)
+    assert.equal(changed.masterTake.cameraTrack.keyframes.length, originalKeyframeCount + 1)
+    assert.equal(intermediateKeyframes.length, 1)
+    assert.equal(intermediateKeyframes[0]?.motionBaseline, 'push')
+    assert.equal(intermediateKeyframes[0]?.intent, 'push')
   })
+})
+
+test('selects the overview route from the active director or aerial camera plan', async () => {
+  const spatialViewportModule = await import('./SpatialPrevisViewport') as {
+    selectSpatialPrevisCameraTrack?: (state: SpatialPrevisState, mode: 'director' | 'aerial') => SpatialPrevisState['masterTake']['cameraTrack']
+  }
+  const distinctPlans = stateWithTimedCameraPlans()
+
+  assert.equal(typeof spatialViewportModule.selectSpatialPrevisCameraTrack, 'function')
+  assert.deepEqual(
+    spatialViewportModule.selectSpatialPrevisCameraTrack!(distinctPlans, 'director').keyframes.map((keyframe) => keyframe.position),
+    distinctPlans.masterTake.cameraTrack.keyframes.map((keyframe) => keyframe.position),
+  )
+  assert.deepEqual(
+    spatialViewportModule.selectSpatialPrevisCameraTrack!(distinctPlans, 'aerial').keyframes.map((keyframe) => keyframe.position),
+    distinctPlans.masterTake.aerialCameraTrack.keyframes.map((keyframe) => keyframe.position),
+  )
+})
+
+test('keeps actual director popovers keyboard-accessible and returns Escape focus to each trigger', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+
+  try {
+    await prepareRenderedViewport(page)
+    await mountRenderedViewport(page, stateWithWhitebox(), 2, false)
+
+    for (const [triggerName, popoverName, firstActionName] of [
+      ['选择与拖拽', 'selection', '演员'],
+      ['调整时长', 'duration', '5s'],
+      ['镜头参数', 'lens', '选择极近景'],
+      ['相机动作', 'camera-actions', '推'],
+    ] as const) {
+      const trigger = page.getByRole('button', { name: triggerName })
+      const popover = page.getByRole('dialog', { name: `${popoverName} 控制` })
+      const controls = await trigger.getAttribute('aria-controls')
+
+      assert.ok(controls, `${triggerName} must identify its popover`)
+      assert.equal(await trigger.getAttribute('aria-expanded'), 'false')
+      await trigger.focus()
+      await page.keyboard.press('Enter')
+      await popover.waitFor()
+      assert.equal(await trigger.getAttribute('aria-expanded'), 'true')
+      assert.equal(await popover.getAttribute('id'), controls)
+      const firstAction = page.getByRole('button', { name: firstActionName, exact: true })
+      await firstAction.waitFor()
+      await page.waitForFunction((popoverId) => {
+        const firstAction = document.getElementById(popoverId)?.querySelector('button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])')
+        return document.activeElement === firstAction
+      }, controls)
+      assert.equal(await firstAction.evaluate((element) => document.activeElement === element), true)
+      await page.keyboard.press('Escape')
+      await popover.waitFor({ state: 'detached' })
+      assert.equal(await trigger.getAttribute('aria-expanded'), 'false')
+      await page.waitForFunction((label) => document.activeElement?.getAttribute('aria-label') === label, triggerName)
+      assert.equal(await trigger.evaluate((element) => document.activeElement === element), true)
+    }
+  } finally {
+    await page.close()
+  }
 })
