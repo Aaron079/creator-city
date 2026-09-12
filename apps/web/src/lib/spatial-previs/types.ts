@@ -132,6 +132,7 @@ export type SpatialCoverage =
   | { mode: 'unavailable'; cameraFreedom: 'disabled' }
 
 export type SpatialPrevisState = {
+  studio?: import('./studio-types').SpatialStudio
   version: 4
   projectId: string
   scene: SpatialPrevisScene

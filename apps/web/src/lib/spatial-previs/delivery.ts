@@ -12,6 +12,7 @@ export type PrevisDeliveryPackage = Readonly<{
   projectId: string
   masterTake: MasterTake
   scene: SpatialPrevisScene
+  studio?: SpatialPrevisState['studio']
 }>
 
 function cloneVec3(value: Vec3): Vec3 {
@@ -78,5 +79,6 @@ export function buildPrevisDeliveryPackage(state: SpatialPrevisState): PrevisDel
     projectId: state.projectId,
     masterTake: cloneMasterTake(state.masterTake),
     scene: cloneScene(state.scene),
+    ...(state.studio ? { studio: structuredClone(state.studio) } : {}),
   })
 }

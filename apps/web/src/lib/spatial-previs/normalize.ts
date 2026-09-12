@@ -8,6 +8,7 @@ import type {
 } from './types'
 import { rotationFromTarget } from './camera'
 import { ensureCameraKeyframeAt } from './direct-manipulation'
+import { retimeStudio } from './studio'
 
 const DEFAULT_DURATION_SEC = 30
 const MIN_DURATION_SEC = 5
@@ -179,6 +180,7 @@ export function setMasterTakeDuration(state: SpatialPrevisState, durationSec: nu
 
   return {
     ...state,
+    ...(state.studio ? { studio: retimeStudio(state.studio, scale) } : {}),
     masterTake: {
       ...state.masterTake,
       durationSec: nextDurationSec,

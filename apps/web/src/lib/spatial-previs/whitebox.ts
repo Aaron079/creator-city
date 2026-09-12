@@ -312,7 +312,11 @@ export function retainManualWhiteboxEntities(
       size: { ...entity.size },
       sourceAssetIds: [...entity.sourceAssetIds],
     }))
-  return { entities: [...generated.entities, ...manualEntities] }
+  const edited = new Set(state.studio?.calibration.editedEntityIds ?? [])
+  return { entities: [...generated.entities.map(entity => {
+    const previous = edited.has(entity.id) ? state.scene.whitebox.entities.find(item => item.id === entity.id) : null
+    return previous ? { ...entity, position: { ...previous.position }, rotationY: previous.rotationY, size: { ...previous.size } } : entity
+  }), ...manualEntities] }
 }
 
 export function replaceWhiteboxDraft(

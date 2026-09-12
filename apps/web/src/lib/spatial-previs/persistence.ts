@@ -1,4 +1,5 @@
 import { normalizeSpatialPrevis } from './normalize'
+import type { SpatialStudio } from './studio-types'
 import { clampFocalLength, isValidFocalLength, rotationFromTarget } from './camera'
 import { isRenderableMediaUrl } from '../media/renderable-url'
 import type {
@@ -334,6 +335,61 @@ function timelineIsExecutable(
   ))
 }
 
+function studioMetadata(value: unknown, duration: number): SpatialStudio | null {
+  const s = record(value)
+  if (!s || s.version !== 1) return null
+  if (s.programEnabled !== undefined && typeof s.programEnabled !== 'boolean') return null
+  const c = record(s.calibration)
+  const l = record(s.lighting)
+  const r = record(s.review)
+  const range = (v: unknown, min: number, max: number) => number(v) !== null && (v as number) >= min && (v as number) <= max
+  const nullableId = (v: unknown) => v === null || string(v) !== null
+  const unique = (items: MetadataRecord[], key: string) => items.every(i => string(i[key])) && new Set(items.map(i => i[key])).size === items.length
+  if (!c || !l || !r || !nullableId(c.referenceId) || !range(c.opacity, 0, 1)
+    || !Array.isArray(c.verifiedEntityIds) || !c.verifiedEntityIds.every(id => string(id))
+    || !Array.isArray(c.editedEntityIds) || !c.editedEntityIds.every(id => string(id))
+    || typeof l.enabled !== 'boolean' || !range(l.ambient, 0, 2) || !Array.isArray(l.lights)
+    || !nullableId(r.referenceId) || !range(r.offsetSec, -180, 180) || !Array.isArray(r.notes)
+    || !Array.isArray(s.performances) || !Array.isArray(s.cameras) || !Array.isArray(s.cuts)) return null
+  for (const value of l.lights) {
+    const light = record(value)
+    if (!light || !string(light.id) || !string(light.name) || !['spot', 'sun'].includes(light.kind as string)
+      || typeof light.enabled !== 'boolean' || !vec3(light.position) || !vec3(light.target)
+      || !range(light.intensity, 0, 500) || !range(light.temperature, 1000, 12000)
+      || !range(light.angle, 0.05, 1.5) || !range(light.softness, 0, 1)) return null
+  }
+  for (const value of s.performances) {
+    const p = record(value)
+    if (!p || !string(p.actorId) || !Array.isArray(p.keys)) return null
+    for (const value of p.keys) {
+      const k = record(value)
+      const pose = record(k?.pose)
+      if (!k || !string(k.id) || !range(k.timeSec, 0, duration) || !pose || !range(pose.hipHeight, -0.6, 1.5)
+        || number(pose.yaw) === null || !['head', 'leftHand', 'rightHand', 'leftFoot', 'rightFoot'].every(j => vec3(pose[j]))) return null
+    }
+    if (!unique(p.keys, 'id') || new Set(p.keys.map(k => k.timeSec)).size !== p.keys.length) return null
+  }
+  const cameraIds = new Set<string>()
+  for (const value of s.cameras) {
+    const c = record(value)
+    const track = c && cameraTrack(c.track, false)
+    if (!c || !string(c.name) || !track || cameraIds.has(track.id) || track.keyframes.some(k => !range(k.timeSec, 0, duration))) return null
+    cameraIds.add(track.id)
+  }
+  for (const value of s.cuts) {
+    const cut = record(value)
+    if (!cut || !string(cut.id) || !cameraIds.has(cut.cameraId as string) || !range(cut.timeSec, 0, duration)) return null
+  }
+  for (const value of r.notes) {
+    const n = record(value)
+    if (!n || !string(n.id) || !range(n.startSec, 0, duration) || !range(n.endSec, n.startSec as number, duration)
+      || !['composition', 'actor', 'scene', 'lighting', 'timing'].includes(n.category as string)
+      || !string(n.text) || typeof n.resolved !== 'boolean') return null
+  }
+  if (!unique(l.lights, 'id') || !unique(s.performances, 'actorId') || !unique(s.cuts, 'id') || !unique(r.notes, 'id')) return null
+  return structuredClone(s) as SpatialStudio
+}
+
 function state(value: unknown): SpatialPrevisState | null {
   const candidate = record(value)
   if (!candidate || (candidate.version !== 1 && candidate.version !== 2 && candidate.version !== 3 && candidate.version !== 4)) return null
@@ -365,6 +421,9 @@ function state(value: unknown): SpatialPrevisState | null {
     editorMode: editorMode as SpatialPrevisState['editorMode'],
     updatedAt,
   })
+
+  const studio = candidate.studio === undefined ? undefined : studioMetadata(candidate.studio, durationSec)
+  if (studio === null) return null
 
   const parsedActorTracks = actorTracks(masterTake.actorTracks)
   const legacy = candidate.version !== 4
@@ -400,6 +459,7 @@ function state(value: unknown): SpatialPrevisState | null {
 
   return {
     ...normalized,
+    ...(studio ? { studio } : {}),
     scene: {
       ...normalized.scene,
       references: parsedReferences,

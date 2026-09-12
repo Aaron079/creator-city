@@ -20,7 +20,7 @@ import {
   applyObjectHeightDrag,
 } from '@/lib/spatial-previs/direct-manipulation'
 import { applyCameraPose } from '@/lib/spatial-previs/camera'
-import { addDefaultActorTrack } from '@/lib/spatial-previs/normalize'
+import { addDefaultActorTrack, setMasterTakeDuration } from '@/lib/spatial-previs/normalize'
 import { applyWhiteboxGroundDrag } from '@/lib/spatial-previs/whitebox-edit'
 import type {
   ActorTrack,
@@ -32,6 +32,12 @@ import type {
 } from '@/lib/spatial-previs/types'
 import { sampleActor, sampleCamera } from '@/lib/spatial-previs/sampler'
 import { SpatialPrevisDirectorControls } from './SpatialPrevisDirectorControls'
+import { PerformanceActor, SpatialStudioLighting, StudioSceneGizmo, type StudioSelection } from './SpatialStudioScene'
+import { SpatialStudioTools } from './SpatialStudioTools'
+import { SpatialStudioComparison } from './SpatialStudioComparison'
+import { putCut, samplePose, sampleProgramCamera, studioOf, updateStudio } from '@/lib/spatial-previs/studio'
+import type { StudioTool } from '@/lib/spatial-previs/studio-types'
+import studioStyles from './spatial-studio-styles'
 
 const KEYFRAME_EPSILON = 1e-6
 const NUDGE_DELTA = 0.1
@@ -712,6 +718,7 @@ export function SpatialPrevisWorldGeometry({
   showOverviewGuides = false,
   showCameraRig = true,
   cameraMode = 'director',
+  studioGizmo,
 }: {
   state: SpatialPrevisState
   currentTimeSec: number
@@ -730,6 +737,7 @@ export function SpatialPrevisWorldGeometry({
   showOverviewGuides?: boolean
   showCameraRig?: boolean
   cameraMode?: SpatialPrevisCameraMode
+  studioGizmo?: React.ReactNode
 }) {
   const activeCameraTrack = selectSpatialPrevisCameraTrack(state, cameraMode)
   const cameraPath = useMemo(
@@ -745,8 +753,10 @@ export function SpatialPrevisWorldGeometry({
     <>
       <color attach="background" args={['#071015']} />
       <fog attach="fog" args={['#071015', 18, 42]} />
-      <ambientLight intensity={0.7} />
-      <directionalLight castShadow intensity={1.15} position={[7, 10, 6]} color="#dbeafe" />
+      {!state.studio?.lighting.enabled && <><ambientLight intensity={0.7} />
+      <directionalLight castShadow intensity={1.15} position={[7, 10, 6]} color="#dbeafe" /></>}
+      <SpatialStudioLighting state={state} markers={showOverviewGuides} />
+      {studioGizmo}
       <gridHelper args={[24, 24, '#476475', '#1a2a35']} position={[0, -0.72, 0]} />
       {showOverviewGuides ? <axesHelper args={[2.4]} position={[-10, -0.69, -10]} /> : null}
       {showOverviewGuides ? anchors.map((anchor) => <WorldAnchorMarker key={anchor.id} anchor={anchor} />) : null}
@@ -768,6 +778,8 @@ export function SpatialPrevisWorldGeometry({
         const canDirectManipulate = Boolean(isSelected && manipulationEnabled && directDragBindings)
         const canTransform = isSelected && manipulationEnabled && onActorTransform && onTransformDragStart && onTransformDragEnd
         const position = initialActorPosition(track, currentTimeSec)
+        const pose = samplePose(state, track.id, currentTimeSec)
+        const proxy = pose ? <PerformanceActor pose={pose} /> : <ActorProxy selected={isSelected} />
         return (
           <group key={track.id}>
             {showOverviewGuides && track.keyframes.length > 1 ? (
@@ -784,16 +796,16 @@ export function SpatialPrevisWorldGeometry({
                 onDragEnd={onTransformDragEnd!}
               >
                 <DirectGroundDrag kind="actor-ground" position={position} bindings={directDragBindings!}>
-                  <ActorProxy selected />
+                  {proxy}
                 </DirectGroundDrag>
               </SpatialTransformGizmo>
             ) : canDirectManipulate ? (
               <group position={tuple(position)}>
                 <DirectGroundDrag kind="actor-ground" position={position} bindings={directDragBindings!}>
-                  <ActorProxy selected />
+                  {proxy}
                 </DirectGroundDrag>
               </group>
-            ) : <group position={tuple(position)}><ActorProxy selected={isSelected} /></group>}
+            ) : <group position={tuple(position)}>{proxy}</group>}
             {canDirectManipulate ? <VerticalDragGuide position={position} bindings={directDragBindings!} kind="actor-height" /> : null}
       {showOverviewGuides && isSelected && manipulationEnabled && directDragBindings ? track.keyframes.map((keyframe) => (
               <RoutePointHandle
@@ -898,6 +910,7 @@ export function SpatialPrevisWorldGeometry({
 }
 
 function WorldCanvas(props: {
+  studioGizmo?: React.ReactNode
   state: SpatialPrevisState
   currentTimeSec: number
   sampledCamera: CameraKeyframe | null
@@ -965,7 +978,7 @@ function LivePreviewCanvas({ state, currentTimeSec, sampledCamera, onLiveCanvas 
   onLiveCanvas?: (canvas: HTMLCanvasElement | null) => void
 }) {
   return (
-    <Canvas dpr={[1, 1.5]} gl={{ antialias: true }} className="h-full w-full">
+    <Canvas shadows={Boolean(state.studio?.lighting.enabled)} dpr={[1, 1.5]} gl={{ antialias: true }} className="h-full w-full">
       <LiveCanvasReporter onLiveCanvas={onLiveCanvas} />
       <LivePreviewCamera cameraKeyframe={sampledCamera} />
       <SpatialPrevisWorldGeometry state={state} currentTimeSec={currentTimeSec} sampledCamera={sampledCamera} manipulationEnabled={false} showCameraRig={false} />
@@ -973,7 +986,24 @@ function LivePreviewCanvas({ state, currentTimeSec, sampledCamera, onLiveCanvas 
   )
 }
 
-export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false, cameraMode: controlledCameraMode, onChange, onCurrentTimeChange, onCameraModeChange, onLiveCanvas }: SpatialPrevisViewportProps) {
+export function SpatialPrevisViewport({ state: sourceState, currentTimeSec, disabled = false, cameraMode: controlledCameraMode, onChange: onSourceChange, onCurrentTimeChange, onCameraModeChange, onLiveCanvas }: SpatialPrevisViewportProps) {
+  const [studioTool, setStudioTool] = useState<StudioTool | null>(null)
+  const [studioSelection, setStudioSelection] = useState<StudioSelection>({ entityId: '', lightId: '', actorId: '', joint: 'rightHand', lampTarget: false, transform: 'translate' })
+  const [studioCameraId, setStudioCameraId] = useState('')
+  const programPreview = Boolean(sourceState.studio?.programEnabled)
+  const setProgramPreview = (enabled: boolean) => onSourceChange(updateStudio(sourceState, { programEnabled: enabled }))
+  const studio = studioOf(sourceState)
+  const editingCamera = studioTool === 'multicamera' ? studio.cameras.find(c => c.track.id === studioCameraId) : undefined
+  const state = editingCamera ? { ...sourceState, masterTake: { ...sourceState.masterTake, cameraTrack: editingCamera.track, aerialCameraTrack: editingCamera.track } } : sourceState
+  const onChange = (next: SpatialPrevisState) => {
+    if (disabled) return
+    if (!editingCamera) { onSourceChange(next); return }
+    if (next.masterTake.durationSec !== state.masterTake.durationSec) { onSourceChange(setMasterTakeDuration(sourceState, next.masterTake.durationSec)); return }
+    const track = next.masterTake.cameraTrack !== state.masterTake.cameraTrack ? next.masterTake.cameraTrack : next.masterTake.aerialCameraTrack
+    onSourceChange(updateStudio({ ...next, masterTake: { ...next.masterTake, cameraTrack: sourceState.masterTake.cameraTrack, aerialCameraTrack: sourceState.masterTake.aerialCameraTrack } }, {
+      cameras: studio.cameras.map(c => c.track.id === editingCamera.track.id ? { ...c, track } : c),
+    }))
+  }
   const [mounted, setMounted] = useState(false)
   const [selection, setSelection] = useState<SpatialPrevisSelection>({
     kind: state.masterTake.actorTracks.length > 0 ? 'actor' : 'camera',
@@ -999,6 +1029,8 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
   const sampledCamera = selectedCameraTrack.keyframes.length > 0
     ? sampleCamera(selectedCameraTrack.keyframes, currentTimeSec)
     : null
+  const liveCamera = programPreview ? sampleProgramCamera(sourceState, currentTimeSec) ?? sampledCamera : sampledCamera
+  const calibrationReference = studioTool === 'calibration' ? sourceState.scene.references.find(r => r.id === studio.calibration.referenceId && r.mediaType === 'image') : null
   const exactCamera = exactKeyframe(selectedCameraTrack.keyframes, currentTimeSec)
   const exactActor = selectedActorTrack ? exactKeyframe(selectedActorTrack.keyframes, currentTimeSec) : null
   const keyframeSelection = selection.kind === 'whitebox' ? null : selection.kind
@@ -1264,6 +1296,9 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
         onSelectionToolChange={(tool) => setSelection({ kind: tool })}
       />
 
+      <SpatialStudioTools state={sourceState} time={currentTimeSec} tool={studioTool} selection={studioSelection} cameraMode={cameraMode} selectedCameraId={studioCameraId} program={programPreview} disabled={disabled}
+        onTool={setStudioTool} onSelection={setStudioSelection} onChange={onSourceChange} onTime={onCurrentTimeChange} onCamera={setStudioCameraId} onProgram={setProgramPreview} />
+
       <div className="relative min-h-[390px] flex-1 bg-[#071015]">
         <div className="absolute inset-0">
           {mounted ? (
@@ -1273,7 +1308,7 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
               sampledCamera={sampledCamera}
               selection={selection}
               selectedActorTrack={selectedActorTrack}
-              manipulationEnabled={manipulationEnabled}
+              manipulationEnabled={manipulationEnabled && (!studioTool || studioTool === 'multicamera' || studioTool === 'comparison')}
               interactionDisabled={disabled}
               isObjectDragging={isObjectDragging}
               cursor={worldCursor}
@@ -1287,15 +1322,17 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
               onActorTransform={transformActor}
               onCameraTransform={transformCamera}
               onCameraTargetTransform={transformCameraTarget}
+              studioGizmo={<StudioSceneGizmo state={sourceState} tool={studioTool} selection={studioSelection} time={currentTimeSec} disabled={disabled} onChange={onSourceChange} onDragging={setIsObjectDragging} />}
             />
           ) : <div className="h-full w-full" aria-hidden="true" />}
         </div>
 
         <aside data-spatial-camera-preview="true" className="absolute bottom-3 right-3 h-36 w-56 overflow-hidden rounded-md border border-white/18 bg-[#080d11] shadow-2xl">
-          {mounted && sampledCamera ? <LivePreviewCanvas state={state} currentTimeSec={currentTimeSec} sampledCamera={sampledCamera} onLiveCanvas={onLiveCanvas} /> : <div className="h-full w-full" aria-hidden="true" />}
+          {mounted && liveCamera ? <LivePreviewCanvas state={sourceState} currentTimeSec={currentTimeSec} sampledCamera={liveCamera} onLiveCanvas={onLiveCanvas} /> : <div className="h-full w-full" aria-hidden="true" />}
+          {calibrationReference && <img src={calibrationReference.url} alt={calibrationReference.title} className="pointer-events-none absolute inset-0 h-full w-full object-contain" style={{ opacity: studio.calibration.opacity }} />}
           <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between border-b border-white/10 bg-black/45 px-2 py-1 text-[10px] text-white/72">
-            <span>LIVE</span>
-            <span>{sampledCamera ? `${formatNumber(sampledCamera.focalLengthMm)} mm` : '— mm'}</span>
+            <span>{programPreview ? 'PROGRAM' : 'LIVE'}</span>
+            <span>{liveCamera ? `${formatNumber(liveCamera.focalLengthMm)} mm` : '— mm'}</span>
           </div>
           <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/45 px-2 py-1 text-right text-[10px] text-white/64">
             {formatNumber(currentTimeSec)} s
@@ -1309,6 +1346,17 @@ export function SpatialPrevisViewport({ state, currentTimeSec, disabled = false,
           <span className="truncate">{disabledReason ?? `当前：${selectionLabel}`}</span>
         </div>
       </div>
+      {studioTool === 'calibration' && mounted && liveCamera && <div className={studioStyles.comparison}>
+        <div className={studioStyles.screen} style={{ maxHeight: 420, width: '100%' }} aria-label="透视校准画面">
+          <LivePreviewCanvas state={sourceState} currentTimeSec={currentTimeSec} sampledCamera={liveCamera} />
+          {calibrationReference && <img src={calibrationReference.url} alt="校准叠图" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', opacity: studio.calibration.opacity, pointerEvents: 'none' }} />}
+        </div>
+      </div>}
+      {studioTool === 'multicamera' && mounted && <div className={studioStyles.monitors} aria-label="多机位监看">{studio.cameras.map(c => <button key={c.track.id} type="button" className={studioStyles.monitor} disabled={disabled} aria-label={`监看切入 ${c.name}`} onClick={() => onSourceChange(updateStudio(putCut(sourceState, c.track.id, currentTimeSec, crypto.randomUUID()), { programEnabled: true }))}>
+        <LivePreviewCanvas state={sourceState} currentTimeSec={currentTimeSec} sampledCamera={sampleCamera(c.track.keyframes, currentTimeSec)} /><span>{c.name}</span>
+      </button>)}</div>}
+      {studioTool === 'comparison' && mounted && liveCamera && <SpatialStudioComparison state={sourceState} time={currentTimeSec} disabled={disabled} onTime={onCurrentTimeChange} onChange={onSourceChange}
+        preview={<LivePreviewCanvas state={sourceState} currentTimeSec={currentTimeSec} sampledCamera={liveCamera} />} />}
     </section>
   )
 }
