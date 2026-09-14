@@ -2850,6 +2850,7 @@ export function VisualCanvasWorkspace({
   const [panelPortalTarget, setPanelPortalTarget] = useState<HTMLDivElement | null>(null)
   const [imageProviderStatusMap, setImageProviderStatusMap] = useState<Map<string, ImageProviderStatusInfo>>(new Map())
   const [videoProviderStatusMap, setVideoProviderStatusMap] = useState<Map<string, VideoProviderStatusInfo>>(new Map())
+  const [platformVideoGenerationEnabled, setPlatformVideoGenerationEnabled] = useState(false)
   const [generationHealth, setGenerationHealth] = useState<GenerationHealthResponse | null>(null)
   const [clipboardNode, setClipboardNode] = useState<VisualCanvasNode | null>(null)
   const [refreshingNodeId, setRefreshingNodeId] = useState<string | null>(null)
@@ -3206,8 +3207,9 @@ export function VisualCanvasWorkspace({
     let disposed = false
     fetch('/api/generate/video', { credentials: 'include', cache: 'no-store' })
       .then((response) => response.ok ? response.json() : null)
-      .then((data: { success?: boolean; providers?: VideoProviderStatusInfo[] } | null) => {
+      .then((data: { success?: boolean; providers?: VideoProviderStatusInfo[]; platformGenerationEnabled?: boolean } | null) => {
         if (disposed || !data?.success || !Array.isArray(data.providers)) return
+        setPlatformVideoGenerationEnabled(data.platformGenerationEnabled === true)
         const next = new Map<string, VideoProviderStatusInfo>()
         for (const provider of data.providers) {
           if (!provider.providerId) continue
@@ -11400,9 +11402,11 @@ export function VisualCanvasWorkspace({
     && selectedImageProviderStatus !== 'available'
     && !defaultImageProviderId
   const videoGenerateDisabled = editingNode?.kind === 'video'
-    && selectedVideoProviderStatus !== 'available'
-    && !defaultVideoProviderId
-    && !(normalizedPromptModel === 'volcengine-seedance-video' && editingNode.status === 'running' && metadataRecord(editingNode.metadataJson).taskId)
+    && (!platformVideoGenerationEnabled || billingMode === 'user_provider_account' || (
+      selectedVideoProviderStatus !== 'available'
+      && !defaultVideoProviderId
+      && !(normalizedPromptModel === 'volcengine-seedance-video' && editingNode.status === 'running' && metadataRecord(editingNode.metadataJson).taskId)
+    ))
 
   const handleStopAllGenerations = useCallback(() => {
     clearGenerationTimersAndRequests('manual')
@@ -13394,13 +13398,12 @@ export function VisualCanvasWorkspace({
               videoGenerateDisabled ||
               isActiveGenerationStatus(editingNode.status) ||
               ((editingNode.kind === 'text' || editingNode.kind === 'image') && billingMode === 'user_provider_account' && !selectedUserAccountId) ||
-              (editingNode.kind === 'image' && billingMode === 'user_provider_account' && Boolean(selectedUserAccountId) && !userProviderAccounts.find((a) => a.id === selectedUserAccountId)?.fieldMeta?.endpointId) ||
-              editingNode.kind === 'video'
+              (editingNode.kind === 'image' && billingMode === 'user_provider_account' && Boolean(selectedUserAccountId) && !userProviderAccounts.find((a) => a.id === selectedUserAccountId)?.fieldMeta?.endpointId)
             }
             generateLabel={
               isActiveGenerationStatus(editingNode.status)
                 ? '生成中…'
-                : editingNode.kind === 'video'
+                : editingNode.kind === 'video' && (!platformVideoGenerationEnabled || billingMode === 'user_provider_account')
                   ? '视频生成内测中'
                 : editingNode.kind === 'image' && !defaultImageProviderId
                   ? '请先配置图片 Provider'

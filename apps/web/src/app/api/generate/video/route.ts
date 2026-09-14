@@ -427,6 +427,7 @@ export async function GET() {
         model: provider.model,
       })),
       defaultProviderId: defaultVideoProviderId(providers),
+      platformGenerationEnabled: process.env.ENABLE_PLATFORM_VIDEO_GENERATION === 'true' && process.env.GENERATION_DISABLED !== 'true',
     })
   } catch (error) {
     console.error('[api/generate/video][status]', error)

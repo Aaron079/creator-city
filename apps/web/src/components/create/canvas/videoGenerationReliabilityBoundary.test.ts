@@ -22,10 +22,19 @@ const testDirectory = dirname(fileURLToPath(import.meta.url))
 const workspaceSource = readFileSync(resolve(testDirectory, '../VisualCanvasWorkspace.tsx'), 'utf8')
 const videoRouteSource = readFileSync(resolve(testDirectory, '../../../app/api/generate/video/route.ts'), 'utf8')
 
+test('uses the server video gate instead of unconditionally disabling every video node', () => {
+  const disabled = workspaceSource.slice(workspaceSource.indexOf('generateDisabled={'), workspaceSource.indexOf('generateLabel={'))
+  assert.doesNotMatch(disabled, /\|\|\s*editingNode\.kind === 'video'\s*\}/)
+  assert.match(workspaceSource, /\[platformVideoGenerationEnabled, setPlatformVideoGenerationEnabled\] = useState\(false\)/)
+  assert.match(workspaceSource, /setPlatformVideoGenerationEnabled\(data\.platformGenerationEnabled === true\)/)
+  assert.match(workspaceSource, /!platformVideoGenerationEnabled \|\| billingMode === 'user_provider_account'/)
+  assert.match(videoRouteSource, /platformGenerationEnabled: process\.env\.ENABLE_PLATFORM_VIDEO_GENERATION === 'true' && process\.env\.GENERATION_DISABLED !== 'true'/)
+})
+
 test('keeps the platform video gate ahead of billing and provider dispatch', () => {
   const gateIndex = videoRouteSource.indexOf("errorCode: 'VIDEO_GENERATION_NOT_READY'")
   const billingIndex = videoRouteSource.indexOf('const billing = await setupBilling(')
-  const providerIndex = videoRouteSource.indexOf('const raw = await runGenerate(')
+  const providerIndex = videoRouteSource.indexOf('const raw = await runOwnedGeneration(')
   const finalizeIndex = videoRouteSource.indexOf('const result = await finalizeBilling(')
 
   assert.ok(gateIndex >= 0, 'platform video gate must remain present')
@@ -35,6 +44,20 @@ test('keeps the platform video gate ahead of billing and provider dispatch', () 
   assert.ok(gateIndex < billingIndex, 'platform gate must run before billing')
   assert.ok(gateIndex < providerIndex, 'platform gate must run before provider dispatch')
   assert.ok(gateIndex < finalizeIndex, 'platform gate must run before billing finalization')
+})
+
+test('video button opens only for an enabled platform with an available provider', () => {
+  const start = workspaceSource.indexOf('const videoGenerateDisabled = ') + 'const videoGenerateDisabled = '.length
+  const end = workspaceSource.indexOf('\n\n', start)
+  const disabled = new Function('editingNode', 'platformVideoGenerationEnabled', 'billingMode', 'selectedVideoProviderStatus', 'defaultVideoProviderId', 'normalizedPromptModel', 'metadataRecord', `return ${workspaceSource.slice(start, end)}`)
+  const node = { kind: 'video', status: 'idle' }
+  const check = (enabled: boolean, mode = 'platform_credits', status = 'available', fallback: string | null = null) =>
+    disabled(node, enabled, mode, status, fallback, 'volcengine-seedance-video', () => ({}))
+  assert.equal(check(true), false)
+  assert.equal(check(false), true)
+  assert.equal(check(true, 'user_provider_account'), true)
+  assert.equal(check(true, 'platform_credits', 'not-configured'), true)
+  assert.equal(check(true, 'platform_credits', 'not-configured', 'volcengine-seedance-video'), false)
 })
 
 test('caps video polling and exits immediately after cancellation', () => {
