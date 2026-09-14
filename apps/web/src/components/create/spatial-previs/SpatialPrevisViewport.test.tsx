@@ -27,7 +27,7 @@ const viewportSource = readFileSync(new URL('./SpatialPrevisViewport.tsx', impor
 declare global {
   interface Window {
     __spatialPrevisViewportHarness: {
-      mount: (state: SpatialPrevisState, disabled?: boolean, currentTimeSec?: number, isExportingVideo?: boolean) => void
+      mount: (state: SpatialPrevisState, disabled?: boolean, currentTimeSec?: number, isExportingVideo?: boolean, stateful?: boolean) => void
       mountRigProof: (state: SpatialPrevisState, showCameraRig: boolean) => void
       lastChange: () => SpatialPrevisState | null
       cameraRoute: () => Array<[number, number, number]>
@@ -155,11 +155,11 @@ function stateWithWhitebox(): SpatialPrevisState {
       ...state.scene,
       whitebox: {
         entities: [
-          { id: 'floor-main', label: 'floor-main', confidence: 1, kind: 'floor', position: { x: 0, y: -0.75, z: 0 }, rotationY: 0, size: { x: 16, y: 0.2, z: 12 }, sourceAssetIds: ['reference-1'] },
+          { id: 'floor-main', label: 'floor-main', confidence: 1, kind: 'floor', position: { x: 0, y: -0.82, z: 0 }, rotationY: 0, size: { x: 16, y: 0.2, z: 12 }, sourceAssetIds: ['reference-1'] },
           { id: 'wall-back', label: 'wall-back', confidence: 1, kind: 'wall', position: { x: 0, y: 2, z: -4 }, rotationY: 0, size: { x: 8, y: 4, z: 0.25 }, sourceAssetIds: ['reference-1'] },
           { id: 'opening-left', label: 'opening-left', confidence: 1, kind: 'opening', position: { x: -3, y: 1.3, z: -3.8 }, rotationY: 0, size: { x: 1.4, y: 2.6, z: 0.16 }, sourceAssetIds: ['reference-1'] },
-          { id: 'volume-stage', label: 'volume-stage', confidence: 1, kind: 'volume', position: { x: 2, y: 0.5, z: 0 }, rotationY: 0.4, size: { x: 2, y: 1, z: 2 }, sourceAssetIds: ['reference-1'] },
-          { id: 'furniture-table', label: 'furniture-table', confidence: 1, kind: 'furniture', position: { x: -2, y: 0.45, z: 1 }, rotationY: -0.2, size: { x: 1.6, y: 0.9, z: 0.8 }, sourceAssetIds: ['reference-1'] },
+          { id: 'volume-stage', label: 'volume-stage', confidence: 1, kind: 'volume', position: { x: 4, y: 0.5, z: 0 }, rotationY: 0.4, size: { x: 2, y: 1, z: 2 }, sourceAssetIds: ['reference-1'] },
+          { id: 'furniture-table', label: 'furniture-table', confidence: 1, kind: 'furniture', position: { x: -4, y: 0.45, z: 1 }, rotationY: -0.2, size: { x: 1.6, y: 0.9, z: 0.8 }, sourceAssetIds: ['reference-1'] },
           { id: 'prop-pedestal', label: 'prop-pedestal', confidence: 1, kind: 'prop', position: { x: 1, y: 0.6, z: 2 }, rotationY: 0, size: { x: 1, y: 1.2, z: 1 }, sourceAssetIds: ['reference-1'] },
           { id: 'reference-plane', label: 'reference-plane', confidence: 1, kind: 'referencePlane', position: { x: 4, y: 2, z: -2 }, rotationY: 0.2, size: { x: 3, y: 2, z: 0.08 }, sourceAssetIds: ['reference-1'] },
         ],
@@ -383,19 +383,23 @@ function renderedHarnessSource() {
     }
 
     window.__spatialPrevisViewportHarness = {
-      mount(state, disabled = true, currentTimeSec = 6, isExportingVideo = false) {
+      mount(state, disabled = true, currentTimeSec = 6, isExportingVideo = false, stateful = false) {
         root?.unmount()
         latestState = null
         const container = document.getElementById('root')
         container.replaceChildren()
         root = createRoot(container)
-        root.render(React.createElement(SpatialPrevisViewport, {
-          state,
+        function Harness() {
+          const [current, setCurrent] = React.useState(state)
+          return React.createElement(SpatialPrevisViewport, {
+          state: current,
           currentTimeSec,
           disabled,
           isExportingVideo,
-          onChange: (nextState) => { latestState = nextState },
-        }))
+          onChange: (nextState) => { latestState = nextState; if (stateful) setCurrent(nextState) },
+          })
+        }
+        root.render(React.createElement(Harness))
       },
       mountRigProof(state, showCameraRig) {
         root?.unmount()
@@ -472,10 +476,10 @@ async function prepareRenderedViewport(page: Page) {
   await page.addScriptTag({ path: bundlePath })
 }
 
-async function mountRenderedViewport(page: Page, state: SpatialPrevisState, expectedCanvases = 2, disabled = true, currentTimeSec = 6) {
-  await page.evaluate(({ nextState, nextDisabled, nextCurrentTimeSec }) => {
-    window.__spatialPrevisViewportHarness.mount(nextState, nextDisabled, nextCurrentTimeSec)
-  }, { nextState: state, nextDisabled: disabled, nextCurrentTimeSec: currentTimeSec })
+async function mountRenderedViewport(page: Page, state: SpatialPrevisState, expectedCanvases = 2, disabled = true, currentTimeSec = 6, stateful = false) {
+  await page.evaluate(({ nextState, nextDisabled, nextCurrentTimeSec, stateful }) => {
+    window.__spatialPrevisViewportHarness.mount(nextState, nextDisabled, nextCurrentTimeSec, false, stateful)
+  }, { nextState: state, nextDisabled: disabled, nextCurrentTimeSec: currentTimeSec, stateful })
   await page.waitForFunction(() => {
     const canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>('[data-spatial-previs-viewport="true"] canvas'))
     return canvases.every((canvas) => canvas.width > 0 && canvas.height > 0 && canvas.getBoundingClientRect().width > 0 && canvas.getBoundingClientRect().height > 0)
@@ -1188,6 +1192,55 @@ test('raises the selected physical camera with an overview-canvas pointer drag',
   }
 })
 
+test('grabbing the physical camera beside its route point does not jump down to the floor plane', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    const project = stateWithWhitebox()
+    await mountRenderedViewport(page, project, 2, false)
+    await selectDirectorDragTool(page, '机位')
+    const rect = (await renderedViewportEvidence(page)).canvases[0]!.rect
+    const body = worldPointInCanvas({ x: -0.3, y: 2, z: 5 }, rect)
+    await page.mouse.move(body.x, body.y)
+    await page.mouse.down()
+    await page.mouse.move(body.x - 2, body.y - 2, { steps: 3 })
+    await page.mouse.up()
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const before = project.masterTake.cameraTrack.keyframes[1]!.position
+    const after = changed.masterTake.cameraTrack.keyframes[1]!.position
+    const delta = Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z)
+    assert.ok(delta > 0 && delta < 0.4, `a two-pixel camera grab must not teleport: ${delta}`)
+    assert.deepEqual(changed.scene, project.scene)
+  } finally { await page.close() }
+})
+
+test('keeps capture throughout the first unselected camera drag while React applies every position update', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    const project = stateWithWhitebox()
+    await mountRenderedViewport(page, project, 2, false, 6, true)
+    const rect = (await renderedViewportEvidence(page)).canvases[0]!.rect
+    const body = worldPointInCanvas({ x: -0.3, y: 2, z: 5 }, rect)
+    const start = worldPointInCanvas(project.masterTake.cameraTrack.keyframes[1]!.position, rect)
+    await page.mouse.move(body.x, body.y)
+    await page.mouse.down()
+    await page.mouse.move(body.x - 40, body.y - 20, { steps: 20 })
+    await page.mouse.up()
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const end = worldPointInCanvas(changed.masterTake.cameraTrack.keyframes[1]!.position, rect)
+    assert.ok(Math.abs(end.x - start.x + 40) < 8, `camera must follow the full drag, not just its first event: ${end.x - start.x}`)
+    assert.ok(Math.abs(end.y - start.y + 20) < 8)
+    assert.deepEqual(changed.scene, project.scene)
+    assert.deepEqual(changed.masterTake.actorTracks, project.masterTake.actorTracks)
+    assert.equal(await page.getByRole('button', { name: '摄影机位移与高度', exact: true }).getAttribute('aria-pressed'), 'true')
+  } finally { await page.close() }
+})
+
 test('moves the selected camera target through an actual overview-canvas pointer drag', async () => {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
@@ -1520,6 +1573,59 @@ test('keeps a newly added actor at its anchor in both real 3D scenes while the c
       cameraPositions.push((await page.evaluate(() => window.__spatialPrevisViewportHarness.liveCameraPose()))?.position)
     }
     assert.notDeepEqual(cameraPositions[0], cameraPositions[2], 'the camera must actually move during this check')
+  } finally { await page.close() }
+})
+
+test('stops an existing actor route before a solid wall in overview and LIVE without rewriting points', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    const project = structuredClone(state)
+    project.scene.whitebox.entities = [
+      { id: 'floor', kind: 'floor', label: 'Ground', position: { x: 0, y: -0.05, z: 0 }, size: { x: 16, y: 0.1, z: 16 }, rotationY: 0, confidence: 1, sourceAssetIds: [] },
+      { id: 'wall', kind: 'wall', label: 'Solid wall', position: { x: 0, y: 1.5, z: 0.5 }, size: { x: 7, y: 3, z: 0.2 }, rotationY: 0, confidence: 1, sourceAssetIds: [] },
+    ]
+    const positions = []
+    for (const time of [0, 3, 6, 12]) {
+      await mountRenderedViewport(page, project, 2, false, time)
+      const heads = await page.evaluate(() => window.__spatialPrevisViewportHarness.actorHeads())
+      assert.deepEqual(heads[0], heads[1], 'LIVE and overview must use the same physical placement')
+      assert.ok(heads[0]![0]![1] >= 1.96, 'feet must stay above the actual floor, not sink below it')
+      assert.ok(heads[0]![0]![2] >= 0.91, 'actor body must stop on the near side of the wall')
+      positions.push(heads[0]![0])
+      assert.equal(await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange()), null)
+    }
+    assert.deepEqual(positions[1], positions[3], 'a blocked actor cannot resume behind the wall at a later keyframe')
+    await page.getByRole('status').filter({ hasText: 'Solid wall' }).waitFor()
+    await page.screenshot({ path: path.resolve('../../.superpowers/qa/spatial-studio/actor-solid-collision.png') })
+  } finally { await page.close() }
+})
+
+test('picks a camera route handle through overlapping props including its padded hit area', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  try {
+    await prepareRenderedViewport(page)
+    const project = structuredClone(state)
+    project.scene.whitebox.entities = [{ id: 'prop', kind: 'prop', label: 'Foreground prop', position: { x: 2, y: 2.4, z: 4 }, size: { x: 3, y: 3, z: 3 }, rotationY: 0, confidence: 1, sourceAssetIds: [] }]
+    for (const offset of [0, 8]) {
+      await mountRenderedViewport(page, project, 2, false, 6)
+      const rect = (await renderedViewportEvidence(page)).canvases[0]!.rect
+      const point = worldPointInCanvas({ x: 2, y: 2.4, z: 4 }, rect)
+      await page.mouse.move(point.x + offset, point.y)
+      await page.mouse.down()
+      await page.mouse.move(point.x + offset - 45, point.y - 25, { steps: 8 })
+      await page.mouse.up()
+      const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+      assert.ok(changed, 'drag must update the camera route')
+      assert.deepEqual(changed.scene, project.scene, 'foreground props must not steal the route-point drag')
+      assert.notDeepEqual(changed.masterTake.cameraTrack, project.masterTake.cameraTrack)
+      assert.deepEqual(changed.masterTake.actorTracks, project.masterTake.actorTracks)
+    }
+    assert.deepEqual(errors, [])
   } finally { await page.close() }
 })
 

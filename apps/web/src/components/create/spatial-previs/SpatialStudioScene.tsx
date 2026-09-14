@@ -7,7 +7,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { Object3D, Quaternion, Vector3 } from 'three'
 import type { Group } from 'three'
 import { restPose, samplePose, setPose, solveLimb, studioOf, temperatureColor, updateStudio } from '@/lib/spatial-previs/studio'
-import { sampleActor } from '@/lib/spatial-previs/sampler'
+import { groundedActorPose, sampleActorPlacement } from '@/lib/spatial-previs/actor-placement'
 import type { SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
 import type { ActorPose, PoseJoint, StudioLight, StudioTool } from '@/lib/spatial-previs/studio-types'
 import { updateWhiteboxEntity } from '@/lib/spatial-previs/whitebox-edit'
@@ -84,12 +84,13 @@ export function StudioSceneGizmo({ state, tool, selection, time, disabled, onCha
   const light = studio.lighting.lights.find(l => l.id === selection.lightId)
   const actor = state.masterTake.actorTracks.find(a => a.id === selection.actorId)
   const pose = actor ? samplePose(state, actor.id, time) ?? restPose() : null
-  const actorPosition = actor?.keyframes.length ? sampleActor(actor, time).position : null
+  const actorPosition = actor?.keyframes.length ? sampleActorPlacement(state, actor, time).position : null
+  const displayedPose = pose && actorPosition ? groundedActorPose(state, actorPosition, pose) : pose
   let position: Vec3 | null = null
   if (tool === 'calibration' && entity) position = entity.position
   if (tool === 'lighting' && light) position = selection.lampTarget ? light.target : light.position
   if (tool === 'performance' && pose && actorPosition) {
-    position = new Vector3(...tuple(pose[selection.joint])).applyAxisAngle(new Vector3(0, 1, 0), pose.yaw).add(new Vector3(...tuple(actorPosition)))
+    position = new Vector3(...tuple(displayedPose![selection.joint])).applyAxisAngle(new Vector3(0, 1, 0), pose.yaw).add(new Vector3(...tuple(actorPosition)))
   }
   const mode = tool === 'calibration' ? selection.transform : 'translate'
   const x = position?.x, y = position?.y, z = position?.z

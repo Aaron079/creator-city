@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { cameraTrackForMode, rotationFromTarget } from '@/lib/spatial-previs/camera'
 import { ensureCameraKeyframeAt, isValidCameraOperationTime } from '@/lib/spatial-previs/direct-manipulation'
-import { sampleActor } from '@/lib/spatial-previs/sampler'
+import { sampleActorPlacement } from '@/lib/spatial-previs/actor-placement'
 import type { CameraKeyframe, CameraMotionBaseline, SpatialPrevisCameraMode, SpatialPrevisState, Vec3 } from '@/lib/spatial-previs/types'
 
 const KEYFRAME_EPSILON = 1e-6
@@ -37,7 +37,7 @@ function exactCameraKeyframe(keyframes: CameraKeyframe[], timeSec: number) {
 function actorPosition(state: SpatialPrevisState, timeSec: number, actorTrackId?: string) {
   if (!actorTrackId) return null
   const track = state.masterTake.actorTracks.find((item) => item.id === actorTrackId)
-  return track?.keyframes.length ? sampleActor(track, timeSec).position : null
+  return track?.keyframes.length ? sampleActorPlacement(state, track, timeSec).position : null
 }
 
 function addVector(vector: Vec3, delta: Vec3): Vec3 {
