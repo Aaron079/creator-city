@@ -1001,6 +1001,174 @@ test('moves the selected whitebox actor through an actual overview-canvas pointe
   }
 })
 
+test('inserts actor and camera route points from a right-click menu without rewriting authored keys', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    await page.evaluate(() => {
+      // Match VisualCanvasWorkspace's modal stacking context, not only an isolated viewport.
+      Object.assign(document.getElementById('root')!.style, { position: 'relative', zIndex: '3000' })
+    })
+    for (const kind of ['actor', 'camera'] as const) {
+      const project = structuredClone(stateWithWhitebox())
+      project.scene.whitebox.entities = []
+      const keys = kind === 'actor' ? project.masterTake.actorTracks[0]!.keyframes : project.masterTake.cameraTrack.keyframes
+      const a = keys[0]!, b = keys[1]!
+      const midpoint = { x: (a.position.x + b.position.x) / 2, y: (a.position.y + b.position.y) / 2, z: (a.position.z + b.position.z) / 2 }
+      await mountRenderedViewport(page, project, 2, false, 0, true)
+      const rect = (await renderedViewportEvidence(page)).canvases[0]!.rect
+      const hit = worldPointInCanvas(midpoint, rect)
+      await page.mouse.click(hit.x, hit.y, { button: 'right' })
+      const menu = page.getByRole('menu', { name: '轨道点位' })
+      await menu.waitFor({ timeout: 3000 })
+      assert.equal(await menu.evaluate(element => {
+        const rect = element.getBoundingClientRect()
+        return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+      }), true, 'Route menu must receive pointer events above the workspace modal')
+      assert.equal(await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange()), null)
+      await page.keyboard.press('Escape')
+      await menu.waitFor({ state: 'detached' })
+      await page.mouse.click(hit.x, hit.y, { button: 'right' })
+      assert.equal(await page.getByRole('menuitem', { name: '添加点位', exact: true }).isEnabled(), true, `${kind}: ${await menu.innerText()}`)
+      await page.getByRole('menuitem', { name: '添加点位', exact: true }).click()
+      const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+      assert.ok(changed)
+      const nextKeys = kind === 'actor' ? changed.masterTake.actorTracks[0]!.keyframes : changed.masterTake.cameraTrack.keyframes
+      assert.equal(nextKeys.length, keys.length + 1)
+      for (const key of keys) assert.deepEqual(nextKeys.find(k => k.id === key.id), key)
+      const added = nextKeys.find(k => !keys.some(old => old.id === k.id))!
+      assert.ok(Math.abs(added.timeSec - (a.timeSec + b.timeSec) / 2) < 0.08)
+      assert.equal(changed.masterTake.durationSec, project.masterTake.durationSec)
+      if (kind === 'actor') assert.deepEqual(changed.masterTake.cameraTrack, project.masterTake.cameraTrack)
+      else assert.deepEqual(changed.masterTake.actorTracks, project.masterTake.actorTracks)
+      const addedHit = worldPointInCanvas(added.position, rect)
+      await page.mouse.move(addedHit.x, addedHit.y)
+      await page.mouse.down()
+      await page.mouse.move(addedHit.x - 35, addedHit.y + 15, { steps: 10 })
+      await page.mouse.up()
+      const dragged = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+      assert.ok(dragged)
+      const draggedKeys = kind === 'actor' ? dragged.masterTake.actorTracks[0]!.keyframes : dragged.masterTake.cameraTrack.keyframes
+      assert.notDeepEqual(draggedKeys.find(k => k.id === added.id)?.position, added.position)
+      for (const key of keys) assert.deepEqual(draggedKeys.find(k => k.id === key.id), key)
+    }
+  } finally { await page.close() }
+})
+
+test('creates a ground walk point at the chosen time and dismisses the menu outside', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    const project = structuredClone(stateWithWhitebox())
+    project.scene.whitebox.entities = []
+    project.masterTake.actorTracks[0]!.keyframes = [project.masterTake.actorTracks[0]!.keyframes[0]!]
+    await mountRenderedViewport(page, project, 2, false, 3, true)
+    const rect = (await renderedViewportEvidence(page)).canvases[0]!.rect
+    const hit = worldPointInCanvas({ x: -4, y: -0.72, z: 4 }, rect)
+    await page.mouse.click(hit.x, hit.y, { button: 'right' })
+    await page.getByRole('menuitem', { name: '添加人物走位点' }).waitFor({ timeout: 3000 })
+    await page.getByRole('button', { name: '添加人物', exact: true }).hover()
+    await page.mouse.click(5, 5)
+    assert.equal(await page.getByRole('menu', { name: '轨道点位' }).count(), 0)
+    assert.equal(await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange()), null)
+    await page.mouse.click(hit.x, hit.y, { button: 'right' })
+    await page.getByRole('menuitem', { name: '添加人物走位点' }).click()
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    const keys = changed.masterTake.actorTracks[0]!.keyframes
+    assert.equal(keys.length, 2)
+    assert.deepEqual(keys[0], project.masterTake.actorTracks[0]!.keyframes[0])
+    assert.equal(keys[1]!.timeSec, 3)
+    assert.ok(Math.abs(keys[1]!.position.x + 4) < 0.05)
+    assert.ok(Math.abs(keys[1]!.position.z - 4) < 0.05)
+    assert.deepEqual(changed.masterTake.cameraTrack, project.masterTake.cameraTrack)
+  } finally { await page.close() }
+})
+
+test('inserts only into the aerial route and never overwrites a ground point at an existing time', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    const project = structuredClone(stateWithTimedCameraPlans())
+    await mountRenderedViewport(page, project, 2, false, 0, true)
+    await page.getByRole('button', { name: '航拍', exact: true }).click()
+    const rect = (await renderedViewportEvidence(page)).canvases[0]!.rect
+    const keys = project.masterTake.aerialCameraTrack.keyframes
+    const a = keys[0]!.position, b = keys[1]!.position
+    const hit = worldPointInCanvas({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 }, rect)
+    await page.mouse.click(hit.x, hit.y, { button: 'right' })
+    await page.getByRole('menuitem', { name: '添加点位', exact: true }).click()
+    const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+    assert.ok(changed)
+    assert.equal(changed.masterTake.aerialCameraTrack.keyframes.length, keys.length + 1)
+    for (const key of keys) assert.deepEqual(changed.masterTake.aerialCameraTrack.keyframes.find(k => k.id === key.id), key)
+    assert.deepEqual(changed.masterTake.cameraTrack, project.masterTake.cameraTrack)
+    assert.deepEqual(changed.masterTake.actorTracks, project.masterTake.actorTracks)
+    await mountRenderedViewport(page, project, 2, false, 0, true)
+    const ground = worldPointInCanvas({ x: -4, y: -0.72, z: 4 }, rect)
+    await page.mouse.click(ground.x, ground.y, { button: 'right' })
+    assert.equal(await page.getByRole('menuitem', { name: '添加人物走位点' }).isEnabled(), false)
+    assert.equal(await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange()), null)
+  } finally { await page.close() }
+})
+
+test('selects prop bodies without moving them and drags only their dedicated top handles', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    for (const kind of ['prop', 'furniture'] as const) {
+      const project = structuredClone(stateWithWhitebox())
+      project.masterTake.actorTracks = []
+      const entity: WhiteboxEntity = { id: 'handle-prop', kind, label: 'Handle prop', position: { x: 0, y: 0.6, z: 0 }, size: { x: 2, y: 1.2, z: 2 }, rotationY: 0.3, confidence: 1, sourceAssetIds: [] }
+      project.scene.whitebox.entities = [entity]
+      await mountRenderedViewport(page, project, 2, false, 6, true)
+      const rect = (await renderedViewportEvidence(page)).canvases[0]!.rect
+      const body = worldPointInCanvas(entity.position, rect)
+      await page.mouse.move(body.x, body.y)
+      await page.mouse.down()
+      await page.mouse.move(body.x - 40, body.y - 20, { steps: 12 })
+      await page.mouse.up()
+      await page.getByText('当前：Handle prop', { exact: true }).waitFor()
+      assert.equal(await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange()), null, 'body must only select, never move the prop')
+      const handle = worldPointInCanvas({ x: 0, y: 1.38, z: 0 }, rect)
+      await page.mouse.move(handle.x + 6, handle.y)
+      assert.equal(await page.locator('canvas').first().evaluate(c => getComputedStyle(c.parentElement ?? c).cursor), 'grab')
+      await page.mouse.down()
+      await page.mouse.move(handle.x + 6 - 40, handle.y - 20, { steps: 20 })
+      await page.mouse.up()
+      const changed = await page.evaluate(() => window.__spatialPrevisViewportHarness.lastChange())
+      assert.ok(changed, 'the top handle must move the prop')
+      const moved = changed.scene.whitebox.entities[0]!
+      const end = worldPointInCanvas({ ...moved.position, y: 1.38 }, rect)
+      assert.ok(Math.abs(end.x - handle.x + 40) < 3, 'handle must preserve grip offset throughout the drag')
+      assert.ok(Math.abs(end.y - handle.y + 20) < 3)
+      assert.equal(moved.position.y, entity.position.y)
+      assert.deepEqual({ ...moved, position: entity.position }, entity)
+      assert.deepEqual(changed.masterTake, project.masterTake)
+    }
+  } finally { await page.close() }
+})
+
+test('keeps editor prop grab handles out of the actual LIVE canvas', async () => {
+  assert.ok(browser)
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await prepareRenderedViewport(page)
+    const project = structuredClone(stateWithWhitebox())
+    project.masterTake.actorTracks = []
+    await mountRenderedViewport(page, project, 2, true)
+    const disabled = await canvasScreenshots(page, 2)
+    await mountRenderedViewport(page, project, 2, false)
+    const editable = await canvasScreenshots(page, 2)
+    const liveDifference = await screenshotPixelDifference(page, disabled[1]!, editable[1]!)
+    assert.equal(liveDifference.changedPixels, 0, 'enabling editor handles must not change any LIVE pixels')
+  } finally { await page.close() }
+})
+
 test('moves a selected whitebox solid through an actual overview-canvas pointer drag', async () => {
   assert.ok(browser)
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })

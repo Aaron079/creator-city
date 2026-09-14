@@ -18,6 +18,8 @@ import {
   applyCameraTransform,
   applyCameraTargetDrag,
   applyObjectHeightDrag,
+  ensureActorKeyframeAt,
+  ensureCameraKeyframeAt,
 } from '@/lib/spatial-previs/direct-manipulation'
 import { applyCameraPose } from '@/lib/spatial-previs/camera'
 import { addDefaultActorTrack, setMasterTakeDuration } from '@/lib/spatial-previs/normalize'
@@ -39,6 +41,7 @@ import { SpatialStudioComparison } from './SpatialStudioComparison'
 import { putCut, samplePose, sampleProgramCamera, selectProgramCameraTrack, studioOf, updateStudio } from '@/lib/spatial-previs/studio'
 import type { StudioTool } from '@/lib/spatial-previs/studio-types'
 import studioStyles from './spatial-studio-styles'
+import { SpatialRouteGuide, SpatialRouteMenu, type RoutePointRequest } from './SpatialRouteEditing'
 
 const KEYFRAME_EPSILON = 1e-6
 const NUDGE_DELTA = 0.1
@@ -106,6 +109,9 @@ type SelectedRoutePoint = {
 }
 
 type DirectDragBindings = {
+  selectWhitebox: (id: string) => void
+  routeMenu: (event: ThreeEvent<MouseEvent>, point: RoutePointRequest) => void
+  groundMenu: (event: ThreeEvent<MouseEvent>) => void
   begin: (kind: DirectDragKind, event: ThreeEvent<PointerEvent>, startY: number, objectId?: string, routePointTimeSec?: number) => void
   move: (kind: DirectDragKind, event: ThreeEvent<PointerEvent>) => void
   end: (event: ThreeEvent<PointerEvent>) => void
@@ -302,17 +308,30 @@ function WhiteboxEntityMesh({
   const isReferencePlane = entity.kind === 'referencePlane'
   const isLowConfidence = entity.confidence < 0.6
   const opacity = selected ? 0.92 : isOpening ? 0.46 : isReferencePlane ? 0.5 : isLowConfidence ? 0.68 : 1
+  const hasGrabHandle = entity.kind === 'prop' || entity.kind === 'furniture'
   const handlers = manipulationEnabled && bindings
-    ? pointerHandlers('whitebox-ground', entity.position.y, bindings, entity.id)
+    ? hasGrabHandle ? {
+      onPointerDown: (event: ThreeEvent<PointerEvent>) => {
+        if (event.button !== 0) return
+        event.stopPropagation()
+        event.nativeEvent.stopImmediatePropagation()
+        bindings.selectWhitebox(entity.id)
+      },
+    } : pointerHandlers('whitebox-ground', entity.position.y, bindings, entity.id)
     : {}
 
   return (
+    <>
     <mesh
       castShadow
       receiveShadow
       position={tuple(entity.position)}
       rotation={[0, entity.rotationY, 0]}
       {...handlers}
+      onContextMenu={manipulationEnabled && bindings ? event => {
+        event.stopPropagation()
+        if (entity.kind === 'floor') bindings.groundMenu(event)
+      } : undefined}
     >
       <boxGeometry args={[entity.size.x, entity.size.y, entity.size.z]} />
       <meshStandardMaterial
@@ -326,7 +345,36 @@ function WhiteboxEntityMesh({
         depthWrite={opacity >= 1}
       />
     </mesh>
+    {hasGrabHandle && manipulationEnabled && bindings && <PropGrabHandle entity={entity} selected={selected} bindings={bindings} />}
+    </>
   )
+}
+
+function PropGrabHandle({ entity, selected, bindings }: { entity: WhiteboxEntity; selected: boolean; bindings: DirectDragBindings }) {
+  const handleRef = useRef<Group>(null)
+  const [hovered, setHovered] = useState(false)
+  const camera = useThree(scene => scene.camera)
+  const height = useThree(scene => scene.size.height)
+  const position = { ...entity.position, y: entity.position.y + entity.size.y / 2 + 0.18 }
+  const handlers = pointerHandlers('whitebox-ground', position.y, bindings, entity.id)
+  useFrame(() => {
+    const handle = handleRef.current
+    if (!handle) return
+    const distance = camera.position.distanceTo(handle.getWorldPosition(new Vector3()))
+    handle.scale.setScalar(distance * 2 * Math.tan((camera as ThreePerspectiveCamera).fov * Math.PI / 360) / height * 5)
+  })
+  return <group ref={handleRef} position={tuple(position)} userData={{ spatialPickPriority: 0.5 }} {...handlers}
+    onPointerOver={event => { setHovered(true); handlers.onPointerOver?.(event) }}
+    onPointerOut={() => { setHovered(false); handlers.onPointerOut?.() }}>
+    <mesh>
+      <sphereGeometry args={[1, 16, 12]} />
+      <meshBasicMaterial color={hovered || selected ? '#ffffff' : '#c4b5c9'} />
+    </mesh>
+    <mesh>
+      <sphereGeometry args={[2, 12, 8]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </mesh>
+  </group>
 }
 
 function ActorProxy({ selected }: { selected: boolean }) {
@@ -465,6 +513,7 @@ function pointerHandlers(
 
   return {
     onPointerDown: (event) => {
+      if (event.button !== 0) return
       bindings.onDragStateChange(true)
       bindings.begin(kind, event, startY, objectId, routePointTimeSec)
     },
@@ -593,9 +642,15 @@ function RoutePointHandle({
       position={tuple(position)}
       userData={{ spatialPickPriority: 3, spatialRouteHandle: { kind, timeSec, actorTrackId, selected } }}
       {...pointerHandlers(kind, position.y, bindings, actorTrackId, timeSec)}
+      onContextMenu={event => {
+        // Drag padding must not swallow right-clicks on a short adjacent segment.
+        if (event.object.userData.spatialPickPriority === 1) return
+        event.stopPropagation()
+        bindings.routeMenu(event, { kind: kind === 'actor-route' ? 'actor' : 'camera', actorTrackId, timeSec })
+      }}
     >
-      <mesh><sphereGeometry args={[0.14, 16, 12]} />
-      <meshBasicMaterial color={color} transparent opacity={selected ? 1 : 0.84} depthTest={false} /></mesh>
+      <mesh renderOrder={501}><sphereGeometry args={[0.14, 16, 12]} />
+      <meshBasicMaterial color={color} transparent opacity={selected ? 1 : 0.84} depthTest={false} depthWrite={false} /></mesh>
       <mesh userData={{ spatialPickPriority: 1 }}><sphereGeometry args={[0.336, 12, 8]} /><meshBasicMaterial transparent opacity={0} depthWrite={false} /></mesh>
     </group>
   )
@@ -738,10 +793,6 @@ export function SpatialPrevisWorldGeometry({
   studioGizmo?: React.ReactNode
 }) {
   const activeCameraTrack = selectSpatialPrevisCameraTrack(state, cameraMode)
-  const cameraPath = useMemo(
-    () => activeCameraTrack.keyframes.map((keyframe) => tuple(keyframe.position)),
-    [activeCameraTrack.keyframes],
-  )
   const anchors = useMemo(
     () => worldAnchors(state, currentTimeSec),
     [currentTimeSec, state],
@@ -756,6 +807,12 @@ export function SpatialPrevisWorldGeometry({
       <SpatialStudioLighting state={state} markers={showOverviewGuides} />
       {studioGizmo}
       <gridHelper args={[24, 24, '#476475', '#1a2a35']} position={[0, -0.72, 0]} />
+      {showOverviewGuides && manipulationEnabled && directDragBindings && selection?.kind === 'actor' && <mesh
+        rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.72, 0]} userData={{ spatialPickPriority: -1 }}
+        onContextMenu={event => { event.stopPropagation(); directDragBindings.groundMenu(event) }}>
+        <planeGeometry args={[200, 200]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>}
       {showOverviewGuides ? <axesHelper args={[2.4]} position={[-10, -0.69, -10]} /> : null}
       {showOverviewGuides ? anchors.map((anchor) => <WorldAnchorMarker key={anchor.id} anchor={anchor} />) : null}
       <group>
@@ -780,9 +837,8 @@ export function SpatialPrevisWorldGeometry({
         const proxy = pose ? <PerformanceActor pose={groundedActorPose(state, position, pose)} /> : <ActorProxy selected={isSelected} />
         return (
           <group key={track.id}>
-            {showOverviewGuides && track.keyframes.length > 1 ? (
-              <Line points={track.keyframes.map((keyframe) => tuple(keyframe.position))} color="#38bdf8" lineWidth={1.5} transparent opacity={0.48} />
-            ) : null}
+            {showOverviewGuides && <SpatialRouteGuide keyframes={track.keyframes} color="#38bdf8" selected={isSelected}
+              onInsert={manipulationEnabled && directDragBindings ? (event, timeSec) => directDragBindings.routeMenu(event, { kind: 'actor', actorTrackId: track.id, timeSec }) : undefined} />}
             {canTransform ? (
               <SpatialTransformGizmo
                 key={`actor-${transformControlVersion}`}
@@ -822,7 +878,8 @@ export function SpatialPrevisWorldGeometry({
         )
       })}
 
-      {showOverviewGuides && cameraPath.length > 1 ? <Line points={cameraPath} color="#fbbf24" lineWidth={1.5} transparent opacity={0.68} /> : null}
+      {showOverviewGuides && <SpatialRouteGuide keyframes={activeCameraTrack.keyframes} color="#fbbf24" selected={selection?.kind === 'camera'}
+        onInsert={manipulationEnabled && directDragBindings ? (event, timeSec) => directDragBindings.routeMenu(event, { kind: 'camera', timeSec }) : undefined} />}
       {showOverviewGuides && manipulationEnabled && directDragBindings ? activeCameraTrack.keyframes.map((keyframe) => (
         <RoutePointHandle
           key={keyframe.id}
@@ -1028,6 +1085,9 @@ export function SpatialPrevisViewport({ state: sourceState, currentTimeSec, disa
   const [isObjectDragging, setIsObjectDragging] = useState(false)
   const [worldCursor, setWorldCursor] = useState<'grab' | 'grabbing' | 'ns-resize' | 'crosshair'>('grab')
   const [selectedRoutePoint, setSelectedRoutePoint] = useState<SelectedRoutePoint | null>(null)
+  const [routeMenu, setRouteMenu] = useState<(RoutePointRequest & { x: number; y: number }) | null>(null)
+  const closeRouteMenu = useCallback(() => setRouteMenu(null), [])
+  useEffect(closeRouteMenu, [closeRouteMenu, disabled, currentTimeSec, cameraMode, studioCameraId, studioTool, programPreview])
   const [transformControlVersion, setTransformControlVersion] = useState(0)
   const directDragRef = useRef<ActiveDirectDrag | null>(null)
   const selectedActorTrack = state.masterTake.actorTracks.find((track) => track.id === selectedActorTrackId)
@@ -1098,8 +1158,10 @@ export function SpatialPrevisViewport({ state: sourceState, currentTimeSec, disa
     const target = event.target as unknown as { setPointerCapture?: (pointerId: number) => void }
     target.setPointerCapture?.(event.pointerId)
     const cameraGrab = kind === 'camera-ground' || kind === 'camera-route'
-    const origin = cameraGrab ? sampleCamera(selectSpatialPrevisCameraTrack(state, cameraMode).keyframes, routePointTimeSec ?? currentTimeSec).position : null
-    const grab = cameraGrab ? event.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -startY), new Vector3()) : null
+    const entity = kind === 'whitebox-ground' ? state.scene.whitebox.entities.find(item => item.id === objectId) : null
+    const propGrab = entity?.kind === 'prop' || entity?.kind === 'furniture'
+    const origin = cameraGrab ? sampleCamera(selectSpatialPrevisCameraTrack(state, cameraMode).keyframes, routePointTimeSec ?? currentTimeSec).position : propGrab ? entity.position : null
+    const grab = origin ? event.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -startY), new Vector3()) : null
     directDragRef.current = {
       kind,
       pointerId: event.pointerId,
@@ -1133,7 +1195,7 @@ export function SpatialPrevisViewport({ state: sourceState, currentTimeSec, disa
     }
 
     // Route handles live at camera height; projecting onto the floor would jump their X/Z.
-    const dragPlane = kind === 'camera-route' || kind === 'camera-ground'
+    const dragPlane = kind === 'camera-route' || kind === 'camera-ground' || (kind === 'whitebox-ground' && drag.grabOffset)
       ? new Plane(new Vector3(0, 1, 0), -drag.startY)
       : GROUND_PLANE
     const point = event.ray.intersectPlane(dragPlane, new Vector3())
@@ -1236,12 +1298,41 @@ export function SpatialPrevisViewport({ state: sourceState, currentTimeSec, disa
   }, [cameraMode, currentTimeSec, onChange, state])
 
   const directDragBindings = useMemo<DirectDragBindings>(() => ({
+    selectWhitebox: id => setSelection({ kind: 'whitebox', id }),
+    routeMenu: (event, point) => {
+      event.nativeEvent.preventDefault()
+      setRouteMenu({ ...point, x: event.nativeEvent.clientX, y: event.nativeEvent.clientY })
+    },
+    groundMenu: event => {
+      event.nativeEvent.preventDefault()
+      if (selection.kind !== 'actor' || !selectedActorTrackId) return
+      setRouteMenu({ kind: 'actor', actorTrackId: selectedActorTrackId, timeSec: currentTimeSec,
+        ground: { x: event.point.x, y: event.point.y, z: event.point.z }, x: event.nativeEvent.clientX, y: event.nativeEvent.clientY })
+    },
     begin: beginDirectDrag,
     move: moveDirectDrag,
     end: endDirectDrag,
     onDragStateChange: setIsObjectDragging,
     setCursor: setDirectCursor,
-  }), [beginDirectDrag, endDirectDrag, moveDirectDrag, setDirectCursor])
+  }), [beginDirectDrag, endDirectDrag, moveDirectDrag, setDirectCursor, selection.kind, selectedActorTrackId, currentTimeSec])
+
+  const menuKeys = routeMenu?.kind === 'actor' ? state.masterTake.actorTracks.find(t => t.id === routeMenu.actorTrackId)?.keyframes : selectedCameraTrack.keyframes
+  const duplicateRouteTime = Boolean(routeMenu && menuKeys?.some(k => Math.abs(k.timeSec - routeMenu.timeSec) <= KEYFRAME_EPSILON))
+  const insertRoutePoint = () => {
+    if (!routeMenu || duplicateRouteTime || disabled) return
+    const next = routeMenu.kind === 'camera'
+      ? ensureCameraKeyframeAt(state, cameraMode, routeMenu.timeSec)?.state
+      : routeMenu.ground
+        ? applyActorGroundDrag(state, routeMenu.actorTrackId!, routeMenu.timeSec, routeMenu.ground)
+        : ensureActorKeyframeAt(state, routeMenu.actorTrackId!, routeMenu.timeSec)?.state
+    if (next && next !== state) {
+      onChange(next)
+      if (routeMenu.actorTrackId) setSelectedActorTrackId(routeMenu.actorTrackId)
+      setSelection({ kind: routeMenu.kind })
+      setSelectedRoutePoint({ kind: routeMenu.kind, actorTrackId: routeMenu.actorTrackId, timeSec: routeMenu.timeSec })
+    }
+    closeRouteMenu()
+  }
 
   const addActor = useCallback(() => {
     if (disabled) return
@@ -1328,7 +1419,8 @@ export function SpatialPrevisViewport({ state: sourceState, currentTimeSec, disa
       <SpatialStudioTools state={sourceState} time={currentTimeSec} tool={studioTool} selection={studioSelection} cameraMode={cameraMode} selectedCameraId={studioCameraId} program={Boolean(studio.programEnabled)} disabled={disabled}
         onTool={setStudioTool} onSelection={setStudioSelection} onChange={onSourceChange} onTime={onCurrentTimeChange} onCamera={setStudioCameraId} onPreview={setProgramPreview} onProgram={enabled => onSourceChange(updateStudio(sourceState, { programEnabled: enabled }))} />
 
-      <div className="relative min-h-[390px] flex-1 bg-[#071015]">
+      <div className="relative min-h-[390px] flex-1 bg-[#071015]" onContextMenu={event => { event.preventDefault(); event.stopPropagation() }}>
+        {routeMenu && <SpatialRouteMenu {...routeMenu} ground={Boolean(routeMenu.ground)} duplicate={duplicateRouteTime} onAdd={insertRoutePoint} onClose={closeRouteMenu} />}
         <div className="absolute inset-0">
           {mounted ? (
             <WorldCanvas
