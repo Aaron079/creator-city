@@ -1,3 +1,4 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
@@ -65,6 +66,8 @@ function isAnyDbError(err: unknown): boolean {
 }
 
 export async function POST(request: NextRequest) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   try {
     let body: RequestBody
     try {

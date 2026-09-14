@@ -1,3 +1,4 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import type { GenerateRequest } from '@/lib/providers/types'
@@ -12,15 +13,16 @@ import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
 import { decryptProviderApiKey } from '@/lib/provider-accounts/crypto'
 import { safeRecordUsageLog } from '@/lib/usage/usage-log'
+import { buildProviderManagementStatus } from '@/lib/provider-management'
 
 function isSessionDbError(err: unknown): boolean {
   return err instanceof Error && (err as Error & { code?: string }).code === 'SESSION_DB_UNAVAILABLE'
 }
 
 // Translate raw provider error to user-facing message — never expose the key.
-function userProviderErrorMessage(upstreamStatus?: number): string {
+function userProviderErrorMessage(upstreamStatus?: number, rawCode?: string): string {
   if (upstreamStatus === 401 || upstreamStatus === 403) return 'API Key 无效，请在账户管理页重新添加有效的 Key。'
-  if (upstreamStatus === 402) return '账户额度不足，请在服务商处充值后重试。'
+  if (upstreamStatus === 402 || (upstreamStatus === 429 && rawCode === 'insufficient_quota')) return '账户额度不足，请在服务商处充值后重试。'
   if (upstreamStatus === 429) return '请求频率超限，请稍后重试。'
   return '生成失败，请检查 API 账户状态或稍后重试。'
 }
@@ -81,6 +83,8 @@ type TextGenerateBody = Partial<GenerateRequest> & {
 }
 
 export async function POST(request: NextRequest) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   let generationStage = 'init'
   let providerId = 'openai-text'
   try {
@@ -147,11 +151,11 @@ export async function POST(request: NextRequest) {
         raw = chinaResult.success
           ? { success: true, providerId, mode: 'real', status: 'succeeded', result: { text: chinaResult.text, metadata: { model: chinaResult.model } }, message: `文本生成成功（${chinaResult.model}）` }
           : { success: false, providerId, mode: 'unavailable', status: 'failed', message: userProviderErrorMessage(chinaResult.upstreamStatus), errorCode: chinaResult.errorCode }
-      } else if (providerId === 'kimi-text') {
-        const chinaResult = await generateKimiText({ prompt, system, maxTokens: requestedMaxTokens ?? 1024, purpose: 'generate', apiKeyOverride: plainKey })
+      } else if (providerId === 'kimi-text' || providerId === 'kimi-multimodal') {
+        const chinaResult = await generateKimiText({ prompt, system, maxTokens: requestedMaxTokens ?? 1024, providerId, purpose: 'generate', apiKeyOverride: plainKey })
         raw = chinaResult.success
           ? { success: true, providerId, mode: 'real', status: 'succeeded', result: { text: chinaResult.text, metadata: { model: chinaResult.model } }, message: `文本生成成功（${chinaResult.model}）` }
-          : { success: false, providerId, mode: 'unavailable', status: 'failed', message: userProviderErrorMessage(chinaResult.upstreamStatus), errorCode: chinaResult.errorCode }
+          : { success: false, providerId, mode: 'unavailable', status: 'failed', message: userProviderErrorMessage(chinaResult.upstreamStatus, chinaResult.rawCode), errorCode: chinaResult.errorCode, rawCode: chinaResult.rawCode }
       } else if (providerId === 'openai-text') {
         raw = await callOpenAIWithUserKey(plainKey, prompt, requestedMaxTokens ?? 2048, system)
       } else {
@@ -201,10 +205,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(billing.errorResponse, { status: billing.status })
     }
 
+    generationStage = 'provider_status'
+    const providerStatus = await buildProviderManagementStatus().catch(() => null)
+    // Environment-only fallback cannot establish the persisted enablement state.
+    if (!providerStatus || providerStatus.errorCode) {
+      return NextResponse.json({
+        success: false,
+        errorCode: 'PROVIDER_STATUS_UNAVAILABLE',
+        message: 'Provider 状态暂时无法确认，请稍后重试。',
+        retryable: true,
+        providerId,
+        mode: 'unavailable',
+        status: 'failed',
+      }, { status: 503 })
+    }
+    const provider = providerStatus.providers.find((row) => row.providerId === providerId)
+    if (!provider || !provider.available) {
+      const errorCode = !provider ? 'PROVIDER_NOT_FOUND' : !provider.configured ? 'PROVIDER_NOT_CONFIGURED' : 'PROVIDER_DISABLED'
+      return NextResponse.json({
+        success: false,
+        errorCode,
+        message: provider?.reason ?? 'Provider 不存在。',
+        providerId,
+        mode: 'unavailable',
+        status: errorCode === 'PROVIDER_NOT_CONFIGURED' ? 'not-configured' : 'failed',
+      }, { status: !provider ? 404 : !provider.configured ? 200 : 403 })
+    }
+
     generationStage = 'provider'
     const userId = billing.ctx.userId
     let raw: TextGenerateResponse
-    if (providerId === 'kimi-text' || providerId === 'deepseek-text' || providerId === 'deepseek-reasoner') {
+    if (providerId === 'kimi-text' || providerId === 'kimi-multimodal' || providerId === 'deepseek-text' || providerId === 'deepseek-reasoner') {
       const requestedMaxTokens = typeof body.maxTokens === 'number'
         ? body.maxTokens
         : typeof body.params?.maxTokens === 'number'
@@ -218,8 +249,8 @@ export async function POST(request: NextRequest) {
         : typeof body.params?.system === 'string'
           ? body.params.system
           : undefined
-      const chinaResult = providerId === 'kimi-text'
-        ? await generateKimiText({ prompt, system, maxTokens, purpose: 'generate' })
+      const chinaResult = providerId === 'kimi-text' || providerId === 'kimi-multimodal'
+        ? await generateKimiText({ prompt, system, maxTokens, providerId, purpose: 'generate' })
         : await generateDeepSeekText({
             prompt,
             system,

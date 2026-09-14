@@ -85,7 +85,7 @@ function outputTypeIcon(t: string) {
 }
 
 function billingModeLabel(m: string) {
-  if (m === 'platform_credits') return '平台额度'
+  if (m === 'platform_credits') return '平台 API'
   if (m === 'user_provider_account') return '我的 API'
   return m
 }
@@ -238,11 +238,11 @@ export default function UsageHistoryPage() {
             <div className="mb-1.5 text-[11px] uppercase tracking-[0.22em] text-white/30">账号设置</div>
             <h1 className="text-2xl font-semibold text-white">我的生成用量</h1>
             <p className="mt-1.5 text-sm text-white/45 leading-relaxed max-w-xl">
-              你在 Creator City 中使用平台额度与我的 API 账户的生成记录。
+              你在 Creator City 中使用平台 API与我的 API 账户的生成记录。
               Provider 费用由对应付款方承担，<span className="text-white/55">当前平台服务费未启用。</span>
             </p>
             <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-white/30">
-              <span>◎ 平台额度：Creator City 代付模型调用</span>
+              <span>◎ 平台 API：Creator City 代付模型调用</span>
               <span>·</span>
               <span>⚡ 我的 API：你直接支付给 Provider</span>
               <span>·</span>
@@ -278,7 +278,7 @@ export default function UsageHistoryPage() {
 
           {/* Billing filter */}
           <div className="flex items-center rounded-xl border border-white/[0.08] bg-white/[0.03] p-0.5 gap-0.5">
-            {([['all', '全部来源'], ['platform_credits', '平台额度'], ['user_provider_account', '我的 API']] as [BillingFilter, string][]).map(([v, label]) => (
+            {([['all', '全部来源'], ['platform_credits', '平台 API'], ['user_provider_account', '我的 API']] as [BillingFilter, string][]).map(([v, label]) => (
               <button
                 key={v}
                 onClick={() => setBillingFilter(v)}
@@ -340,10 +340,9 @@ export default function UsageHistoryPage() {
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <SummaryCard label="总生成次数" value={s.total} note="次调用" />
             <SummaryCard label="我的 API" value={s.byok} note="次·自付" accent="violet" />
-            <SummaryCard label="平台额度" value={s.platformCredits} note="次·平台代付" />
+            <SummaryCard label="平台 API" value={s.platformCredits} note="次·平台代付" />
             <SummaryCard label="文本 / 图片" value={`${s.text} / ${s.image}`} note="次" raw />
             <SummaryCard label="成功率" value={`${s.successRate}%`} note={`${s.succeeded}/${s.total}`} raw accent={s.successRate >= 80 ? 'green' : 'amber'} />
-            <SummaryCard label="平台服务费" value="0" note="当前未启用" accent="dim" />
           </div>
         )}
 
@@ -420,7 +419,7 @@ export default function UsageHistoryPage() {
               <p className="text-2xl mb-3 opacity-40">○</p>
               <p className="text-sm font-medium text-white/40 mb-1">还没有生成记录</p>
               <p className="text-xs text-white/25 mb-6 leading-relaxed max-w-xs mx-auto">
-                当你使用平台额度或我的 API 账户生成文本 / 图片后，用量会显示在这里。
+                当你使用平台 API或我的 API 账户生成文本 / 图片后，用量会显示在这里。
               </p>
               <div className="flex items-center justify-center gap-3">
                 <Link
@@ -475,7 +474,7 @@ export default function UsageHistoryPage() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-white/[0.06]">
-                      {['时间', '类型', 'Provider', '费用来源', '费用承担', '状态', 'Prompt 字符数', '平台服务费'].map((h) => (
+                      {['时间', '类型', 'Provider', '费用来源', '费用承担', '状态', 'Prompt 字符数'].map((h) => (
                         <th key={h} className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-white/25">
                           {h}
                         </th>
@@ -513,9 +512,6 @@ export default function UsageHistoryPage() {
                         <td className="px-4 py-2.5 text-white/35 font-mono">
                           {item.promptChars != null ? item.promptChars : '—'}
                         </td>
-                        <td className="px-4 py-2.5 text-white/25">
-                          {item.platformServiceFeeCredits ?? 0}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -531,8 +527,8 @@ export default function UsageHistoryPage() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <HelpItem
               icon="◎"
-              title="平台额度"
-              body="Creator City 代付 Provider API 调用费用。生成时消耗你购买的平台积分。"
+              title="平台 API"
+              body="管理员测试使用服务端 API 配置。供应商费用由对应账户承担。"
             />
             <HelpItem
               icon="⚡"

@@ -18,7 +18,7 @@ import { paymentLaunchGate } from '@/lib/payment/paymentLaunchGate'
  *   })
  */
 export async function POST(req: NextRequest) {
-  const gate = paymentLaunchGate()
+  const gate = paymentLaunchGate('service-order')
   if (gate) return NextResponse.json(gate.body, { status: gate.status })
 
   try {

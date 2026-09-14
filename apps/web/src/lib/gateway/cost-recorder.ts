@@ -8,14 +8,13 @@ export interface RecordCostOptions {
   providerId: string
   model?: string
   nodeType: string
-  /** Override credit charge; defaults to pricing lookup */
+  /** Legacy input accepted for compatibility; new generations never charge credits. */
   creditsCharged?: number
 }
 
 /** Writes one ProviderCostLedger row and bumps ProviderAccount.currentMonthCostUsd. */
 export async function recordProviderCost(opts: RecordCostOptions): Promise<void> {
   const pricing = getGatewayPricing(opts.providerId, opts.nodeType)
-  const creditsCharged = opts.creditsCharged ?? pricing.creditsPerCall
   const costUsd = pricing.estimatedCostUsd
 
   const yearMonth = new Date().toISOString().slice(0, 7) // e.g. "2026-05"
@@ -29,7 +28,7 @@ export async function recordProviderCost(opts: RecordCostOptions): Promise<void>
         model: opts.model,
         jobType: opts.nodeType,
         providerCostUsd: costUsd,
-        userChargedCredits: creditsCharged,
+        userChargedCredits: 0,
       },
     }),
     db.providerAccount.upsert({

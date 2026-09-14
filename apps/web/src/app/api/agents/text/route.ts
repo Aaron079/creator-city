@@ -1,3 +1,4 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 /**
  * POST /api/agents/text
  *
@@ -27,6 +28,8 @@ function err(errorCode: string, message: string, status = 400) {
 }
 
 export async function POST(request: Request) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   let body: unknown
   try {
     body = await request.json()
@@ -129,6 +132,6 @@ export async function POST(request: Request) {
     providerId: result.providerId,
     model: result.model,
     text: result.text,
-    billing: { chargedCredits: ctx.estimatedCredits, billingStatus: 'SETTLED' },
+    billing: { chargedCredits: 0, billingStatus: 'DISABLED' },
   })
 }

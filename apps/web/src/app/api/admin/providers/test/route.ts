@@ -1,3 +1,4 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { testProviderConnection } from '@/lib/provider-management'
@@ -17,6 +18,8 @@ function normalizeTestMode(mode?: string): 'env-only' | 'text-ping' | null {
 }
 
 export async function POST(request: Request) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ success: false, errorCode: 'UNAUTHORIZED', message: '请先登录。' }, { status: 401 })
   if (user.role !== 'ADMIN') return NextResponse.json({ success: false, errorCode: 'FORBIDDEN', message: '无权限：仅管理员可访问。' }, { status: 403 })

@@ -7,10 +7,10 @@
  *  - env = 'false' → gate closed
  *  - env = '1'     → gate closed
  *  - env = 'True'  → gate closed (case-sensitive)
- *  - env = 'true'  → gate open (null)
+ *  - env = 'true'  → retired purchases remain closed
  *  - gate closed:  errorCode, status, success: false
  *  - gate closed:  does not return clientSecret
- *  - gate open:    returns null (caller proceeds)
+ *  - old configuration cannot reactivate credit sales
  */
 
 import { test, describe, beforeEach, afterEach } from 'node:test'
@@ -98,7 +98,7 @@ describe('paymentLaunchGate — gate closed (fail closed)', () => {
   })
 })
 
-describe('paymentLaunchGate — gate open', () => {
+describe('paymentLaunchGate — former opt-in cannot reopen purchases', () => {
   let original: string | undefined
 
   beforeEach(() => {
@@ -114,14 +114,14 @@ describe('paymentLaunchGate — gate open', () => {
     }
   })
 
-  test('env = "true" → returns null (gate open)', () => {
+  test('env = "true" cannot reopen retired credit purchases', () => {
     const result = paymentLaunchGate()
-    assert.equal(result, null)
+    assert.notEqual(result, null)
   })
 
-  test('gate open: caller can proceed (null is falsy)', () => {
+  test('credit retirement remains closed for old callers', () => {
     const result = paymentLaunchGate()
-    assert.ok(!result, 'null is falsy — route should continue')
+    assert.ok(result)
   })
 })
 

@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
+import { generationAccessResponse } from '@/lib/generation/access'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
 // Proxy to cn-executor /debug/seedream-model-probe — tests a real tiny generation call
 export async function GET() {
+  const denied = await generationAccessResponse()
+  if (denied) return denied
   const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
   const secret = process.env.CREATOR_EXECUTOR_SHARED_SECRET?.trim() ?? ''
   if (!cnBaseUrl) {

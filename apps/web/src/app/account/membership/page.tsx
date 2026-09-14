@@ -325,7 +325,7 @@ export default function AccountMembershipPage() {
             查看会员权益
           </Link>
           <Link href="/account/credits" className="text-xs text-white/40 underline underline-offset-2 hover:text-white/60">
-            积分与账单
+            历史账单
           </Link>
         </div>
 

@@ -746,7 +746,7 @@ test('keeps the real image-to-video mode header visible at 390x300', async (t) =
   await assert.doesNotReject(videoModeBar.getByText('参考图：Upstream portrait').waitFor())
   assert.equal(await page.getByText('Video model', { exact: true }).isVisible(), true)
   assert.equal(await page.getByRole('button', { name: '参数' }).isVisible(), true)
-  assert.equal(await page.getByText('8 credits', { exact: true }).isVisible(), true)
+  assert.equal(await page.getByText('8 credits', { exact: true }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Generate' }).isVisible(), true)
   assert.equal(await page.getByRole('button', { name: '关闭节点面板' }).isVisible(), true)
   assert.ok(

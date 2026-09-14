@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import { getGatewayPricing } from '@/lib/gateway/pricing'
 import { generateDeepSeekText } from '@/lib/providers/china/deepseek'
-import { generateKimiText } from '@/lib/providers/china/kimi'
+import { generateKimiText, getKimiStatus } from '@/lib/providers/china/kimi'
 import { testChinaProviderConnection } from '@/lib/providers/china'
 import { checkEnvKeys } from '@/lib/providers/env'
 import {
@@ -114,6 +114,9 @@ export const ADMIN_PROVIDER_REGISTRY: AdminProviderDefinition[] = [
     category: 'Text',
     envKeys: ['OPENAI_API_KEY'],
     optionalEnvKeys: ['OPENAI_TEXT_MODEL'],
+    modelEnvKey: 'OPENAI_TEXT_MODEL',
+    defaultModel: 'gpt-4.1-mini',
+    defaultBaseUrl: 'https://api.openai.com/v1',
     nodeType: 'text',
     setupHint: '配置 OPENAI_API_KEY；可选 OPENAI_TEXT_MODEL。',
   },
@@ -124,6 +127,9 @@ export const ADMIN_PROVIDER_REGISTRY: AdminProviderDefinition[] = [
     category: 'Image',
     envKeys: ['OPENAI_API_KEY'],
     optionalEnvKeys: ['OPENAI_IMAGE_MODEL'],
+    modelEnvKey: 'OPENAI_IMAGE_MODEL',
+    defaultModel: 'gpt-image-1',
+    defaultBaseUrl: 'https://api.openai.com/v1',
     nodeType: 'image',
     setupHint: '配置 OPENAI_API_KEY；可选 OPENAI_IMAGE_MODEL。',
   },
@@ -370,8 +376,8 @@ export const ADMIN_PROVIDER_REGISTRY: AdminProviderDefinition[] = [
     displayName: 'Volcengine Seedream 5.0 Image',
     capability: ['Image'],
     category: 'China',
-    envKeys: ['VOLCENGINE_ARK_API_KEY'],
-    optionalEnvKeys: ['VOLCENGINE_SEEDREAM_MODEL', 'VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_REGION'],
+    envKeys: ['VOLCENGINE_ARK_API_KEY', 'VOLCENGINE_SEEDREAM_MODEL'],
+    optionalEnvKeys: ['VOLCENGINE_ARK_BASE_URL', 'VOLCENGINE_REGION'],
     nodeType: 'image',
     modelEnvKey: 'VOLCENGINE_SEEDREAM_MODEL',
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
@@ -486,8 +492,8 @@ export async function setProviderEnabled(providerId: string, enabled: boolean) {
     return { ok: false, status: 404, body: { success: false, errorCode: 'PROVIDER_NOT_FOUND', message: `Unknown providerId: ${providerId}` } }
   }
 
-  const envCheck = checkEnvKeys(definition.envKeys)
-  if (!envCheck.configured) {
+  const envCheck = checkDefinitionEnv(definition)
+  if (enabled && !envCheck.configured) {
     return {
       ok: false,
       status: 400,
@@ -570,10 +576,10 @@ export async function testProviderConnection(providerId: string, mode: AdminProv
     }
   }
 
-  const chinaResult = definition.providerFamily === 'china-ai' ? testChinaProviderConnection(providerId) : null
-  const envCheck = chinaResult
-    ? { configured: chinaResult.configured, missing: chinaResult.missingEnv }
-    : checkEnvKeys(definition.envKeys)
+  const chinaResult = providerId === 'kimi-text' || providerId === 'kimi-multimodal'
+    ? getKimiStatus(providerId)
+    : definition.providerFamily === 'china-ai' ? testChinaProviderConnection(providerId) : null
+  const envCheck = checkDefinitionEnv(definition)
   const model = chinaResult?.model ?? getDefinitionModel(definition)
   const baseUrl = chinaResult?.baseUrl ?? getDefinitionBaseUrl(definition)
   if (!envCheck.configured) {
@@ -661,12 +667,12 @@ export async function testProviderConnection(providerId: string, mode: AdminProv
 }
 
 function toProviderStatusRow(definition: AdminProviderDefinition, account?: AdminProviderAccountRow): AdminProviderStatusRow {
-  const envCheck = checkEnvKeys(definition.envKeys)
+  const envCheck = checkDefinitionEnv(definition)
   const pricing = getGatewayPricing(definition.pricingProviderId ?? definition.providerId, definition.nodeType)
   const model = getDefinitionModel(definition)
   const baseUrl = getDefinitionBaseUrl(definition)
   const configured = envCheck.configured
-  const enabled = configured ? account?.isActive ?? true : false
+  const enabled = account?.isActive ?? configured
   const available = configured && enabled
   const status: AdminProviderStatus = envCheck.configured ? 'configured' : 'not-configured'
   const availabilityStatus: AdminProviderAvailabilityStatus = configured ? (enabled ? 'available' : 'disabled') : 'not-configured'
@@ -696,22 +702,39 @@ function toProviderStatusRow(definition: AdminProviderDefinition, account?: Admi
     budgetMonth: account?.budgetMonth ?? null,
     missingEnv: envCheck.missing,
     missingEnvKeys: envCheck.missing,
-    lastTestStatus: account?.lastCheckedAt ? (envCheck.configured ? 'passed' : 'failed') : 'untested',
+    // A check timestamp does not store the outcome of a provider invocation.
+    lastTestStatus: 'untested',
     lastCheckedAt: account?.lastCheckedAt ? account.lastCheckedAt.toISOString() : null,
     canTest: true,
-    canToggle: configured,
+    canToggle: configured || enabled,
     reason,
     setupHint: definition.setupHint,
   }
 }
 
 function getDefinitionModel(definition: AdminProviderDefinition) {
+  if (definition.providerId === 'kimi-text' || definition.providerId === 'kimi-multimodal') {
+    return getKimiStatus(definition.providerId)?.model ?? ''
+  }
   if (definition.modelEnvKey) return process.env[definition.modelEnvKey] || definition.defaultModel || ''
   return definition.defaultModel || ''
 }
 
 function getDefinitionBaseUrl(definition: AdminProviderDefinition) {
+  if (definition.providerId === 'kimi-text' || definition.providerId === 'kimi-multimodal') {
+    return getKimiStatus(definition.providerId)?.baseUrl ?? null
+  }
   if (!definition.baseUrlEnvKey && !definition.defaultBaseUrl) return null
   const value = definition.baseUrlEnvKey ? process.env[definition.baseUrlEnvKey] : undefined
   return value || definition.defaultBaseUrl || null
+}
+
+function checkDefinitionEnv(definition: AdminProviderDefinition) {
+  const { missing } = checkEnvKeys(definition.envKeys)
+  if (definition.providerId === 'volcengine-seedream-image'
+    && !process.env.VOLCENGINE_SEEDREAM_MODEL?.trim()
+    && !missing.includes('VOLCENGINE_SEEDREAM_MODEL')) {
+    missing.push('VOLCENGINE_SEEDREAM_MODEL')
+  }
+  return { configured: missing.length === 0, missing }
 }

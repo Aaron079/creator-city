@@ -27,6 +27,7 @@ import crypto from 'crypto'
 import { type NextRequest } from 'next/server'
 import { jsonOk, jsonError } from '@/lib/api/json-response'
 import { getCurrentUser } from '@/lib/auth/current-user'
+import { generationAccessResponse } from '@/lib/generation/access'
 import { db } from '@/lib/db'
 import type { AssetTransformClientBody, AssetTransformResult } from '@/lib/asset-transform/assetTransformTypes'
 import { getV1TransformKinds } from '@/lib/asset-transform/assetTransformRegistry'
@@ -114,6 +115,8 @@ function sanitizeParams(
 // ─── POST /api/asset-transform ────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const denied = await generationAccessResponse()
+  if (denied) return denied
   const user = await getCurrentUser()
   if (!user) return jsonError('UNAUTHORIZED', '需要登录', 401)
 

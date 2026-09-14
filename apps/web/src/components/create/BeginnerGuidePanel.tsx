@@ -53,7 +53,7 @@ const APIKEY_ITEMS: QAItem[] = [
   {
     id: 'what',
     q: 'API Key 是什么？我需要它吗？',
-    a: 'API Key 是 Provider 控制台生成的访问密钥（通常以 sk- 开头），用于让第三方应用直接调用该 Provider 的 AI 能力。普通用户完全不需要 API Key，使用平台额度即可创作。API Key 是给专业用户和团队的可选能力。',
+    a: 'API Key 是 Provider 控制台生成的访问密钥（通常以 sk- 开头），用于让第三方应用直接调用该 Provider 的 AI 能力。管理员测试默认使用已有服务端 API 配置，无需重复填写 Key。我的 API 账户是可选来源。',
   },
   {
     id: 'not-password',
@@ -62,8 +62,8 @@ const APIKEY_ITEMS: QAItem[] = [
   },
   {
     id: 'byok-vs-credits',
-    q: '平台额度 vs 我的 API 账户，有什么区别？',
-    a: '平台额度：购买 Creator City 积分，由平台代付 API 调用费用，适合轻度用户，无需管理 Key。\n\n我的 API 账户：接入自己的 Provider API Key，API 调用费用由你直接支付给服务商（DeepSeek、OpenAI 等），Creator City 只收取平台服务费（工作台、协作、交易），不代扣 API 费用。',
+    q: '平台 API vs 我的 API 账户，有什么区别？',
+    a: '平台 API：管理员测试使用已有服务端配置，供应商调用费用由对应账户承担。\n\n我的 API 账户：接入自己的 Provider API Key，API 调用费用由你直接支付给服务商（DeepSeek、OpenAI 等），Creator City 只收取平台服务费（工作台、协作、交易），不代扣 API 费用。',
   },
   {
     id: 'security',
@@ -355,8 +355,8 @@ const DEBUG_ITEMS: QAItem[] = [
   },
   {
     id: 'quota',
-    q: '平台额度不足怎么办？',
-    a: '可以前往账号设置充值平台额度，或者在「我的 API」连接自己的 Provider API Key（费用直接由你支付给 Provider，Creator City 不代扣）。',
+    q: '平台 API 无法生成怎么办？',
+    a: '请先确认管理员权限，并根据节点错误检查服务端 Provider 配置、供应商额度或网络。需要使用自有 Key 时，可主动选择「我的 API」账户。',
     link: { href: '/account/providers', label: '→ 我的 API 账户' },
   },
   {
@@ -689,7 +689,7 @@ export function BeginnerGuidePanel() {
               {/* Top notice */}
               <div style={{ margin: '10px 14px 0', padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(129,140,248,0.20)', background: 'rgba(129,140,248,0.06)' }}>
                 <p style={{ margin: 0, fontSize: 11, color: 'rgba(199,210,254,0.80)', lineHeight: 1.65 }}>
-                  <strong>普通用户不需要 API Key，</strong>使用平台额度即可创作。我的 API 账户是给专业用户和团队的可选能力。
+                  <strong>管理员测试无需重复填写 API Key，</strong>默认使用已有服务端配置。我的 API 账户是可选来源。
                 </p>
               </div>
               <QAAccordion items={APIKEY_ITEMS} />

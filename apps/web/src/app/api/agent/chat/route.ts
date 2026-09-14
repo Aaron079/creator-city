@@ -1,3 +1,4 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 import { NextResponse } from 'next/server'
 import { runCreatorModel } from '@/lib/creator-model/runtime'
 import type { AgentChatRequest, AgentChatResponse } from '@/lib/agent/types'
@@ -7,6 +8,8 @@ function json(data: AgentChatResponse, status = 200) {
 }
 
 export async function POST(request: Request) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   let body: AgentChatRequest
 
   try {

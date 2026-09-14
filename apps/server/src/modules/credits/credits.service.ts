@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common'
+import { Injectable, BadRequestException, NotFoundException, GoneException } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import type {
   UserCreditWallet,
@@ -39,96 +39,6 @@ const PROVIDER_USD_COST_CENTS: Record<string, number> = {
   udio: 8,
   suno: 8,
 }
-
-// ─── Default packages (seeded if none exist) ─────────────────────────────────
-
-const DEFAULT_PACKAGES = [
-  {
-    id: 'starter_500',
-    name: 'Starter 500',
-    credits: 500,
-    bonusCredits: 0,
-    priceUSD: 699,
-    priceCNY: 4900,
-    prices: [
-      { region: 'CN', provider: 'alipay', currency: 'CNY', amount: 4900 },
-      { region: 'CN', provider: 'wechat', currency: 'CNY', amount: 4900 },
-      { region: 'CN', provider: 'manual', currency: 'CNY', amount: 4900 },
-      { region: 'GLOBAL', provider: 'stripe', currency: 'USD', amount: 699 },
-      { region: 'GLOBAL', provider: 'paddle', currency: 'USD', amount: 699 },
-    ],
-    description: '500 Creator City Credits',
-    sortOrder: 1,
-  },
-  {
-    id: 'creator_1500',
-    name: 'Creator 1500',
-    credits: 1300,
-    bonusCredits: 200,
-    priceUSD: 1499,
-    priceCNY: 9900,
-    prices: [
-      { region: 'CN', provider: 'alipay', currency: 'CNY', amount: 9900 },
-      { region: 'CN', provider: 'wechat', currency: 'CNY', amount: 9900 },
-      { region: 'CN', provider: 'manual', currency: 'CNY', amount: 9900 },
-      { region: 'GLOBAL', provider: 'stripe', currency: 'USD', amount: 1499 },
-      { region: 'GLOBAL', provider: 'paddle', currency: 'USD', amount: 1499 },
-    ],
-    description: '1500 credits including 200 bonus credits',
-    sortOrder: 2,
-  },
-  {
-    id: 'studio_5500',
-    name: 'Studio 5500',
-    credits: 4800,
-    bonusCredits: 700,
-    priceUSD: 4999,
-    priceCNY: 34900,
-    prices: [
-      { region: 'CN', provider: 'alipay', currency: 'CNY', amount: 34900 },
-      { region: 'CN', provider: 'wechat', currency: 'CNY', amount: 34900 },
-      { region: 'CN', provider: 'manual', currency: 'CNY', amount: 34900 },
-      { region: 'GLOBAL', provider: 'stripe', currency: 'USD', amount: 4999 },
-      { region: 'GLOBAL', provider: 'paddle', currency: 'USD', amount: 4999 },
-    ],
-    description: '5500 credits for production workflows',
-    sortOrder: 3,
-  },
-  {
-    id: 'team_15000',
-    name: 'Team 15000',
-    credits: 12500,
-    bonusCredits: 2500,
-    priceUSD: 12999,
-    priceCNY: 89900,
-    prices: [
-      { region: 'CN', provider: 'alipay', currency: 'CNY', amount: 89900 },
-      { region: 'CN', provider: 'wechat', currency: 'CNY', amount: 89900 },
-      { region: 'CN', provider: 'manual', currency: 'CNY', amount: 89900 },
-      { region: 'GLOBAL', provider: 'stripe', currency: 'USD', amount: 12999 },
-      { region: 'GLOBAL', provider: 'paddle', currency: 'USD', amount: 12999 },
-    ],
-    description: '15000 credits for team production',
-    sortOrder: 4,
-  },
-  {
-    id: 'enterprise_50000',
-    name: 'Enterprise 50000',
-    credits: 40000,
-    bonusCredits: 10000,
-    priceUSD: 39999,
-    priceCNY: 279900,
-    prices: [
-      { region: 'CN', provider: 'alipay', currency: 'CNY', amount: 279900 },
-      { region: 'CN', provider: 'wechat', currency: 'CNY', amount: 279900 },
-      { region: 'CN', provider: 'manual', currency: 'CNY', amount: 279900 },
-      { region: 'GLOBAL', provider: 'stripe', currency: 'USD', amount: 39999 },
-      { region: 'GLOBAL', provider: 'paddle', currency: 'USD', amount: 39999 },
-    ],
-    description: '50000 credits for studio-scale generation',
-    sortOrder: 5,
-  },
-]
 
 @Injectable()
 export class CreditsService {
@@ -178,66 +88,10 @@ export class CreditsService {
   // ─── Freeze credits ───────────────────────────────────────────────────────
 
   async freeze(
-    userId: string,
-    input: { providerId: string; nodeType: string; prompt: string; externalJobId?: string },
+    _userId: string,
+    _input: { providerId: string; nodeType: string; prompt: string; externalJobId?: string },
   ): Promise<{ jobId: string; estimatedCost: number; balance: number }> {
-    const wallet = await this.getOrCreateWallet(userId)
-    const estimatedCost = this.estimateCost(input.providerId, input.nodeType)
-
-    if (wallet.balance < estimatedCost) {
-      throw new BadRequestException(
-        `Insufficient credits: need ${estimatedCost}, have ${wallet.balance}. Please purchase more credits.`,
-      )
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.userCreditWallet.update({
-        where: { id: wallet.id },
-        data: {
-          balance: { decrement: estimatedCost },
-          frozenBalance: { increment: estimatedCost },
-        },
-      })
-
-      const job = await tx.generationJob.create({
-        data: {
-          userId,
-          walletId: wallet.id,
-          providerId: input.providerId,
-          nodeType: input.nodeType,
-          prompt: input.prompt,
-          estimatedCost,
-          billingStatus: 'FROZEN',
-          frozenAt: new Date(),
-          externalJobId: input.externalJobId,
-        },
-      })
-
-      await tx.creditLedger.create({
-        data: {
-          walletId: wallet.id,
-          userId,
-          type: 'RESERVE',
-          delta: -estimatedCost,
-          frozen: estimatedCost,
-          balance: updated.balance,
-          amountCredits: -estimatedCost,
-          refType: 'generation_job',
-          refId: job.id,
-          generationJobId: job.id,
-          note: `${input.providerId} / ${input.nodeType} generation`,
-          description: `${input.providerId} / ${input.nodeType} generation`,
-        },
-      })
-
-      return { job, updated }
-    })
-
-    return {
-      jobId: result.job.id,
-      estimatedCost,
-      balance: result.updated.balance,
-    }
+    throw new GoneException('City 积分制度已停用，不再预扣积分。')
   }
 
   // ─── Settle credits ───────────────────────────────────────────────────────
@@ -362,21 +216,7 @@ export class CreditsService {
   // ─── Packages ─────────────────────────────────────────────────────────────
 
   async listPackages(): Promise<CreditPackage[]> {
-    const packages = await this.prisma.creditPackage.findMany({
-      where: { status: 'ACTIVE', isActive: true },
-      orderBy: { sortOrder: 'asc' },
-    })
-    if (packages.length === 0) {
-      await this.prisma.creditPackage.createMany({
-        data: DEFAULT_PACKAGES,
-        skipDuplicates: true,
-      })
-      return this.prisma.creditPackage.findMany({
-        where: { status: 'ACTIVE', isActive: true },
-        orderBy: { sortOrder: 'asc' },
-      })
-    }
-    return packages
+    return []
   }
 
   async getPackage(packageId: string): Promise<CreditPackage> {
@@ -401,23 +241,7 @@ export class CreditsService {
       externalOrderId?: string
     },
   ): Promise<PaymentOrder> {
-    const wallet = await this.getOrCreateWallet(userId)
-    return this.prisma.paymentOrder.create({
-      data: {
-        userId,
-        walletId: wallet.id,
-        packageId: input.packageId,
-        stripeSessionId: input.stripeSessionId ?? null,
-        credits: input.credits,
-        priceUSD: input.priceUSD,
-        region: input.region ?? 'GLOBAL',
-        provider: input.provider ?? 'stripe',
-        currency: input.currency ?? 'USD',
-        amount: input.amount ?? input.priceUSD,
-        externalOrderId: input.externalOrderId ?? input.stripeSessionId ?? undefined,
-        status: 'PENDING',
-      },
-    })
+    throw new GoneException('City 积分制度已停用，不再创建充值订单。')
   }
 
   async fulfillOrder(input: {

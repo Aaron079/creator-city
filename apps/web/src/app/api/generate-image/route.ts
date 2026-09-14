@@ -1,3 +1,4 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 import { NextRequest, NextResponse } from 'next/server'
 import { generateImage } from '@/lib/ai'
 
@@ -7,6 +8,8 @@ interface RequestBody {
 }
 
 export async function POST(req: NextRequest) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   const body = (await req.json()) as RequestBody
   const { prompt = '', style } = body
 

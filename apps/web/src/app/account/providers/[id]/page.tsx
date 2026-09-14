@@ -85,7 +85,7 @@ function outputTypeLabel(t: string | null) {
 
 function billingModeLabel(m: string | null) {
   if (m === 'user_provider_account') return '我的 API'
-  if (m === 'platform_credits') return '平台额度'
+  if (m === 'platform_credits') return '平台 API'
   return m ?? '—'
 }
 
@@ -128,7 +128,7 @@ function getHealthExplanation(
   if (account.lastTestStatus === 'insufficient_quota' || account.lastTestStatus === 'rate_limited')
     return 'Provider 账户可能余额不足或 API Billing 未开通。请前往 Provider 控制台检查账单和余额。'
   if (account.lastTestStatus === 'timeout')
-    return '连接超时，可能是网络波动或 Provider 侧临时故障。可稍后重试，或切换为平台额度模式生成。'
+    return '连接超时，可能是网络波动或 Provider 侧临时故障。可稍后重试，或切换为平台 API模式生成。'
   if (account.lastTestStatus === 'unsupported')
     return '此账户不支持自动连接测试（火山方舟限制）。请在画布图片节点切换「我的 API 账户」实际生成一次来验证。'
   if (health.status === 'warning')
@@ -171,7 +171,7 @@ function getRepairTips(
   if (account.lastTestStatus === 'timeout') {
     tips.push({
       severity: 'info',
-      text: '连接超时，可能是 Provider 临时故障。稍后重试，或切换为平台额度模式生成。',
+      text: '连接超时，可能是 Provider 临时故障。稍后重试，或切换为平台 API模式生成。',
     })
   }
 
@@ -542,7 +542,6 @@ export default function ProviderAccountDetailPage() {
                 <StatCard label="总调用" value={usageSummary.total} color="text-white/70" />
                 <StatCard label="成功" value={usageSummary.succeeded} color="text-emerald-400" />
                 <StatCard label="失败" value={usageSummary.failed} color={usageSummary.failed > 0 ? 'text-rose-400' : 'text-white/30'} />
-                <StatCard label="平台服务费" value={`${usageSummary.platformServiceFeeCredits}`} color="text-white/30" note="积分（未启用）" />
               </div>
               <div className="flex flex-wrap gap-3 text-[11px] mb-2">
                 {usageSummary.text > 0 && <span className="text-sky-400/70">文本 {usageSummary.text} 次</span>}
@@ -623,7 +622,7 @@ export default function ProviderAccountDetailPage() {
 
           <div className="border-t border-white/[0.06] pt-4">
             <p className="text-[11px] text-white/25 mb-3 leading-relaxed">
-              删除操作不可恢复。删除后 API Key 永久销毁，所有引用此账户的生成任务将回退到平台额度。
+              删除操作不可恢复。删除后 API Key 永久销毁，所有引用此账户的生成任务将回退到平台 API。
             </p>
             <ActionButton
               label={isActing ? '删除中…' : '删除账户'}

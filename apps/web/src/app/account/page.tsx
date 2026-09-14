@@ -127,7 +127,7 @@ export default function AccountPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-semibold text-white">账号设置</h1>
-            <p className="mt-1 text-sm text-white/45">个人资料、平台额度与 API 账户管理。</p>
+            <p className="mt-1 text-sm text-white/45">个人资料、历史账单与 API 账户管理。</p>
           </div>
           <Link
             href="/me"
@@ -156,8 +156,8 @@ export default function AccountPage() {
             href="/account/credits"
             className="flex flex-col gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 text-sm text-white/60 hover:border-white/[0.14] hover:text-white transition"
           >
-            <span className="flex items-center gap-2"><span className="text-base">◎</span><span>平台额度</span></span>
-            <span className="text-[11px] text-white/30">余额与历史流水</span>
+            <span className="flex items-center gap-2"><span className="text-base">◎</span><span>历史账单</span></span>
+            <span className="text-[11px] text-white/30">只读历史记录</span>
           </Link>
           <Link
             href="/account/providers"
@@ -171,7 +171,7 @@ export default function AccountPage() {
             className="flex flex-col gap-1 rounded-xl border border-sky-500/15 bg-sky-500/[0.03] px-4 py-3.5 text-sm text-sky-300/70 hover:border-sky-500/25 hover:text-sky-200 transition"
           >
             <span className="flex items-center gap-2"><span className="text-base">📊</span><span>生成用量</span></span>
-            <span className="text-[11px] text-sky-300/30">查看平台额度与我的 API 生成记录</span>
+            <span className="text-[11px] text-sky-300/30">查看平台 API 与我的 API 生成记录</span>
           </Link>
           <Link
             href="/account/membership"
@@ -182,11 +182,9 @@ export default function AccountPage() {
           </Link>
         </div>
         <div className="mt-3 mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/30 leading-relaxed">
-          <span><span className="text-white/40">◎ 平台额度</span>：保留余额与历史流水，第一版普通用户不开放充值</span>
+          <span><span className="text-white/40">◎ 平台 API</span>：管理员测试使用已有服务端配置</span>
           <span>·</span>
-          <span><span className="text-violet-300/60">⚡ 我的 API</span>：自带 Provider Key，API 费用直付给服务商，不扣平台积分</span>
-          <span>·</span>
-          <span><span className="text-white/25">○ 平台服务费</span>：当前未启用（0）</span>
+          <span><span className="text-violet-300/60">⚡ 我的 API</span>：自带 Provider Key，API 费用直付给服务商</span>
         </div>
         <div className="mt-2">
           <Link

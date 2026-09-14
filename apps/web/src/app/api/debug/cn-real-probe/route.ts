@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { generationAccessResponse } from '@/lib/generation/access'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -7,6 +8,8 @@ export const maxDuration = 60
 // VALID params (size=2048x2048) and returns the raw Volcengine HTTP response.
 // This exposes auth errors that only appear during actual inference, not param validation.
 export async function GET() {
+  const denied = await generationAccessResponse()
+  if (denied) return denied
   const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
   const secret = process.env.CREATOR_EXECUTOR_SHARED_SECRET?.trim() ?? ''
   if (!cnBaseUrl) {

@@ -1,15 +1,4 @@
-/**
- * Server-side kill switch for all payment / recharge / checkout creation routes.
- *
- * Env: PLATFORM_CREDITS_RECHARGE_ENABLED
- *   - Must equal exactly 'true' to allow order creation.
- *   - Absent or any other value → fail closed.
- *
- * Usage in route handlers (before any DB write or provider call):
- *   const gate = paymentLaunchGate()
- *   if (gate) return NextResponse.json(gate.body, { status: gate.status })
- */
-
+/** Credit purchase creation is permanently retired. Historical callbacks remain separate. */
 export interface PaymentGateError {
   body: {
     success: false
@@ -19,22 +8,15 @@ export interface PaymentGateError {
   status: 503
 }
 
-const GATE_ERROR: PaymentGateError = {
-  body: {
-    success: false,
-    errorCode: 'PLATFORM_CREDITS_RECHARGE_DISABLED',
-    message: '平台充值功能暂未开放。',
-  },
-  status: 503,
-}
-
-/**
- * Returns the gate error object when the kill switch is closed, null when open.
- * Never reads the env value beyond a strict equality check; never logs it.
- */
-export function paymentLaunchGate(): PaymentGateError | null {
-  if (process.env.PLATFORM_CREDITS_RECHARGE_ENABLED !== 'true') {
-    return GATE_ERROR
+export function paymentLaunchGate(scope: 'credits' | 'service-order' = 'credits'): PaymentGateError | null {
+  // The ordinary order route keeps its existing launch flag, independent of retired credits.
+  if (scope === 'service-order' && process.env.PLATFORM_CREDITS_RECHARGE_ENABLED === 'true') return null
+  return {
+    body: {
+      success: false,
+      errorCode: 'PLATFORM_CREDITS_RECHARGE_DISABLED',
+      message: scope === 'credits' ? 'City 积分制度已停用，不再提供积分充值。' : '平台支付功能暂未开放。',
+    },
+    status: 503,
   }
-  return null
 }

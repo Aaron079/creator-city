@@ -1,6 +1,7 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { runGenerate } from '@/lib/providers/generate'
+import { runOwnedGeneration } from '@/lib/generation/owned-generation'
 import type { GenerateRequest } from '@/lib/providers/types'
 import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
@@ -440,6 +441,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   if (process.env.GENERATION_DISABLED === 'true') {
     return NextResponse.json({
       success: false,
@@ -930,7 +933,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const raw = await runGenerate({
+  const raw = await runOwnedGeneration({
     providerId,
     nodeType: 'video',
     prompt,
@@ -943,8 +946,10 @@ export async function POST(request: NextRequest) {
     },
     projectId: body.projectId,
     nodeId: body.nodeId,
-  })
+  }, billing.ctx.userId)
 
+  if (raw.errorCode === 'GENERATION_JOB_TRACKING_FAILED') return NextResponse.json(raw, { status: 503 })
+  if (raw.status === 'queued' || raw.status === 'running') return NextResponse.json(raw)
   const result = await finalizeBilling(raw, billing.ctx.billingJobId)
   const resultWithMedia = result as typeof result & { resultVideoUrl?: string; videoUrl?: string; model?: string }
   const providerVideoUrl = result.result?.videoUrl ?? resultWithMedia.resultVideoUrl ?? resultWithMedia.videoUrl
@@ -976,7 +981,7 @@ export async function POST(request: NextRequest) {
       prompt,
       body,
       userId: currentUser.id,
-      generationJobId: result.billingJobId ?? result.jobId,
+      generationJobId: raw.generationJobId ?? result.billingJobId ?? result.jobId,
       providerJobId: result.jobId,
     })
     const persistencePending = persisted.persistenceStatus === 'pending_persistence'
@@ -1027,7 +1032,7 @@ export async function POST(request: NextRequest) {
       proxyAvailable: persisted.proxyAvailable,
       assetId: persisted.assetId,
       outputAssetId: persisted.assetId,
-      generationJobId: result.billingJobId ?? result.jobId,
+      generationJobId: raw.generationJobId ?? result.billingJobId ?? result.jobId,
       submittedInput: safeVideoSubmittedInput(body, {
         providerId,
         model: resultModel,

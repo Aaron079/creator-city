@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
+import { generationAccessResponse } from '@/lib/generation/access'
 import { getCurrentUser } from '@/lib/auth/current-user'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
 export async function GET() {
+  const denied = await generationAccessResponse()
+  if (denied) return denied
   const user = await getCurrentUser()
   if (!user) {
     return NextResponse.json({ success: false, errorCode: 'UNAUTHORIZED' }, { status: 401 })

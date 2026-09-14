@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { generationAccessResponse } from '@/lib/generation/access'
 import type { NextRequest } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/current-user'
 
@@ -168,6 +169,8 @@ async function callReplicateInstantId(
 }
 
 export async function POST(req: NextRequest) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   // 1. Feature gate
   if (process.env.CHARACTER_FACE_ID_POC_ENABLED !== 'true') {
     return NextResponse.json(

@@ -5,6 +5,7 @@
  */
 
 import { db } from '@/lib/db'
+import { creditRetiredError } from './retired'
 import { CreditLedgerType, PaymentOrderStatus } from '@prisma/client'
 
 // ── Wallet ─────────────────────────────────────────────────────
@@ -60,24 +61,11 @@ export async function getLedger(userId: string, limit = 50, offset = 0) {
 // ── Manual recharge request (user side) ───────────────────────
 
 export async function submitManualRechargeRequest(
-  userId: string,
-  amountCredits: number,
-  note?: string,
-) {
-  if (amountCredits < 1) throw new Error('积分数量必须大于 0')
-  const wallet = await getOrCreateWallet(userId)
-  return db.paymentOrder.create({
-    data: {
-      userId,
-      walletId: wallet.id,
-      provider: 'manual',
-      status: PaymentOrderStatus.PENDING,
-      credits: amountCredits,
-      priceUSD: 0,
-      amount: 0,
-      rawNotifyJson: note ? { userNote: note } : {},
-    },
-  })
+  _userId: string,
+  _amountCredits: number,
+  _note?: string,
+): Promise<import('@prisma/client').PaymentOrder> {
+  throw creditRetiredError()
 }
 
 // ── Admin: list manual recharge orders ────────────────────────
@@ -196,37 +184,11 @@ export async function rejectManualRecharge(
 
 // ── Admin: direct grant (no order) ────────────────────────────
 
-export async function adminDirectGrant(params: {
+export async function adminDirectGrant(_params: {
   userId: string
   amountCredits: number
   adminUserId: string
   note?: string
-}) {
-  const { userId, amountCredits, adminUserId, note } = params
-  if (amountCredits < 1) throw new Error('积分数量必须大于 0')
-
-  const wallet = await getOrCreateWallet(userId)
-
-  await db.$transaction(async (tx) => {
-    const updated = await tx.userCreditWallet.update({
-      where: { id: wallet.id },
-      data: {
-        balance: { increment: amountCredits },
-        totalPurchased: { increment: amountCredits },
-      },
-    })
-
-    await tx.creditLedger.create({
-      data: {
-        walletId: wallet.id,
-        userId,
-        type: CreditLedgerType.ADMIN_ADJUSTMENT,
-        delta: amountCredits,
-        frozen: 0,
-        balance: updated.balance,
-        amountCredits,
-        description: note ?? `管理员直接发放，操作者 ${adminUserId}`,
-      },
-    })
-  })
+}): Promise<void> {
+  throw creditRetiredError()
 }

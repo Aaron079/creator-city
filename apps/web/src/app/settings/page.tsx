@@ -32,11 +32,11 @@ const SETTING_SECTIONS = [
     cta: '即将开放',
   },
   {
-    title: '计费与额度',
-    desc: '查看生成额度、充值记录与套餐信息',
+    title: '历史账单',
+    desc: '查看只读历史流水与订单',
     href: '/account/credits',
     available: true,
-    cta: '查看计费',
+    cta: '查看历史',
   },
   {
     title: 'API 中心',

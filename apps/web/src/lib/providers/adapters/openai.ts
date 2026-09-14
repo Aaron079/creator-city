@@ -11,11 +11,13 @@ function makeHeaders(apiKey: string) {
   }
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<{ response: Response; raw: string }> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return await fetch(url, { ...init, signal: controller.signal })
+    const response = await fetch(url, { ...init, signal: controller.signal })
+    const raw = await response.text()
+    return { response, raw }
   } finally {
     clearTimeout(timer)
   }
@@ -29,13 +31,14 @@ export const openaiTextAdapter: ProviderAdapter = {
     if (!apiKey) return { ok: false, message: 'OPENAI_API_KEY not configured.' }
 
     try {
-      const response = await fetchWithTimeout(
+      const { response, raw } = await fetchWithTimeout(
         `${OPENAI_API_BASE}/models`,
         { method: 'GET', headers: makeHeaders(apiKey) },
         10000,
       )
       if (response.ok) return { ok: true, message: 'OpenAI API key is valid.' }
-      const body = await response.json().catch(() => ({})) as { error?: { message?: string } }
+      let body: { error?: { message?: string } } = {}
+      try { body = JSON.parse(raw) } catch { /* Use the HTTP status for non-JSON errors. */ }
       return { ok: false, message: body.error?.message ?? `HTTP ${response.status}` }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'connection failed'
@@ -49,7 +52,7 @@ export const openaiTextAdapter: ProviderAdapter = {
 
     const model = getEnv('OPENAI_TEXT_MODEL') || 'gpt-4.1-mini'
 
-    const response = await fetchWithTimeout(
+    const { response, raw } = await fetchWithTimeout(
       `${OPENAI_API_BASE}/chat/completions`,
       {
         method: 'POST',
@@ -64,8 +67,12 @@ export const openaiTextAdapter: ProviderAdapter = {
     )
 
     if (!response.ok) {
-      const body = await response.json().catch(() => ({})) as { error?: { message?: string } }
+      let body: { error?: { message?: string; code?: string; type?: string } } = {}
+      try { body = JSON.parse(raw) } catch { /* Use the HTTP status for non-JSON errors. */ }
       const msg = body.error?.message ?? `OpenAI HTTP ${response.status}`
+      if (response.status === 429 && (body.error?.code === 'insufficient_quota' || body.error?.type === 'insufficient_quota')) {
+        return { success: false, providerId: request.providerId, mode: 'unavailable', status: 'failed', errorCode: 'OPENAI_INSUFFICIENT_QUOTA', message: msg }
+      }
       const code =
         response.status === 401 || response.status === 403 ? 'OPENAI_AUTH_FAILED'
         : response.status === 429 ? 'OPENAI_RATE_LIMITED'
@@ -74,7 +81,6 @@ export const openaiTextAdapter: ProviderAdapter = {
       throw new ProviderError(code, msg)
     }
 
-    const raw = await response.text()
     let data: { choices?: Array<{ message?: { content?: string } }> } = {}
     try { data = JSON.parse(raw) } catch { throw new ProviderError(PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED, `OpenAI 返回了无效响应`) }
     const text = data.choices?.[0]?.message?.content ?? ''
@@ -98,13 +104,14 @@ export const openaiImagesAdapter: ProviderAdapter = {
     if (!apiKey) return { ok: false, message: 'OPENAI_API_KEY not configured.' }
 
     try {
-      const response = await fetchWithTimeout(
+      const { response, raw } = await fetchWithTimeout(
         `${OPENAI_API_BASE}/models`,
         { method: 'GET', headers: makeHeaders(apiKey) },
         10000,
       )
       if (response.ok) return { ok: true, message: 'OpenAI API key is valid (images).' }
-      const body = await response.json().catch(() => ({})) as { error?: { message?: string } }
+      let body: { error?: { message?: string } } = {}
+      try { body = JSON.parse(raw) } catch { /* Use the HTTP status for non-JSON errors. */ }
       return { ok: false, message: body.error?.message ?? `HTTP ${response.status}` }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'connection failed'
@@ -123,13 +130,13 @@ export const openaiImagesAdapter: ProviderAdapter = {
     const size = request.params?.ratio === '1:1'
       ? '1024x1024'
       : request.params?.ratio === '9:16'
-        ? '1024x1792'
-        : '1792x1024'
+        ? (isGptImage ? '1024x1536' : '1024x1792')
+        : (isGptImage ? '1536x1024' : '1792x1024')
 
     const payload: Record<string, unknown> = { model, prompt: request.prompt, n: 1, size }
     if (!isGptImage) payload.response_format = 'url'
 
-    const response = await fetchWithTimeout(
+    const { response, raw } = await fetchWithTimeout(
       `${OPENAI_API_BASE}/images/generations`,
       {
         method: 'POST',
@@ -140,8 +147,12 @@ export const openaiImagesAdapter: ProviderAdapter = {
     )
 
     if (!response.ok) {
-      const body = await response.json().catch(() => ({})) as { error?: { message?: string } }
+      let body: { error?: { message?: string; code?: string; type?: string } } = {}
+      try { body = JSON.parse(raw) } catch { /* Use the HTTP status for non-JSON errors. */ }
       const msg = body.error?.message ?? `OpenAI Images HTTP ${response.status}`
+      if (response.status === 429 && (body.error?.code === 'insufficient_quota' || body.error?.type === 'insufficient_quota')) {
+        return { success: false, providerId: request.providerId, mode: 'unavailable', status: 'failed', errorCode: 'OPENAI_INSUFFICIENT_QUOTA', message: msg }
+      }
       const code =
         response.status === 401 || response.status === 403 ? 'OPENAI_AUTH_FAILED'
         : response.status === 429 ? 'OPENAI_RATE_LIMITED'
@@ -150,9 +161,8 @@ export const openaiImagesAdapter: ProviderAdapter = {
       throw new ProviderError(code, msg)
     }
 
-    const rawImg = await response.text()
     let data: { data?: Array<{ url?: string; b64_json?: string; revised_prompt?: string }> } = {}
-    try { data = JSON.parse(rawImg) } catch { throw new ProviderError(PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED, `OpenAI Images 返回了无效响应`) }
+    try { data = JSON.parse(raw) } catch { throw new ProviderError(PROVIDER_ERROR_CODES.PROVIDER_REQUEST_FAILED, `OpenAI Images 返回了无效响应`) }
     const item = data.data?.[0]
     let imageUrl = item?.url ?? ''
     if (!imageUrl && item?.b64_json) {

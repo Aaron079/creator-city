@@ -1408,7 +1408,7 @@ export function ShotListBuilderPanel({
                 二次确认生成已批准镜头
               </p>
               <p className="mt-1 text-[10px] leading-4 text-violet-100/55">
-                将调用当前生成服务，可能消耗 API 配额或平台积分。只会提交本次实际新建且未重复的节点。
+                将调用当前生成服务，可能产生供应商 API 费用。只会提交本次实际新建且未重复的节点。
               </p>
               <div className="mt-3 flex gap-2">
                 <button

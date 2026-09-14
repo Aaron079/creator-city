@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { generationAccessResponse } from '@/lib/generation/access'
 import { runSkill, SKILL_NAMES } from '@/lib/ai/skills'
 import type { SkillName, ShotSummary } from '@/lib/ai/skills'
 import type { GlobalPro } from '@/lib/ai/prompts'
@@ -18,6 +19,8 @@ interface RequestBody {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await generationAccessResponse()
+  if (denied) return denied
   const body = (await req.json()) as RequestBody
   const { skill = '', idea = '', style, context, imageUrl, keyframePrompt, shots, params } = body
 

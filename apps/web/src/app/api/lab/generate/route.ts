@@ -1,3 +1,4 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { getCurrentUser } from '@/lib/auth/current-user'
@@ -107,6 +108,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   const user = await getCurrentUser()
   if (!user) {
     return NextResponse.json({ success: false, errorCode: 'UNAUTHORIZED', message: '请先登录。' }, { status: 401 })

@@ -332,7 +332,7 @@ export default function AdminProvidersPage() {
           <div>
             <h1 className="text-2xl font-semibold text-white">API Provider 管理中心</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-white/50">
-              统一查看生成、存储和支付 Provider 的环境变量、启用开关、轻量测试入口、价格和积分成本。默认测试不触发真实生成、支付、扣费或上传；轻量文本测试会调用一次极小文本 API，不扣平台积分，但可能产生供应商极低费用。
+              统一查看生成、存储和支付 Provider 的环境变量、启用开关、轻量测试入口、供应商预估成本。默认测试不触发真实生成、支付、扣费或上传；轻量文本测试会调用一次极小文本 API，可能产生供应商费用。
             </p>
           </div>
           <button
@@ -398,8 +398,7 @@ export default function AdminProvidersPage() {
                   <th className="px-4 py-3">Env</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Enabled</th>
-                  <th className="px-4 py-3">Cost</th>
-                  <th className="px-4 py-3">Credits</th>
+                  <th className="px-4 py-3">Estimated Cost</th>
                   <th className="px-4 py-3">Last Test</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
@@ -451,7 +450,6 @@ export default function AdminProvidersPage() {
                         <div className="mt-1 max-w-[180px] text-xs text-white/34">{provider.reason}</div>
                       </td>
                       <td className="px-4 py-3 tabular-nums">${provider.estimatedCost.toFixed(4)}</td>
-                      <td className="px-4 py-3 tabular-nums">{provider.creditsPerCall}</td>
                       <td className="px-4 py-3">
                         <div className="text-xs text-white/60">{testResult ? (testResult.ok ? 'passed' : 'failed') : testLabel(provider.lastTestStatus)}</div>
                         <div className="mt-1 max-w-[220px] text-xs text-white/34">
@@ -497,7 +495,7 @@ export default function AdminProvidersPage() {
                               type="button"
                               onClick={() => void handleTest(provider, 'text-ping')}
                               disabled={testingId === `${provider.providerId}:text-ping`}
-                              title="会调用一次极小文本 API，不扣平台积分，但可能产生供应商极低费用。"
+                              title="会调用一次极小文本 API，可能产生供应商费用。"
                               className="rounded-md border border-emerald-300/20 px-3 py-1.5 text-xs text-emerald-100/80 transition hover:border-emerald-300/40 hover:text-emerald-50 disabled:opacity-50"
                             >
                               {testingId === `${provider.providerId}:text-ping` ? '测试中...' : '轻量文本测试'}
@@ -517,7 +515,7 @@ export default function AdminProvidersPage() {
                 })}
                 {visibleProviders.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-white/36">没有匹配的 Provider。</td>
+                    <td colSpan={9} className="px-4 py-8 text-center text-white/36">没有匹配的 Provider。</td>
                   </tr>
                 ) : null}
               </tbody>

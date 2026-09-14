@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { generationAccessResponse } from '@/lib/generation/access'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { persistGeneratedMedia } from '@/lib/assets/persist-generated-media'
 
@@ -72,6 +73,8 @@ function upstreamMessage(input: unknown) {
 }
 
 export async function POST(request: Request) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   const endpoint = stringValue(process.env.SCENE_PLUGIN_ENDPOINT)
   if (!endpoint) {
     return jsonError(

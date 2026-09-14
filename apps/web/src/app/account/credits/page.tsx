@@ -3,20 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { DashboardShell } from '@/components/layout/DashboardShell'
-import { WalletBalanceCard } from '@/components/billing/WalletBalanceCard'
 import { CreditLedgerTable } from '@/components/billing/CreditLedgerTable'
-import { AlipayQrPaymentModal, type AlipayQrPayment } from '@/components/billing/AlipayQrPaymentModal'
-import type { UserWallet, CreditLedgerEntry, CreditPackage } from '@/lib/billing/types'
-import { useChinaPaymentCheckout, type ChinaCheckoutResult } from '@/lib/payment/china/use-china-payment-checkout'
-import {
-  readChinaPaymentStatusCache,
-  readPackagesCache,
-  readWalletCache,
-  writeChinaPaymentStatusCache,
-  writePackagesCache,
-  writeWalletCache,
-  type ChinaPaymentStatusCache,
-} from '@/lib/billing/client-cache'
+import type { CreditLedgerEntry } from '@/lib/billing/types'
 
 interface ManualOrder {
   id: string
@@ -26,394 +14,80 @@ interface ManualOrder {
   createdAt: string
 }
 
-interface ChinaPaymentProviderStatus {
-  status: 'checking' | 'configured' | 'not-configured'
-  missing?: string[]
-}
-
-const CHECKING_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'checking' }
-const NOT_CONFIGURED_PROVIDER_STATUS: ChinaPaymentProviderStatus = { status: 'not-configured' }
-
-const CREDITS_RECHARGE_ENABLED = process.env.NEXT_PUBLIC_PLATFORM_CREDITS_RECHARGE_ENABLED === 'true'
-
-interface CreditsBootstrapResponse {
-  auth?: { authenticated?: boolean }
-  packages?: CreditPackage[]
-  chinaPaymentStatus?: {
-    providers?: {
-      alipay?: ChinaPaymentProviderStatus
-      wechatpay?: ChinaPaymentProviderStatus
-    }
-  }
-  walletSummary?: UserWallet | null
-}
-
-function perfLog(label: string, startedAt: number) {
-  if (process.env.NODE_ENV === 'production' || typeof performance === 'undefined') return
-  console.debug(`[perf] billing:${label}`, Math.round(performance.now() - startedAt))
-}
-
-function normalizeChinaProviderStatus(provider?: NonNullable<ChinaPaymentStatusCache['providers']>['alipay']): ChinaPaymentProviderStatus {
-  if (provider?.status === 'configured' || provider?.status === 'not-configured' || provider?.status === 'checking') {
-    return { status: provider.status, missing: provider.missing }
-  }
-  return CHECKING_PROVIDER_STATUS
-}
-
-function toAlipayQrPayment(result: ChinaCheckoutResult, packageId: string, pkg?: CreditPackage): AlipayQrPayment | null {
-  if (result.provider !== 'alipay' || result.mode !== 'qr' || !result.outTradeNo || !result.qrCode) return null
-  return {
-    packageId,
-    packageName: result.packageName ?? pkg?.name ?? 'Creator City Credits',
-    amountCnyFen: result.amountCnyFen ?? pkg?.prices.find((item) => item.region === 'CN' && item.provider === 'alipay')?.amount ?? 0,
-    credits: result.credits ?? (pkg ? pkg.credits + pkg.bonusCredits : 0),
-    outTradeNo: result.outTradeNo,
-    qrCode: result.qrCode,
-    expiresAt: result.expiresAt,
-  }
-}
-
 export default function AccountCreditsPage() {
-  const { payingPackageId, createPayment } = useChinaPaymentCheckout()
-  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading')
-  const [wallet, setWallet] = useState<UserWallet | null>(null)
   const [ledger, setLedger] = useState<CreditLedgerEntry[]>([])
-  const [packages, setPackages] = useState<CreditPackage[]>([])
-  const [pendingOrders, setPendingOrders] = useState<ManualOrder[]>([])
-  const [chinaProviders, setChinaProviders] = useState<{
-    alipay: ChinaPaymentProviderStatus
-    wechatpay: ChinaPaymentProviderStatus
-  }>({
-    alipay: CHECKING_PROVIDER_STATUS,
-    wechatpay: CHECKING_PROVIDER_STATUS,
-  })
+  const [orders, setOrders] = useState<ManualOrder[]>([])
   const [loading, setLoading] = useState(true)
-
-  const [amount, setAmount] = useState('')
-  const [note, setNote] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [submitMsg, setSubmitMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [qrPayment, setQrPayment] = useState<AlipayQrPayment | null>(null)
-
-  async function load() {
-    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
-    perfLog('init', startedAt)
-    setLoading(true)
-
-    const cachedWallet = readWalletCache()
-    if (cachedWallet?.value) {
-      setWallet(cachedWallet.value)
-      perfLog('wallet', startedAt)
-    }
-    const cachedPackages = readPackagesCache()
-    if (cachedPackages?.value.length) {
-      setPackages(cachedPackages.value.filter((pkg) => pkg.isActive))
-      perfLog('packages', startedAt)
-    }
-    const cachedChinaStatus = readChinaPaymentStatusCache()
-    if (cachedChinaStatus?.value.providers) {
-      setChinaProviders({
-        alipay: normalizeChinaProviderStatus(cachedChinaStatus.value.providers.alipay),
-        wechatpay: normalizeChinaProviderStatus(cachedChinaStatus.value.providers.wechatpay),
-      })
-      perfLog('payment-status', startedAt)
-    }
-    setLoading(false)
-
-    const [bootstrapRes, ledgerRes, ordersRes] = await Promise.all([
-      fetch('/api/billing/bootstrap', { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json' } }),
-      fetch('/api/credits/ledger?limit=50', { credentials: 'include' }),
-      fetch('/api/credits/my-orders?status=PENDING', { credentials: 'include' }),
-    ])
-    if (bootstrapRes.status === 401) {
-      setAuthStatus('unauthenticated')
-      setLoading(false)
-      return
-    }
-    if (bootstrapRes.ok) {
-      const d = await bootstrapRes.json() as CreditsBootstrapResponse
-      setAuthStatus(d.auth?.authenticated ? 'authenticated' : 'unauthenticated')
-      perfLog('auth', startedAt)
-      if (d.walletSummary) {
-        setWallet(d.walletSummary)
-        writeWalletCache(d.walletSummary)
-      }
-      perfLog('wallet', startedAt)
-      if (d.packages?.length) {
-        setPackages(d.packages.filter((pkg) => pkg.isActive))
-        writePackagesCache(d.packages)
-      }
-      perfLog('packages', startedAt)
-      if (d.chinaPaymentStatus?.providers) {
-        setChinaProviders({
-          alipay: d.chinaPaymentStatus.providers.alipay ?? NOT_CONFIGURED_PROVIDER_STATUS,
-          wechatpay: d.chinaPaymentStatus.providers.wechatpay ?? NOT_CONFIGURED_PROVIDER_STATUS,
-        })
-        writeChinaPaymentStatusCache(d.chinaPaymentStatus as ChinaPaymentStatusCache)
-      }
-      perfLog('payment-status', startedAt)
-    } else {
-      setAuthStatus('unauthenticated')
-    }
-    if (ledgerRes.ok) {
-      const d = await ledgerRes.json() as { items: CreditLedgerEntry[] }
-      setLedger(d.items)
-    }
-    if (ordersRes.ok) {
-      const d = await ordersRes.json() as { orders: ManualOrder[] }
-      setPendingOrders(d.orders)
-    }
-    setLoading(false)
-    perfLog('first-render', startedAt)
-  }
-
-  async function createAlipayQr(packageId: string) {
-    const pkg = packages.find((item) => item.id === packageId)
-    const result = await createPayment({ provider: 'alipay', packageId, clientType: 'pc' })
-    if (!result.success) {
-      if (result.errorCode === 'UNAUTHORIZED') setAuthStatus('unauthenticated')
-      setSubmitMsg({ ok: false, text: result.message ?? '创建支付宝订单失败' })
-      return null
-    }
-    const qr = toAlipayQrPayment(result, packageId, pkg)
-    if (!qr) {
-      setSubmitMsg({ ok: false, text: '支付宝未返回可用二维码订单。' })
-      return null
-    }
-    setSubmitMsg(null)
-    setQrPayment(qr)
-    return qr
-  }
-
-  async function handleAlipayRecharge(packageId: string) {
-    if (payingPackageId) return
-    if (chinaProviders.alipay.status !== 'configured') {
-      setSubmitMsg({ ok: false, text: '支付宝未配置，暂不能在线充值。' })
-      return
-    }
-    await createAlipayQr(packageId)
-  }
+  const [error, setError] = useState('')
+  const [unauthenticated, setUnauthenticated] = useState(false)
 
   useEffect(() => {
-    void load()
-  }, [])
-
-  async function handleRecharge(e: React.FormEvent) {
-    e.preventDefault()
-    const n = parseInt(amount, 10)
-    if (!n || n < 1) { setSubmitMsg({ ok: false, text: '请输入有效积分数量' }); return }
-    setSubmitting(true)
-    setSubmitMsg(null)
-    try {
-      const res = await fetch('/api/credits/manual-recharge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ amountCredits: n, note: note.trim() || undefined }),
-      })
-      const data = await res.json() as { orderId?: string; message?: string }
-      if (res.ok) {
-        setSubmitMsg({ ok: true, text: `申请已提交（${data.orderId?.slice(0, 8)}…），等待管理员审核。` })
-        setAmount(''); setNote('')
-        void load()
-      } else {
-        setSubmitMsg({ ok: false, text: data.message ?? '提交失败' })
+    const controller = new AbortController()
+    void (async () => {
+      try {
+        const options = { credentials: 'include' as const, cache: 'no-store' as const, signal: controller.signal }
+        const [ledgerRes, ordersRes] = await Promise.all([
+          fetch('/api/credits/ledger?limit=50', options),
+          fetch('/api/credits/my-orders', options),
+        ])
+        if (ledgerRes.status === 401 || ordersRes.status === 401) {
+          setUnauthenticated(true)
+          return
+        }
+        if (!ledgerRes.ok || !ordersRes.ok) throw new Error('历史记录加载失败，请稍后刷新重试。')
+        const ledgerData = await ledgerRes.json() as { items: CreditLedgerEntry[] }
+        const orderData = await ordersRes.json() as { orders: ManualOrder[] }
+        setLedger(ledgerData.items)
+        setOrders(orderData.orders)
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : '历史记录加载失败。')
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
       }
-    } catch {
-      setSubmitMsg({ ok: false, text: '网络错误，请稍后重试' })
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const alipayStatus = chinaProviders.alipay.status
-  const wechatpayStatus = chinaProviders.wechatpay.status
-  const alipayConfigured = alipayStatus === 'configured'
-  const alipayChecking = alipayStatus === 'checking'
-  const alipayStatusText = alipayConfigured ? '已配置 / 可用' : alipayChecking ? '检测中…' : '未配置'
-  const wechatpayStatusText = wechatpayStatus === 'configured' ? '已配置 / 可用' : wechatpayStatus === 'checking' ? '检测中…' : '未配置'
-
-  if (authStatus === 'unauthenticated') return (
-    <DashboardShell>
-      <div className="p-8 text-sm text-red-400">请先 <a href="/auth/login?next=/account/credits" className="underline">登录</a> 后查看积分钱包。</div>
-    </DashboardShell>
-  )
-  const hasCachedContent = Boolean(wallet || packages.length > 0 || ledger.length > 0)
-  if ((authStatus === 'loading' || loading) && !hasCachedContent) return <DashboardShell><div className="p-8 text-sm text-white/50">加载中…</div></DashboardShell>
+    })()
+    return () => controller.abort()
+  }, [])
 
   return (
     <DashboardShell>
       <main className="mx-auto max-w-4xl space-y-8 px-4 py-8">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-white">我的积分</h1>
-            <p className="mt-1 text-sm text-white/50">{CREDITS_RECHARGE_ENABLED ? '余额、充值申请、消耗流水。' : '余额与消耗流水。'}</p>
+            <h1 className="text-2xl font-semibold text-white">历史账单</h1>
+            <p className="mt-1 text-sm text-white/50">City 积分已永久停用。历史记录仅供核对，不再提供购买、发放或消耗。</p>
           </div>
-          <Link
-            href="/account"
-            className="flex-shrink-0 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/70 transition hover:border-white/20 hover:text-white"
-          >
-            ← 账号设置
-          </Link>
+          <Link href="/account" className="text-sm text-white/70 hover:text-white">返回账号设置</Link>
         </div>
-        <div>
-          {authStatus === 'loading' || loading ? (
-            <p className="mt-2 text-xs text-white/35">已显示本地缓存，正在后台同步钱包和订单状态。</p>
-          ) : null}
-        </div>
-
-        {/* Membership-first launch notice */}
-        <div className="rounded-xl border border-violet-400/20 bg-violet-400/5 px-4 py-3.5 text-[11px] text-white/50 leading-relaxed space-y-1.5">
-          <p className="text-violet-300/80 font-semibold text-xs">Creator City 第一版 · 会员订阅模式</p>
-          <p>第一版以 <span className="text-violet-300/70 font-medium">会员订阅</span> 为主，平台积分充值功能暂未面向所有用户开放。如需使用平台代付 AI 生成，请联系我们升级为会员（100 CNY/月）。</p>
-          <p>会员也可以绑定 <Link href="/account/providers" className="text-violet-300/70 underline underline-offset-2 hover:text-violet-300">自己的 API 账户（BYOK）</Link>，API 费用由你直接支付给服务商，不经过平台积分。</p>
-          <p><span className="text-white/25">市场交易积分结算</span>（授权购买）当前不开放，如有授权合作需求请直接联系创作者。</p>
-        </div>
-
-        <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3.5 text-[11px] text-white/35 leading-relaxed space-y-1">
-          <p>此页面显示 <span className="text-white/55 font-medium">平台额度</span> 的余额与流水——Creator City 代付 AI 模型 API 调用，消耗你充值的积分。</p>
-          <p>使用 <span className="text-violet-300/60 font-medium">我的 API 账户</span> 生成时，API 费用由你直接支付给服务商，不经过平台积分，也不显示在此页面。</p>
-          <p><span className="text-white/25">平台服务费</span>（工作台工具费）当前未启用，显示为 0。</p>
-        </div>
-
-        <WalletBalanceCard wallet={wallet} />
-
-        {CREDITS_RECHARGE_ENABLED ? (
+        {unauthenticated ? (
+          <p className="text-sm text-red-400">请先 <Link href="/auth/login?next=/account/credits" className="underline">登录</Link> 后查看历史账单。</p>
+        ) : error ? (
+          <p role="alert" className="text-sm text-red-400">{error}</p>
+        ) : loading ? (
+          <p className="text-sm text-white/50">加载中…</p>
+        ) : (
           <>
-            <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold text-white">支付宝充值</h2>
-                  <p className="mt-1 text-sm text-white/45">扫码支付成功后，系统会通过支付宝回调自动发放积分。</p>
-                </div>
-                <div className="text-right text-xs">
-                  <span className={`rounded-full px-2.5 py-1 ${alipayConfigured ? 'bg-emerald-400/15 text-emerald-200' : alipayChecking ? 'bg-sky-400/15 text-sky-200' : 'bg-white/10 text-white/45'}`}>
-                    {alipayStatusText}
-                  </span>
-                  <div className="mt-2 text-white/35">
-                    微信支付：{wechatpayStatusText}
-                  </div>
-                </div>
-              </div>
-              {alipayStatus === 'not-configured' && (
-                <div className="mb-4 rounded-md border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
-                  缺少环境变量：{chinaProviders.alipay.missing?.length ? chinaProviders.alipay.missing.join(', ') : 'ALIPAY_*'}
-                </div>
-              )}
-              <div className="grid gap-3 sm:grid-cols-2">
-                {packages.map((pkg) => {
-                  const price = pkg.prices.find((item) => item.region === 'CN' && item.provider === 'alipay')
-                  if (!price) return null
-                  const credits = pkg.credits + pkg.bonusCredits
-                  return (
-                    <button
-                      key={pkg.id}
-                      type="button"
-                      onClick={() => { void handleAlipayRecharge(pkg.id) }}
-                      disabled={Boolean(payingPackageId) || !alipayConfigured}
-                      className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-left transition hover:border-white/25 hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-semibold text-white">{pkg.name}</div>
-                          <div className="mt-1 text-xs text-white/45">{credits.toLocaleString()} 积分</div>
-                        </div>
-                        <div className="text-sm font-semibold text-emerald-200">
-                          ¥{(price.amount / 100).toFixed(2)}
-                        </div>
-                      </div>
-                      <div className="mt-3 text-xs text-white/38">
-                        {!alipayConfigured
-                          ? `支付宝 ${alipayStatusText}`
-                          : payingPackageId === pkg.id
-                            ? '正在生成二维码...'
-                            : '支付宝扫码支付'}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-              {packages.length === 0 ? <p className="text-sm text-white/40">暂无可用积分套餐。</p> : null}
+            <section>
+              <h2 className="mb-3 text-lg font-semibold text-white">历史流水</h2>
+              <div className="overflow-x-auto"><CreditLedgerTable items={ledger} /></div>
             </section>
-
-            {pendingOrders.length > 0 && (
-              <section className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-5">
-                <h2 className="mb-3 text-sm font-semibold text-amber-300">待审核申请 ({pendingOrders.length})</h2>
-                <div className="space-y-2">
-                  {pendingOrders.map((o) => (
-                    <div key={o.id} className="flex items-center justify-between text-sm">
-                      <span className="text-white/70">{o.amountCredits.toLocaleString()} 积分</span>
-                      {o.note && <span className="truncate max-w-xs text-white/40">{o.note}</span>}
-                      <span className="text-white/40">{new Date(o.createdAt).toLocaleDateString('zh-CN')}</span>
-                    </div>
+            <section>
+              <h2 className="mb-3 text-lg font-semibold text-white">历史人工订单</h2>
+              {orders.length === 0 ? <p className="text-sm text-white/45">暂无记录</p> : (
+                <ul className="divide-y divide-white/10">
+                  {orders.map((order) => (
+                    <li key={order.id} className="flex flex-wrap gap-3 py-3 text-sm text-white/60">
+                      <span>{new Date(order.createdAt).toLocaleDateString('zh-CN')}</span>
+                      <span>历史数量：{order.amountCredits.toLocaleString()}</span>
+                      <span>{order.status}</span>
+                      {order.note && <span className="break-all">{order.note}</span>}
+                    </li>
                   ))}
-                </div>
-              </section>
-            )}
-
-            <section className="rounded-lg border border-white/10 bg-white/[0.03] p-5">
-              <h2 className="mb-4 text-base font-semibold text-white">申请人工充值</h2>
-              <form onSubmit={(e) => void handleRecharge(e)} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                <div className="flex-1">
-                  <label className="mb-1 block text-xs text-white/50">申请积分数量</label>
-                  <input
-                    type="number" min={1} max={1000000} value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="例：1000"
-                    className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="mb-1 block text-xs text-white/50">备注（可选，如转账凭证）</label>
-                  <input
-                    type="text" value={note} onChange={(e) => setNote(e.target.value)}
-                    maxLength={200} placeholder="备注信息"
-                    className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
-                  />
-                </div>
-                <button
-                  type="submit" disabled={submitting}
-                  className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50 sm:shrink-0"
-                >
-                  {submitting ? '提交中…' : '提交申请'}
-                </button>
-              </form>
-              {submitMsg && (
-                <p className={`mt-3 text-sm ${submitMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{submitMsg.text}</p>
+                </ul>
               )}
             </section>
           </>
-        ) : (
-          <section className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-5 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-white/70">积分充值</h2>
-              <p className="mt-1 text-xs text-white/35">第一版采用会员订阅 + 自带 API Key（BYOK）模式。平台积分充值和消费暂未向普通用户开放。</p>
-            </div>
-            <div className="rounded-lg border border-violet-400/15 bg-violet-400/5 px-4 py-3 space-y-2.5">
-              <p className="text-xs text-white/55 font-medium">推荐使用方式</p>
-              <div className="text-xs text-white/40 space-y-1.5 leading-relaxed">
-                <p>• <Link href="/account/providers" className="text-violet-300/70 underline underline-offset-2 hover:text-violet-300">绑定自己的 Provider API Key（BYOK）</Link>，AI 生成费用由你直接支付给服务商，不经过平台积分。</p>
-                <p>• <Link href="/account/membership" className="text-violet-300/70 underline underline-offset-2 hover:text-violet-300">开通会员（¥100/月）</Link>，享受平台创作工作台访问权益，会员费为平台服务费，不含 AI API 成本。</p>
-                <p className="text-white/25">• 平台积分充值入口将在后续阶段开放。</p>
-              </div>
-            </div>
-          </section>
         )}
-
-        <section>
-          <h2 className="mb-3 text-lg font-semibold text-white">积分流水</h2>
-          <CreditLedgerTable items={ledger} />
-        </section>
       </main>
-      <AlipayQrPaymentModal
-        payment={qrPayment}
-        onClose={() => setQrPayment(null)}
-        onRefresh={createAlipayQr}
-        onPaid={async () => {
-          setSubmitMsg({ ok: true, text: '支付成功，积分已到账。' })
-          await load()
-        }}
-      />
     </DashboardShell>
   )
 }

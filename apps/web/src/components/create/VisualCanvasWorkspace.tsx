@@ -223,10 +223,7 @@ import {
 } from '@/lib/tools/provider-groups'
 import { useProviderLiveStatus } from '@/lib/tools/useProviderLiveStatus'
 import type { GenerateResponse } from '@/lib/providers/types'
-import { estimateCreditCost } from '@/lib/credits/cost-rules'
 import { BeginnerGuidePanel } from './BeginnerGuidePanel'
-import { CreditBalanceBadge } from './CreditBalanceBadge'
-import { CreditInsufficientModal } from './CreditInsufficientModal'
 import { normalizeAssetType } from '@/lib/assets/normalize'
 import { getToolProviderById, type ToolProviderNodeType, type ToolProviderStatus } from '@/lib/tools/provider-catalog'
 import { isPlaceholderProjectId } from '@/lib/routing/placeholders'
@@ -719,6 +716,7 @@ const TEXT_NODE_PROVIDER_OPTIONS = [
   { value: 'deepseek-text', label: 'DeepSeek V4 Flash', hint: '推荐 · 中文友好 · 快速', badge: 'available', duration: '10~20s' },
   { value: 'deepseek-reasoner', label: 'DeepSeek V4 Pro', hint: '中文 · 推理增强', badge: 'available', duration: '15~30s' },
   { value: 'kimi-text', label: 'Kimi K2.6', hint: '中文文本 · Kimi', badge: 'available', duration: '10~20s' },
+  { value: 'kimi-multimodal', label: 'Kimi Multimodal', hint: '文本测试 · 服务端配置', badge: 'available', duration: '10~20s' },
   { value: 'openai-text', label: 'OpenAI Text', hint: '海外 · 需 OpenAI 余额', badge: 'available', duration: '10~20s' },
 ] as const
 
@@ -2784,7 +2782,8 @@ export function VisualCanvasWorkspace({
   const [shotListSourceId, setShotListSourceId] = useState<string | null>(null)
   const [canvasPrompt, setCanvasPrompt] = useState('')
   const [promptModel, setPromptModel] = useState('custom-video-gateway')
-  const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('user_provider_account')
+  // Legacy wire identifier for server-managed API credentials, not a credit balance.
+  const [billingMode, setBillingMode] = useState<'platform_credits' | 'user_provider_account'>('platform_credits')
   const [selectedUserAccountId, setSelectedUserAccountId] = useState('')
   const [userProviderAccounts, setUserProviderAccounts] = useState<UserProviderAccount[]>([])
   const [userAccountsLoading, setUserAccountsLoading] = useState(false)
@@ -2870,7 +2869,6 @@ export function VisualCanvasWorkspace({
   const [isLocalImageDragOver, setIsLocalImageDragOver] = useState(false)
   const timersRef = useRef<number[]>([])
   const [dialogError, setDialogError] = useState<string | null>(null)
-  const [creditModal, setCreditModal] = useState<{ open: boolean; requiredCredits?: number; availableCredits?: number }>({ open: false })
   const initialTemplateAppliedRef = useRef('')
   const canvasLoadedRef = useRef(false)
   const hasHydratedCanvasRef = useRef(false)
@@ -9811,9 +9809,9 @@ export function VisualCanvasWorkspace({
           const jobFallback = buildResultLabel(nodeSnapshot.title)
           if (!jobResult.success) {
             if (jobResult.errorCode === 'INSUFFICIENT_CREDITS') {
-              const byokMsg = '平台积分生成暂未对外开放。请切换至「我的 API 账户」并前往 /account/providers 添加你的 API Key。'
-              handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: byokMsg })
-              setDialogError(byokMsg)
+              const accessMessage = '服务端仍返回旧版计费限制，请联系管理员检查生成服务配置。'
+              handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: accessMessage })
+              setDialogError(accessMessage)
               return
             }
             const errMsg = formatGenerateError(jobResult)
@@ -9902,9 +9900,9 @@ export function VisualCanvasWorkspace({
 
       if (!result.success) {
         if (result.errorCode === 'INSUFFICIENT_CREDITS') {
-          const byokMsg = '平台积分生成暂未对外开放。请切换至「我的 API 账户」并前往 /account/providers 添加你的 API Key。'
-          handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: byokMsg })
-          setDialogError(byokMsg)
+          const accessMessage = '服务端仍返回旧版计费限制，请联系管理员检查生成服务配置。'
+          handleNodePatch(nodeSnapshot.id, { status: 'error', errorMessage: accessMessage })
+          setDialogError(accessMessage)
           return
         }
         const errMsg = formatGenerateError(result)
@@ -11573,8 +11571,6 @@ export function VisualCanvasWorkspace({
         </div>
 
         <div className="canvas-topbar-actions">
-          {/* Credits balance — read-only display */}
-          <CreditBalanceBadge />
           {/* Save status pill */}
           <button
             type="button"
@@ -11829,7 +11825,6 @@ export function VisualCanvasWorkspace({
     || storyboardDirectorOpen
     || generationTasksOpen
     || p0MediaDebugOpen
-    || creditModal.open
     || newProjectOpen
     || isAddMenuOpen
     || isLexiconOpen
@@ -13423,11 +13418,6 @@ export function VisualCanvasWorkspace({
                           ? '检查中'
                           : '模拟生成'
             }
-            estimatedCredits={
-              editingNode.kind === 'video'
-                ? undefined
-                : estimateCreditCost(normalizedPromptModel, getProviderNodeType(editingNode.kind))
-            }
             footerItems={promptFooterItems}
             videoModeInfo={editingNode.kind === 'video' ? videoModeInfo : undefined}
             taskInputModeLabel={(() => {
@@ -13499,7 +13489,7 @@ export function VisualCanvasWorkspace({
             )}
             {(editingNode.kind === 'text' || editingNode.kind === 'image' || editingNode.kind === 'video') && (
               <div className="canvas-node-dialog-billing-controls border-t border-white/[0.06] px-3 pb-2 pt-2 space-y-1.5">
-              <p className="canvas-node-dialog-billing-title text-[9px] font-semibold uppercase tracking-wider text-white/25">API 费用来源</p>
+              <p className="canvas-node-dialog-billing-title text-[9px] font-semibold uppercase tracking-wider text-white/25">API 来源</p>
               {/* Billing mode icon cards */}
               <div className="canvas-node-dialog-billing-modes grid grid-cols-2 gap-1">
                 <button
@@ -13509,7 +13499,7 @@ export function VisualCanvasWorkspace({
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs leading-none">🔑</span>
-                    <span className={`text-[7px] font-bold rounded-full px-1 py-0.5 ${billingMode === 'user_provider_account' ? 'bg-violet-500/25 text-violet-300' : 'bg-white/[0.05] text-white/25'}`}>推荐</span>
+                    <span className={`text-[7px] font-bold rounded-full px-1 py-0.5 ${billingMode === 'user_provider_account' ? 'bg-violet-500/25 text-violet-300' : 'bg-white/[0.05] text-white/25'}`}>可选</span>
                   </div>
                   <span className="text-[10px] font-semibold mt-0.5 leading-tight">我的 API 账户</span>
                   <span className="text-[8px] leading-tight opacity-55">自有 Key · 费用直扣</span>
@@ -13523,8 +13513,8 @@ export function VisualCanvasWorkspace({
                     <span className="text-xs leading-none">🏛</span>
                     <span className="text-[7px] font-bold rounded-full px-1 py-0.5 bg-white/[0.05] text-white/20">内部</span>
                   </div>
-                  <span className="text-[10px] font-semibold mt-0.5 leading-tight">平台额度</span>
-                  <span className="text-[8px] leading-tight opacity-55">平台积分（内部）</span>
+                  <span className="text-[10px] font-semibold mt-0.5 leading-tight">平台 API</span>
+                  <span className="text-[8px] leading-tight opacity-55">服务端配置 · 管理员测试</span>
                 </button>
               </div>
               <div className="canvas-node-dialog-billing-details">
@@ -13536,12 +13526,12 @@ export function VisualCanvasWorkspace({
                       {' '}配置火山 / Seedance API Key，开放后即可使用。
                     </p>
                   ) : (
-                    <p className="text-[10px] text-white/25 leading-relaxed">平台积分视频生成暂未对外开放，不建议使用此模式。</p>
+                    <p className="text-[10px] text-white/25 leading-relaxed">管理员测试使用已有服务端 API 配置，供应商调用费用仍由对应账户承担。</p>
                   )
                 ) : (
                   <>
                     {billingMode === 'platform_credits' && (
-                      <p className="text-[10px] text-white/25 leading-relaxed">使用 Creator City 平台额度，由平台代付 Provider 调用费用。</p>
+                      <p className="text-[10px] text-white/25 leading-relaxed">管理员测试使用已有服务端 API 配置，供应商调用费用仍由对应账户承担。</p>
                     )}
                     {billingMode === 'user_provider_account' && (
                       <div className="canvas-node-dialog-billing-account-state space-y-1.5">
@@ -14064,12 +14054,6 @@ export function VisualCanvasWorkspace({
         </button>
       </div>
 
-      <CreditInsufficientModal
-        open={creditModal.open}
-        onClose={() => setCreditModal((prev) => ({ ...prev, open: false }))}
-        requiredCredits={creditModal.requiredCredits}
-        availableCredits={creditModal.availableCredits}
-      />
     </div>
     </div>
     </CanvasWorkspaceShell>

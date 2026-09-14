@@ -1,3 +1,4 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 import { NextResponse } from 'next/server'
 import { runCreatorModel } from '@/lib/creator-model/runtime'
 import type { CreatorModelRequest, CreatorModelResponse } from '@/lib/creator-model/types'
@@ -21,6 +22,8 @@ function errorResponse(message: string, errorCode: string, status = 400): NextRe
 }
 
 export async function POST(request: Request) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
   let body: CreatorModelRequest
 
   try {

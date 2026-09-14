@@ -29,7 +29,13 @@ export const kimiProviderConfigs: ChinaProviderConfig[] = [
 
 export function getKimiStatus(providerId: 'kimi-text' | 'kimi-multimodal') {
   const config = kimiProviderConfigs.find((item) => item.providerId === providerId)
-  return config ? getChinaProviderStatus(config) : null
+  if (!config) return null
+  const status = getChinaProviderStatus(config)
+  return {
+    ...status,
+    model: getKimiModel(providerId),
+    baseUrl: status.baseUrl?.replace(/\/+$/, '') ?? null,
+  }
 }
 
 export function testKimiConnection(providerId: 'kimi-text' | 'kimi-multimodal') {
@@ -59,13 +65,32 @@ function isKimiK2Model(model: string) {
   return /^kimi-k2\.(5|6)(?:\b|[-_])/i.test(model)
 }
 
+function getKimiModel(providerId: 'kimi-text' | 'kimi-multimodal') {
+  return (providerId === 'kimi-multimodal' ? process.env.KIMI_MODEL_MULTIMODAL : undefined)
+    || process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'
+}
+
+const TRANSPORT_ERROR_CODES = new Set([
+  'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT',
+  'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT', 'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'ERR_TLS_CERT_ALTNAME_INVALID',
+])
+
+function transportErrorCode(error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined
+  const cause = error.cause
+  const code = cause && typeof cause === 'object' && 'code' in cause
+    ? cause.code
+    : (error as Error & { code?: unknown }).code
+  return typeof code === 'string' && TRANSPORT_ERROR_CODES.has(code) ? code : undefined
+}
+
 export async function generateKimiText(input: ChinaTextGenerationInput & { providerId?: 'kimi-text' | 'kimi-multimodal'; purpose?: 'ping' | 'generate'; apiKeyOverride?: string }): Promise<ChinaTextGenerationResult> {
   const providerId = input.providerId ?? 'kimi-text'
   const purpose = input.purpose ?? 'ping'
   const apiKey = input.apiKeyOverride ?? process.env.MOONSHOT_API_KEY
-  const model = providerId === 'kimi-multimodal'
-    ? process.env.KIMI_MODEL_MULTIMODAL || process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'
-    : process.env.KIMI_MODEL_TEXT || 'kimi-k2.6'
+  const model = getKimiModel(providerId)
   if (!apiKey) {
     return {
       success: false as const,
@@ -179,14 +204,16 @@ export async function generateKimiText(input: ChinaTextGenerationInput & { provi
         upstreamMessage: 'Kimi request aborted or timed out.',
       }
     }
-    const message = error instanceof Error ? error.message : 'Kimi 调用失败。'
+    const rawCode = transportErrorCode(error)
+    const message = 'Kimi 网络请求失败，请稍后重试。'
     return {
       success: false as const,
       providerId,
       model,
       errorCode: 'KIMI_TEXT_FAILED',
       message,
-      upstreamMessage: message,
+      upstreamMessage: rawCode ? `Kimi network request failed (${rawCode}).` : 'Kimi network request failed.',
+      rawCode,
     }
   } finally {
     clearTimeout(timer)

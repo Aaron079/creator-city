@@ -1,3 +1,4 @@
+import { generationAccessResponse } from '@/lib/generation/access'
 import {
   createSeedancePrevisGetHandler,
   createSeedancePrevisPostHandler,
@@ -6,4 +7,9 @@ import {
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const GET = createSeedancePrevisGetHandler()
-export const POST = createSeedancePrevisPostHandler()
+const handlePost = createSeedancePrevisPostHandler()
+export async function POST(request: Request) {
+  const accessError = await generationAccessResponse()
+  if (accessError) return accessError
+  return handlePost(request)
+}
