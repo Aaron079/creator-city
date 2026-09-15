@@ -47,15 +47,20 @@ export async function writeQuery(
   const client = await getPool().connect()
   try {
     await client.query('BEGIN')
+    await client.query('SAVEPOINT role_switch')
     try {
       // Attempt RLS bypass — works when connecting as postgres/superuser.
       // SET LOCAL is scoped to this transaction only (safe with pgBouncer).
       await client.query("SET LOCAL role = 'postgres'")
     } catch (bypassErr) {
+      // PostgreSQL aborts the transaction on SET failure; clear that state
+      // before falling back to the original connection role (e.g. Neon).
+      await client.query('ROLLBACK TO SAVEPOINT role_switch')
       console.warn('[cn-executor][db] role bypass failed, running query without RLS bypass', {
         error: bypassErr instanceof Error ? bypassErr.message : String(bypassErr),
       })
     }
+    await client.query('RELEASE SAVEPOINT role_switch')
     const result = await client.query(text, values)
     await client.query('COMMIT')
     return result.rowCount ?? 0

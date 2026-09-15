@@ -7,6 +7,7 @@ import { setupBilling, finalizeBilling } from '@/lib/credits/billing-middleware'
 import { buildProviderManagementStatus } from '@/lib/provider-management'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { isDbConnectionError } from '@/lib/db-error'
 import { persistGeneratedMedia, type PersistGeneratedMediaResult } from '@/lib/assets/persist-generated-media'
 import { analyzeAssetIntelligence } from '@/lib/asset-intelligence'
 import { missingGenerationInput, prepareGenerationContext, stringInput } from '@/lib/generation/generation-context'
@@ -714,6 +715,7 @@ export async function POST(request: NextRequest) {
         },
       },
     }).catch((err: unknown) => {
+      if (isDbConnectionError(err)) throw err
       console.warn('[api/generate/video] failed to create GenerationJob', err)
       return null
     })
@@ -1126,6 +1128,18 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (err) {
+    if (isDbConnectionError(err)) {
+      console.error('[api/generate/video] database unavailable', { requestId: routeRequestId, code: (err as Error & { code?: string }).code })
+      return videoErrorResponse({
+        errorCode: 'DB_CONNECTION_UNAVAILABLE',
+        errorMessage: '数据库连接暂时不可用，请稍后检查任务状态，避免重复提交生成。',
+        statusCode: 503,
+        requestId: routeRequestId,
+        mode: 'unavailable',
+        submittedInput: safeVideoSubmittedInput(body),
+        details: { errorStage: 'database', stageTrace: ['database'] },
+      })
+    }
     const classified = classifyVideoException(err)
     console.error('[api/generate/video]', err)
     return videoErrorResponse({

@@ -13,6 +13,9 @@ let updateError = false
 let transientUpdateError = false
 let response: GenerateResponse
 let currentUserId = 'admin'
+let contextError: Error | undefined
+let createFailure: Error | undefined
+let testProviderId = 'custom-video-gateway'
 const events: string[] = []
 const created: Record<string, unknown>[] = []
 const updates: Record<string, unknown>[] = []
@@ -41,6 +44,7 @@ loader._load = function (id, ...args) {
     },
     create: async ({ data }: { data: Record<string, unknown> }) => {
       events.push('create')
+      if (createFailure) throw createFailure
       if (createError) throw new Error('private-database-url')
       created.push(data)
       return { ...data, id: 'owned-job' }
@@ -59,12 +63,15 @@ loader._load = function (id, ...args) {
       return { count: 1 }
     },
   } } }
-  if (id === '@/lib/provider-management') return { buildProviderManagementStatus: async () => ({ providers: [{ providerId: 'custom-video-gateway', available: true, model: 'configured-model' }] }) }
+  if (id === '@/lib/provider-management') return { buildProviderManagementStatus: async () => ({ providers: [{ providerId: testProviderId, available: true, model: 'configured-model' }] }) }
   if (id === '@/lib/executors/executor-gateway') return { getExecutorForProvider: () => ({ providerRegion: 'global', executionRegion: 'global', storageRegion: 'global', executorKind: 'local' }) }
   if (id === '@/lib/generation/generation-context') return {
     stringInput: (value: unknown) => typeof value === 'string' ? value.trim() : '',
     missingGenerationInput: () => [],
-    prepareGenerationContext: async () => ({ ok: true, projectId: 'project', workflowId: 'workflow', nodeId: 'node' }),
+    prepareGenerationContext: async () => {
+      if (contextError) throw contextError
+      return { ok: true, projectId: 'project', workflowId: 'workflow', nodeId: 'node' }
+    },
   }
   if (id === '@/lib/assets/persist-generated-media') return { persistGeneratedMedia: async ({ url, metadata }: { url: string; metadata: { generationJobId: string } }) => {
     mediaWrites++
@@ -88,6 +95,9 @@ try {
 
 beforeEach(() => {
   allowed = true
+  contextError = undefined
+  createFailure = undefined
+  testProviderId = 'custom-video-gateway'
   currentUserId = 'admin'
   createError = updateError = false
   transientUpdateError = false
@@ -104,7 +114,7 @@ async function submit(kind: string) {
   try {
     return await routes[kind]!(new NextRequest(`https://app.test/api/generate/${kind}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerId: 'custom-video-gateway', prompt: 'test', projectId: 'project', nodeId: 'node', userId: 'attacker', billingJobId: 'foreign' }),
+      body: JSON.stringify({ providerId: testProviderId, prompt: 'test', projectId: 'project', nodeId: 'node', userId: 'attacker', billingJobId: 'foreign' }),
     }))
   } finally {
     if (original === undefined) delete process.env.ENABLE_PLATFORM_VIDEO_GENERATION
@@ -247,4 +257,35 @@ test('synchronous video returns the internal generation job ID after media persi
   assert.equal(body.generationJobId, 'owned-job')
   assert.equal(body.jobTrackingWarning, undefined)
   assert.equal(mediaWrites, 1)
+})
+
+test('video database pool exhaustion is a sanitized platform 503, never a provider failure or a paid retry', async () => {
+  contextError = Object.assign(new Error('Timed out fetching a new connection from the connection pool. private-database-url'), { code: 'P2024' })
+  const result = await submit('video')
+  const body = await result.json()
+  assert.equal(result.status, 503)
+  assert.equal(body.errorCode, 'DB_CONNECTION_UNAVAILABLE')
+  assert.equal(body.errorStage, 'database')
+  assert.match(body.message, /数据库/)
+  assert.doesNotMatch(JSON.stringify(body), /private-database-url|provider_timeout|provider_network_failed/)
+  assert.deepEqual(events, [])
+  assert.equal(requests.length, 0)
+})
+
+test('Seedance job-create pool exhaustion returns a platform 503 without contacting the executor', async () => {
+  testProviderId = 'volcengine-seedance-video'
+  createFailure = Object.assign(new Error('Timed out fetching a new connection from the connection pool. private-database-url'), { code: 'P2024' })
+  const fetch = globalThis.fetch
+  let dispatches = 0
+  globalThis.fetch = async () => { dispatches++; throw new Error('Unexpected executor dispatch') }
+  try {
+    const result = await submit('video')
+    const body = await result.json()
+    assert.equal(result.status, 503)
+    assert.equal(body.errorCode, 'DB_CONNECTION_UNAVAILABLE')
+    assert.equal(body.errorStage, 'database')
+    assert.doesNotMatch(JSON.stringify(body), /private-database-url/)
+    assert.deepEqual(events, ['create'])
+    assert.equal(dispatches, 0)
+  } finally { globalThis.fetch = fetch }
 })
