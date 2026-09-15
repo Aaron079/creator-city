@@ -17,15 +17,19 @@ let assetWrites: number
 let claimFails: boolean
 let assetFails: boolean
 let terminalDuringPoll: boolean
+let fetchFails: boolean
+let responseStatus: number
+let responseHeaders: Record<string, unknown>
+let successFails: boolean
 
 loader._load = function (id, ...args) {
   if (id === '../auth') return { isAuthorized: () => true }
   if (id === './generateImage') return { readBody: async () => JSON.stringify({ generationJobId: jobId }) }
-  if (id === '../response') return { jsonOk: () => {}, jsonError: () => {}, jsonUnauthorized: () => {} }
   if (id === '../logSafe') return { safeLogVideoJob: () => {} }
   if (id === '../db') return {
     query: async (sql: string) => {
       if (sql.includes('FROM "GenerationJob"')) {
+        if (fetchFails) throw new Error('database temporarily unavailable')
         const row = { ...job }
         if (!sql.split('FROM')[0].includes('"providerJobId"')) delete row.providerJobId
         return [row]
@@ -48,6 +52,7 @@ loader._load = function (id, ...args) {
         if (assetFails) throw new Error('asset unavailable')
         asset = { id: values[0], url: values[9], originalUrl: values[10], storageKey: values[8], metadataJson: JSON.parse(String(values[13])) }
       } else if (sql.includes("SET status = 'SUCCEEDED'")) {
+        if (successFails) throw new Error('success write unavailable')
         job.status = 'SUCCEEDED'
         job.outputAssetId = values[0]
         job.output = JSON.parse(String(values[1]))
@@ -92,9 +97,17 @@ beforeEach(() => {
   polled = []
   downloads = uploads = assetWrites = 0
   claimFails = assetFails = terminalDuringPoll = false
+  fetchFails = false
+  responseStatus = 0
+  responseHeaders = {}
+  successFails = false
 })
 
-const run = () => handleRunVideoJob({} as IncomingMessage, {} as ServerResponse)
+const run = () => handleRunVideoJob({} as IncomingMessage, {
+  setHeader: (name: string, value: unknown) => { responseHeaders[name] = value },
+  writeHead: (status: number, headers: Record<string, unknown>) => { responseStatus = status; Object.assign(responseHeaders, headers) },
+  end: () => {},
+} as unknown as ServerResponse)
 
 test('resumes the stored provider task without a paid submit or changing input/model', async () => {
   const originalInput = structuredClone(job.input)
@@ -135,6 +148,39 @@ test('failed queued claim cannot dispatch a paid task', async () => {
   await run()
   assert.equal(submissions.length, 0)
   assert.deepEqual(polled, [])
+  assert.equal(responseStatus, 500)
+  assert.equal(responseHeaders['x-fc-status'], '500')
+})
+
+test('a failed success write retries with the existing asset and provider task', async () => {
+  successFails = true
+  await run()
+  assert.equal(responseStatus, 500)
+  assert.equal(responseHeaders['x-fc-status'], '500')
+  assert.equal(job.status, 'PROCESSING')
+  assert.equal(assetWrites, 1)
+  successFails = false
+  await run()
+  assert.equal(responseStatus, 200)
+  assert.equal(job.status, 'SUCCEEDED')
+  assert.equal(submissions.length, 0)
+  assert.equal(assetWrites, 1)
+  assert.equal(downloads, 1)
+})
+
+test('a transient initial database read returns retryable failure, then the same queued job completes once', async () => {
+  job.status = 'QUEUED'
+  job.providerJobId = null
+  fetchFails = true
+  await run()
+  assert.equal(responseStatus, 500)
+  assert.equal(job.status, 'QUEUED')
+  assert.equal(submissions.length, 0)
+  fetchFails = false
+  await run()
+  assert.equal(responseStatus, 200)
+  assert.equal(job.status, 'SUCCEEDED')
+  assert.equal(submissions.length, 1)
 })
 
 for (const status of ['SUCCEEDED', 'FAILED', 'CANCELED']) {
@@ -168,4 +214,10 @@ test('asset persistence failure cannot mark success with a nonexistent asset', a
   assert.equal(job.status, 'PROCESSING')
   assert.equal(job.providerJobId, 'stored-paid-task')
   assert.equal(job.outputAssetId, undefined)
+  assert.equal(responseStatus, 500)
+  assetFails = false
+  await run()
+  assert.equal(responseStatus, 200)
+  assert.equal(job.status, 'SUCCEEDED')
+  assert.equal(submissions.length, 0)
 })

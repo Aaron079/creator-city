@@ -11,6 +11,7 @@ function getPool(): Pool {
       max: 3,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
+      query_timeout: 15_000,
       ssl: url.includes('sslmode=disable') ? false : { rejectUnauthorized: false },
     })
     pool.on('error', (err: Error) => {
@@ -25,11 +26,15 @@ export async function query<T extends Record<string, unknown> = Record<string, u
   values?: unknown[],
 ): Promise<T[]> {
   const client = await getPool().connect()
+  let failed = false
   try {
     const result = await client.query(text, values)
     return result.rows as T[]
+  } catch (err) {
+    failed = true
+    throw err
   } finally {
-    client.release()
+    client.release(failed)
   }
 }
 
@@ -45,6 +50,7 @@ export async function writeQuery(
   values?: unknown[],
 ): Promise<number> {
   const client = await getPool().connect()
+  let failed = false
   try {
     await client.query('BEGIN')
     await client.query('SAVEPOINT role_switch')
@@ -65,9 +71,10 @@ export async function writeQuery(
     await client.query('COMMIT')
     return result.rowCount ?? 0
   } catch (err) {
+    failed = true
     try { await client.query('ROLLBACK') } catch { /* ignore */ }
     throw err
   } finally {
-    client.release()
+    client.release(failed)
   }
 }

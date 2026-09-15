@@ -300,9 +300,8 @@ export async function handleRunVideoJob(req: IncomingMessage, res: ServerRespons
     return
   }
 
-  // Run synchronously — keeps Aliyun FC alive for the full job duration.
-  // Caller (Vercel) uses fire-and-forget with an 8s timeout; the HTTP response
-  // may not be received by Vercel, but the job runs to completion on FC.
+  // FC acknowledges async delivery separately; this response determines whether
+  // the queued invocation succeeded or needs to retry the same database job.
   try {
     await runVideoJob(generationJobId)
   } catch (err) {
@@ -310,6 +309,12 @@ export async function handleRunVideoJob(req: IncomingMessage, res: ServerRespons
       generationJobId,
       error: err instanceof Error ? err.message : String(err),
     })
+    res.setHeader('x-fc-status', '500')
+    jsonError(res, {
+      errorCode: 'video_job_execution_failed',
+      message: 'Video job execution interrupted. Retry the existing generation job.',
+    }, 500)
+    return
   }
 
   // Best-effort response — Vercel caller may have already timed out.
@@ -332,7 +337,7 @@ async function runVideoJob(generationJobId: string): Promise<void> {
     console.error('[cn-executor][videoJobRunner] failed to fetch job from DB', {
       generationJobId, error: err instanceof Error ? err.message : String(err),
     })
-    return
+    throw err
   }
 
   if (!job) {
@@ -542,7 +547,7 @@ async function runVideoJob(generationJobId: string): Promise<void> {
       console.warn('[cn-executor][videoJobRunner] failed to create Asset; leaving job resumable', {
         generationJobId, error: err instanceof Error ? err.message : String(err),
       })
-      return
+      throw err
     }
   }
 
@@ -571,7 +576,7 @@ async function runVideoJob(generationJobId: string): Promise<void> {
     console.error('[cn-executor][videoJobRunner] failed to mark job SUCCEEDED', {
       generationJobId, error: err instanceof Error ? err.message : String(err),
     })
-    return
+    throw err
   }
 
   // Step 7: update CanvasNode
