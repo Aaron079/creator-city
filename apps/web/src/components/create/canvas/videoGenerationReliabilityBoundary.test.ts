@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 
 import {
   classifyGenerationFailure,
@@ -62,16 +63,59 @@ test('video button opens only for an enabled platform with an available provider
 
 test('caps video polling and exits immediately after cancellation', () => {
   const loopStart = workspaceSource.indexOf('let videoPolls = 0')
-  const loopEnd = workspaceSource.indexOf('const timeoutMsg = `视频生成轮询超时', loopStart)
+  const loopEnd = workspaceSource.indexOf('// Loop exited:', loopStart)
   const loopSource = workspaceSource.slice(loopStart, loopEnd)
 
-  assert.match(workspaceSource, /const MAX_VIDEO_GENERATION_POLLS = 36/)
+  assert.match(workspaceSource, /const MAX_VIDEO_GENERATION_POLLS = 120/)
   assert.match(loopSource, /while \(videoPolls < MAX_VIDEO_GENERATION_POLLS && !generationController\?\.signal\.aborted\)/)
   assert.match(loopSource, /generationAbortContext\(generationController\.signal\) !== null\) return/)
   assert.match(
     workspaceSource,
-    /if \(videoPolls >= MAX_VIDEO_GENERATION_POLLS && !generationController\?\.signal\.aborted\) \{\s+const timeoutMsg = `视频生成轮询超时/,
+    /if \(videoPolls >= MAX_VIDEO_GENERATION_POLLS && !generationController\?\.signal\.aborted\) \{/,
   )
+})
+
+test('polling ceiling preserves the original running job without a false failure', () => {
+  const start = workspaceSource.indexOf('if (videoPolls >= MAX_VIDEO_GENERATION_POLLS')
+  const end = workspaceSource.indexOf('\n        return\n      }', start)
+  let patch: Record<string, unknown> | undefined
+  const runningMeta = { generationJobId: 'job-1', taskId: 'task-1', loading: true }
+  const run = new Function('videoPolls', 'MAX_VIDEO_GENERATION_POLLS', 'generationController', 'handleNodePatch', 'nodeSnapshot', 'runningMeta', 'showCanvasFeedback', 'setDialogError', 'videoErrorMetadata', 'generationNodeSnapshot', 'result', 'generationProviderId', workspaceSource.slice(start, end))
+  run(120, 120, undefined, (_id: string, value: Record<string, unknown>) => { patch = value }, { id: 'node-1' }, runningMeta, () => {}, () => {}, () => ({}), {}, {}, 'volcengine-seedance-video')
+  assert.equal(patch?.status, 'running')
+  assert.equal(patch?.errorMessage, undefined)
+  assert.equal((patch?.metadataJson as Record<string, unknown>).generationJobId, 'job-1')
+  assert.equal((patch?.metadataJson as Record<string, unknown>).taskId, 'task-1')
+})
+
+test('task center queries the existing database job instead of resubmitting or using a provider task id', () => {
+  const start = workspaceSource.indexOf('const handleQueryGenerationTask = ')
+  const end = workspaceSource.indexOf('const normalizedStatus = ', start)
+  const source = workspaceSource.slice(start, end)
+  assert.match(source, /currentMetadata\.generationJobId/)
+  assert.match(source, /await pollVideoGenerationTask\(task\.providerId, generationJobId\)/)
+  assert.doesNotMatch(source, /await pollSeedanceVideoTask/)
+})
+
+test('task-center completion replaces stale video URLs and running flags', () => {
+  const handlerStart = workspaceSource.indexOf('const handleQueryGenerationTask = ')
+  const start = workspaceSource.indexOf('const completedAt = ', handlerStart)
+  const end = workspaceSource.indexOf('      handleNodePatch(', start)
+  const helperStart = workspaceSource.indexOf('function videoSuccessMetadata(')
+  const helperEnd = workspaceSource.indexOf('\nfunction ', helperStart + 1)
+  const compiled = ts.transpile(workspaceSource.slice(helperStart, helperEnd))
+  const normalize = new Function('metadataRecord', 'persistenceFromGenerateResult', 'isPersistencePendingResult', 'displayUrlFromGenerateResult', 'stringValue', `${compiled}; return videoSuccessMetadata`)(
+    (value: unknown) => value || {}, () => ({}), () => false,
+    (result: { videoUrl: string }) => result.videoUrl, (value: unknown) => typeof value === 'string' ? value : '',
+  )
+  const old = { resolvedUrl: 'old.mp4', stableUrl: 'old.mp4', loading: true, isRegenerating: true }
+  const result = { success: true, status: 'done', videoUrl: 'new.mp4', assetId: 'asset-new' }
+  const run = new Function('currentMetadata', 'statusResult', 'task', 'generationJobId', 'checkedAt', 'videoUrl', 'nodeSnapshot', 'videoSuccessMetadata', `${workspaceSource.slice(start, end)}; return metadataJson`)
+  const metadata = run(old, result, { taskId: 'provider-task', providerId: 'volcengine-seedance-video' }, 'job-1', 'now', 'new.mp4', { metadataJson: old }, normalize)
+  assert.equal(metadata.resolvedUrl, 'new.mp4')
+  assert.equal(metadata.stableUrl, 'new.mp4')
+  assert.equal(metadata.loading, false)
+  assert.equal(metadata.isRegenerating, false)
 })
 
 test('classifies video gating, cancellation, and polling timeout for stable UI feedback', () => {

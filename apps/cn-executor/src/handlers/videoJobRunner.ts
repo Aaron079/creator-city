@@ -29,6 +29,7 @@ type VideoJobRow = {
   projectId: string | null
   nodeId: string | null
   providerId: string
+  providerJobId: string | null
   status: string
   prompt: string
   input: Record<string, unknown> | null
@@ -36,38 +37,21 @@ type VideoJobRow = {
 
 async function fetchJob(generationJobId: string): Promise<VideoJobRow | null> {
   const rows = await query<VideoJobRow>(
-    `SELECT id, "userId", "projectId", "nodeId", "providerId", status, prompt, input
+    `SELECT id, "userId", "projectId", "nodeId", "providerId", "providerJobId", status, prompt, input
      FROM "GenerationJob" WHERE id = $1 LIMIT 1`,
     [generationJobId],
   )
   return rows[0] ?? null
 }
 
-async function markJobProcessing(generationJobId: string, inputJson: Record<string, unknown>): Promise<void> {
-  try {
-    const rowCount = await writeQuery(
-      `UPDATE "GenerationJob"
-       SET status = 'PROCESSING', input = $1::jsonb, "updatedAt" = NOW()
-       WHERE id = $2`,
-      [JSON.stringify(inputJson), generationJobId],
-    )
-    if (rowCount === 0) {
-      console.warn('[cn-executor][db] markJobProcessing: 0 rows updated — RLS may be blocking writes', { id: generationJobId })
-    }
-    return
-  } catch (fullErr) {
-    console.error('[cn-executor][db] markJobProcessing failed, trying minimal', {
-      id: generationJobId,
-      error: fullErr instanceof Error ? fullErr.message : String(fullErr),
-    })
-  }
-  const fallbackCount = await writeQuery(
-    `UPDATE "GenerationJob" SET status = 'PROCESSING', "updatedAt" = NOW() WHERE id = $1`,
-    [generationJobId],
+async function markJobProcessing(generationJobId: string, inputJson: Record<string, unknown>): Promise<boolean> {
+  const rowCount = await writeQuery(
+    `UPDATE "GenerationJob"
+     SET status = 'PROCESSING', input = $1::jsonb, "updatedAt" = NOW()
+     WHERE id = $2 AND status = 'QUEUED' AND "providerJobId" IS NULL`,
+    [JSON.stringify(inputJson), generationJobId],
   )
-  if (fallbackCount === 0) {
-    console.warn('[cn-executor][db] markJobProcessing minimal fallback: 0 rows updated — RLS may be blocking writes', { id: generationJobId })
-  }
+  return rowCount === 1
 }
 
 async function storeProviderTaskId(generationJobId: string, taskId: string): Promise<void> {
@@ -391,58 +375,59 @@ async function runVideoJob(generationJobId: string): Promise<void> {
       : null
   )
 
-  try {
-    await markJobProcessing(generationJobId, {
+  if (job.status !== 'QUEUED' && job.status !== 'PROCESSING') return
+  let taskId = job.providerJobId?.trim() || ''
+  let usedModel = model ?? null
+  let taskSubmittedInput = submittedInput
+  if (!taskId) {
+    // A PROCESSING job may already have incurred a charge before its ID was saved.
+    if (job.status !== 'QUEUED') {
+      console.warn('[cn-executor][videoJobRunner] missing providerJobId; refusing to resubmit', { generationJobId })
+      return
+    }
+    if (!await markJobProcessing(generationJobId, {
       ...input,
       processingStartedAt: new Date().toISOString(),
+    })) return
+
+    const submitResult = await submitSeedanceTask({
+      prompt: job.prompt, imageUrl, model, duration, aspectRatio, resolution,
     })
-  } catch (err) {
-    console.warn('[cn-executor][videoJobRunner] failed to mark job PROCESSING', {
-      generationJobId, error: err instanceof Error ? err.message : String(err),
-    })
+    if (!submitResult.success) {
+      const errCode = submitResult.errorCode
+      const errMsg = submitResult.message
+      await markJobFailed({
+        id: generationJobId,
+        errorCode: errCode,
+        message: errMsg,
+        output: {
+          errorCode: errCode, message: errMsg,
+          providerRegion: 'cn', executionRegion: 'cn', storageRegion: 'cn', executorKind: 'aliyun_fc',
+          submittedInput: submitResult.submittedInput ?? submittedInput,
+          upstreamStatus: submitResult.upstreamStatus,
+          providerEndpoint: submitResult.endpoint,
+        },
+      }).catch((dbErr: unknown) => {
+        console.error('[cn-executor][videoJobRunner] failed to mark job FAILED', {
+          generationJobId, error: dbErr instanceof Error ? dbErr.message : String(dbErr),
+        })
+      })
+      console.error('[cn-executor][videoJobRunner] Seedance task submit failed', { generationJobId, errCode, errMsg })
+      return
+    }
+    taskId = submitResult.taskId
+    usedModel = submitResult.model
+    taskSubmittedInput = submitResult.submittedInput ?? submittedInput
+    console.log('[cn-executor][videoJobRunner] Seedance task submitted', { generationJobId, taskId })
+    await storeProviderTaskId(generationJobId, taskId)
   }
 
-  // Step 1: submit task to Volcengine Seedance
-  const submitResult = await submitSeedanceTask({
-    prompt: job.prompt,
-    imageUrl,
-    model,
-    duration,
-    aspectRatio,
-    resolution,
-  })
-
-  if (!submitResult.success) {
-    const errCode = submitResult.errorCode
-    const errMsg = submitResult.message
-    await markJobFailed({
-      id: generationJobId,
-      errorCode: errCode,
-      message: errMsg,
-      output: {
-        errorCode: errCode, message: errMsg,
-        providerRegion: 'cn', executionRegion: 'cn', storageRegion: 'cn', executorKind: 'aliyun_fc',
-        submittedInput: submitResult.submittedInput ?? submittedInput,
-        upstreamStatus: 'upstreamStatus' in submitResult ? submitResult.upstreamStatus : undefined,
-        providerEndpoint: 'endpoint' in submitResult ? submitResult.endpoint : undefined,
-      },
-    }).catch((dbErr: unknown) => {
-      console.error('[cn-executor][videoJobRunner] failed to mark job FAILED', {
-        generationJobId, error: dbErr instanceof Error ? dbErr.message : String(dbErr),
-      })
-    })
-    console.error('[cn-executor][videoJobRunner] Seedance task submit failed', { generationJobId, errCode, errMsg })
+  // Step 2: poll the same stored task on resumed deliveries; never submit again.
+  const pollResult = await pollSeedanceTaskUntilDone(taskId)
+  const latestJob = await fetchJob(generationJobId)
+  if (!latestJob || (latestJob.status !== 'PROCESSING' && latestJob.status !== 'QUEUED')) {
     return
   }
-
-  const { taskId, model: usedModel } = submitResult
-  console.log('[cn-executor][videoJobRunner] Seedance task submitted', { generationJobId, taskId })
-
-  // Persist taskId immediately so status route can reference it
-  await storeProviderTaskId(generationJobId, taskId)
-
-  // Step 2: poll until done
-  const pollResult = await pollSeedanceTaskUntilDone(taskId)
 
   if (!pollResult.success || pollResult.status !== 'done') {
     const errCode = !pollResult.success ? pollResult.errorCode : 'poll_timeout'
@@ -454,7 +439,7 @@ async function runVideoJob(generationJobId: string): Promise<void> {
       output: {
         errorCode: errCode, message: errMsg, taskId,
         providerRegion: 'cn', executionRegion: 'cn', storageRegion: 'cn', executorKind: 'aliyun_fc',
-        submittedInput: submitResult.submittedInput ?? submittedInput,
+        submittedInput: taskSubmittedInput,
       },
     }).catch((dbErr: unknown) => {
       console.error('[cn-executor][videoJobRunner] failed to mark job FAILED after poll timeout', {
@@ -469,83 +454,96 @@ async function runVideoJob(generationJobId: string): Promise<void> {
   // Avoid logging the signed provider URL — use boolean + length only.
   safeLogVideoJob('Seedance task done', { generationJobId, taskId, hasProviderVideoUrl: true, providerVideoUrlLength: providerVideoUrl.length })
 
-  // Step 3: download video buffer
-  const videoBuffer = await downloadVideoBuffer(providerVideoUrl)
-  if (!videoBuffer || videoBuffer.byteLength === 0) {
-    const errMsg = 'Failed to download generated video from Volcengine.'
-    await markJobFailed({
-      id: generationJobId,
-      errorCode: 'provider_media_download_failed',
-      message: errMsg,
-      output: {
-        errorCode: 'provider_media_download_failed', message: errMsg, taskId,
-        providerOriginalUrl: providerVideoUrl,
-        providerRegion: 'cn', executionRegion: 'cn', storageRegion: 'cn', executorKind: 'aliyun_fc',
-        submittedInput: submitResult.submittedInput ?? submittedInput,
-      },
-    }).catch(() => undefined)
-    console.error('[cn-executor][videoJobRunner] video download failed', { generationJobId, taskId })
-    return
-  }
+  const [existingAsset] = await query<{ id: string; url: string; storageKey: string | null }>(
+    `SELECT id, url, "storageKey" FROM "Asset"
+     WHERE "generationJobId" = $1 AND "ownerId" = $2 AND type = 'VIDEO' AND status = 'READY'
+       AND url IS NOT NULL AND url <> ''
+     ORDER BY "createdAt" ASC LIMIT 1`,
+    [generationJobId, job.userId],
+  )
+  const assetId = existingAsset?.id ?? uuid()
+  let stableVideoUrl = existingAsset?.url ?? ''
+  let storageKey = existingAsset?.storageKey ?? null
 
-  // Step 4: upload to Aliyun OSS
-  const ossKey = buildVideoOssKey(projectId, nodeId || undefined)
-  const uploadResult = await uploadToOss(ossKey, videoBuffer, 'video/mp4')
-  if (!uploadResult.success) {
-    await markJobFailed({
-      id: generationJobId,
-      errorCode: uploadResult.errorCode,
-      message: uploadResult.message,
-      output: {
-        errorCode: uploadResult.errorCode, message: uploadResult.message, taskId,
-        providerOriginalUrl: providerVideoUrl,
-        providerRegion: 'cn', executionRegion: 'cn', storageRegion: 'cn', executorKind: 'aliyun_fc',
-        submittedInput: submitResult.submittedInput ?? submittedInput,
-      },
-    }).catch(() => undefined)
-    console.error('[cn-executor][videoJobRunner] OSS upload failed', { generationJobId, taskId, errorCode: uploadResult.errorCode })
-    return
-  }
+  if (!existingAsset) {
+    // Step 3: download video buffer
+    const videoBuffer = await downloadVideoBuffer(providerVideoUrl)
+    if (!videoBuffer || videoBuffer.byteLength === 0) {
+      const errMsg = 'Failed to download generated video from Volcengine.'
+      await markJobFailed({
+        id: generationJobId,
+        errorCode: 'provider_media_download_failed',
+        message: errMsg,
+        output: {
+          errorCode: 'provider_media_download_failed', message: errMsg, taskId,
+          providerOriginalUrl: providerVideoUrl,
+          providerRegion: 'cn', executionRegion: 'cn', storageRegion: 'cn', executorKind: 'aliyun_fc',
+          submittedInput: taskSubmittedInput,
+        },
+      }).catch(() => undefined)
+      console.error('[cn-executor][videoJobRunner] video download failed', { generationJobId, taskId })
+      return
+    }
 
-  const stableVideoUrl = uploadResult.url
-  const storageKey = uploadResult.storageKey
+    // Step 4: upload to Aliyun OSS
+    const ossKey = buildVideoOssKey(projectId, nodeId || undefined)
+    const uploadResult = await uploadToOss(ossKey, videoBuffer, 'video/mp4')
+    if (!uploadResult.success) {
+      await markJobFailed({
+        id: generationJobId,
+        errorCode: uploadResult.errorCode,
+        message: uploadResult.message,
+        output: {
+          errorCode: uploadResult.errorCode, message: uploadResult.message, taskId,
+          providerOriginalUrl: providerVideoUrl,
+          providerRegion: 'cn', executionRegion: 'cn', storageRegion: 'cn', executorKind: 'aliyun_fc',
+          submittedInput: taskSubmittedInput,
+        },
+      }).catch(() => undefined)
+      console.error('[cn-executor][videoJobRunner] OSS upload failed', { generationJobId, taskId, errorCode: uploadResult.errorCode })
+      return
+    }
 
-  // Step 5: create Asset
-  const assetId = uuid()
-  const assetMetadata: Record<string, unknown> = {
-    model: usedModel,
-    taskId,
-    generationJobId,
-    providerOriginalUrl: providerVideoUrl,
-    stableUrl: stableVideoUrl,
-    resolvedUrl: stableVideoUrl,
-    storageKey,
-    storageRegion: 'cn',
-    sourceProviderRegion: 'cn',
-    executionRegion: 'cn',
-    executorKind: 'aliyun_fc',
-    submittedInput: submitResult.submittedInput ?? submittedInput,
-  }
+    stableVideoUrl = uploadResult.url
+    storageKey = uploadResult.storageKey
 
-  try {
-    await createVideoAsset({
-      id: assetId,
-      ownerId: job.userId,
-      projectId,
-      workflowId: workflowId || null,
-      nodeId: nodeId || null,
-      url: stableVideoUrl,
-      originalUrl: providerVideoUrl,
-      storageKey,
+    // Step 5: create Asset
+    const assetMetadata: Record<string, unknown> = {
+      model: usedModel,
+      taskId,
       generationJobId,
-      prompt: job.prompt,
-      providerId: job.providerId,
-      metadataJson: assetMetadata,
-    })
-  } catch (err) {
-    console.warn('[cn-executor][videoJobRunner] failed to create Asset — continuing', {
-      generationJobId, error: err instanceof Error ? err.message : String(err),
-    })
+      providerOriginalUrl: providerVideoUrl,
+      stableUrl: stableVideoUrl,
+      resolvedUrl: stableVideoUrl,
+      storageKey,
+      storageRegion: 'cn',
+      sourceProviderRegion: 'cn',
+      executionRegion: 'cn',
+      executorKind: 'aliyun_fc',
+      submittedInput: taskSubmittedInput,
+    }
+
+    try {
+      await createVideoAsset({
+        id: assetId,
+        ownerId: job.userId,
+        projectId,
+        workflowId: workflowId || null,
+        nodeId: nodeId || null,
+        url: stableVideoUrl,
+        originalUrl: providerVideoUrl,
+        storageKey,
+        generationJobId,
+        prompt: job.prompt,
+        providerId: job.providerId,
+        metadataJson: assetMetadata,
+      })
+    } catch (err) {
+      console.warn('[cn-executor][videoJobRunner] failed to create Asset; leaving job resumable', {
+        generationJobId, error: err instanceof Error ? err.message : String(err),
+      })
+      return
+    }
   }
 
   // Step 6: mark job SUCCEEDED
@@ -564,7 +562,7 @@ async function runVideoJob(generationJobId: string): Promise<void> {
     model: usedModel,
     providerOriginalUrl: providerVideoUrl,
     originalProviderVideoUrl: providerVideoUrl,
-    submittedInput: submitResult.submittedInput ?? submittedInput,
+    submittedInput: taskSubmittedInput,
   }
 
   try {
@@ -589,7 +587,7 @@ async function runVideoJob(generationJobId: string): Promise<void> {
         taskId,
         storageKey,
         providerOriginalUrl: providerVideoUrl,
-        submittedInput: submitResult.submittedInput ?? submittedInput,
+        submittedInput: taskSubmittedInput,
       })
     } catch (err) {
       console.warn('[cn-executor][videoJobRunner] failed to update CanvasNode', {

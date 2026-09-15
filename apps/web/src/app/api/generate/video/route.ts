@@ -730,7 +730,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Fire-and-forget to cn-executor — do NOT await
+    // Dispatch the persisted job to cn-executor.
     const cnBaseUrl = process.env.CREATOR_CN_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
     const cnSecret = process.env.CREATOR_EXECUTOR_SHARED_SECRET ?? ''
     if (!cnBaseUrl) {
@@ -773,10 +773,8 @@ export async function POST(request: NextRequest) {
         },
       })
     }
-    // Await the trigger — bare fetch() without await is dropped when Vercel terminates the function.
-    // Video generation takes 60-180s, so we only wait 12s for TCP delivery confirmation.
-    // On timeout: request was delivered and cn-executor is processing — return queued.
-    // On network error: cn-executor unreachable — mark FAILED and return error.
+    // FC persists Async requests and returns 202 independently of video rendering.
+    // A lost acknowledgement is ambiguous: keep the job trackable without resubmitting.
     let videoTriggerResponse: Response | null = null
     let videoTriggerError: unknown = null
     try {
@@ -786,6 +784,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${cnSecret}`,
           'x-creator-executor-secret': cnSecret,
+          'X-Fc-Invocation-Type': 'Async',
         },
         body: JSON.stringify({ generationJobId: generationJob.id }),
         signal: AbortSignal.timeout(45_000),
@@ -874,7 +873,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (videoTriggerTimedOut) {
-      console.log('[api/generate/video] cn-executor trigger timed out after 12s — job delivered, Aliyun FC processing', { generationJobId: generationJob.id })
+      console.warn('[api/generate/video] cn-executor acknowledgement timed out; delivery unconfirmed', { generationJobId: generationJob.id })
     } else if (videoTriggerResponse?.ok) {
       console.log('[api/generate/video] cn-executor trigger acknowledged', { generationJobId: generationJob.id, status: videoTriggerResponse.status })
     }
@@ -895,8 +894,8 @@ export async function POST(request: NextRequest) {
       jobId: generationJob.id,
       submittedAt,
       submittedInput,
-      ...(videoTriggerTimedOut ? { executorTriggerStatus: 'executor_trigger_timeout', executorTriggerNote: 'Trigger request timed out after 12s — job delivered to Aliyun FC.' } : {}),
-      message: videoTriggerTimedOut ? '视频生成任务已提交，等待 cn-executor 处理（触发超时但任务已送达）' : '视频生成任务已提交，正在处理中',
+      ...(videoTriggerTimedOut ? { executorTriggerStatus: 'executor_trigger_timeout', executorTriggerNote: 'Executor acknowledgement timed out; delivery is unconfirmed. Query the existing job before retrying.' } : {}),
+      message: videoTriggerTimedOut ? '任务已记录，执行器接收状态暂未确认，请查询原任务，勿重复提交。' : '视频生成任务已提交，正在处理中',
     }, { status: 200 })
   }
 

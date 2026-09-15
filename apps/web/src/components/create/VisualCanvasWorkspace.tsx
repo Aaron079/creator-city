@@ -664,9 +664,9 @@ const STORYBOARD_TOOLS_ENABLED = false
 const WORKSPACE_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9']
 const MIN_CANVAS_ZOOM = 0.35
 const MAX_CANVAS_ZOOM = 1.8
-// Hard ceiling on video generation polling (36 × 5s = 180s).
-// Prevents unbounded loops when the provider stalls without returning error/success.
-const MAX_VIDEO_GENERATION_POLLS = 36
+// Allow the executor's eight-minute polling window plus persistence time.
+// Reaching this client ceiling must not turn an active provider job into a failure.
+const MAX_VIDEO_GENERATION_POLLS = 120
 // Context chips (Bible/Camera/Lighting) in the generation dialog are hidden while
 // these tools transition to a derived-node workflow. The underlying engines and
 // storage are retained so no existing node data is lost.
@@ -2320,39 +2320,6 @@ async function pollGenerationJob(jobId: string, signal?: AbortSignal): Promise<G
     return JSON.parse(raw) as GenerateApiResult
   } catch {
     return { success: false, providerId: '', mode: 'unavailable', status: 'failed', message: `任务状态接口返回非 JSON 响应（HTTP ${response.status}）` }
-  }
-}
-
-async function pollSeedanceVideoTask(
-  providerId: string,
-  taskId: string,
-  context?: { projectId?: string; workflowId?: string; nodeId?: string; prompt?: string; compiledPrompt?: string },
-): Promise<GenerateApiResult> {
-  let response: Response
-  try {
-    const params = new URLSearchParams({ providerId, taskId })
-    if (context?.projectId) params.set('projectId', context.projectId)
-    if (context?.workflowId) params.set('workflowId', context.workflowId)
-    if (context?.nodeId) params.set('nodeId', context.nodeId)
-    if (context?.prompt) params.set('prompt', context.prompt)
-    if (context?.compiledPrompt) params.set('compiledPrompt', context.compiledPrompt)
-    response = await fetch(`/api/generate/video/status?${params.toString()}`, {
-      credentials: 'include',
-      cache: 'no-store',
-      headers: { Accept: 'application/json' },
-    })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : '网络请求失败'
-    return { success: false, providerId, mode: 'unavailable', status: 'failed', message, taskId }
-  }
-  const raw = await response.text().catch(() => '')
-  if (!raw.trim()) {
-    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `任务状态接口返回空响应（HTTP ${response.status}）`, taskId }
-  }
-  try {
-    return JSON.parse(raw) as GenerateApiResult
-  } catch {
-    return { success: false, providerId, mode: 'unavailable', status: 'failed', message: `任务状态接口返回非 JSON 响应（HTTP ${response.status}）`, taskId }
   }
 }
 
@@ -8056,13 +8023,9 @@ export function VisualCanvasWorkspace({
 
     const checkedAt = new Date().toISOString()
     const currentMetadata = metadataRecord(nodeSnapshot.metadataJson)
-    const statusResult = await pollSeedanceVideoTask(task.providerId, task.taskId, {
-      projectId,
-      workflowId,
-      nodeId: task.nodeId,
-      prompt: nodeSnapshot.prompt,
-      compiledPrompt: typeof currentMetadata.compiledPromptPreview === 'string' ? currentMetadata.compiledPromptPreview : undefined,
-    })
+    const generationJobId = stringValue(currentMetadata.generationJobId)
+    if (!generationJobId) return '缺少生成任务记录，无法安全查询；请检查资产库。'
+    const statusResult = await pollVideoGenerationTask(task.providerId, generationJobId)
     const normalizedStatus = String(statusResult.status ?? '')
 
     if (statusResult.success && normalizedStatus === 'running') {
@@ -8075,7 +8038,7 @@ export function VisualCanvasWorkspace({
           providerId: statusResult.providerId || task.providerId,
           model: statusResult.model ?? task.model ?? currentMetadata.model,
           taskId: task.taskId,
-          generationJobId: task.taskId,
+          generationJobId,
           lastCheckedAt: checkedAt,
         },
       })
@@ -8089,11 +8052,11 @@ export function VisualCanvasWorkspace({
     if (statusResult.success && (normalizedStatus === 'done' || normalizedStatus === 'succeeded') && videoUrl) {
       const completedAt = new Date().toISOString()
       const metadataJson = {
-        ...currentMetadata,
+        ...videoSuccessMetadata(nodeSnapshot, { ...statusResult, generationJobId, taskId: statusResult.taskId ?? task.taskId, resultVideoUrl: videoUrl, videoUrl }, task.providerId),
         providerId: statusResult.providerId || task.providerId,
         model: statusResult.model ?? task.model ?? currentMetadata.model,
         taskId: task.taskId,
-        generationJobId: task.taskId,
+        generationJobId,
         assetId: statusResult.asset?.id ?? statusResult.assetId ?? currentMetadata.assetId,
         assetUrl: statusResult.assetUrl ?? statusResult.asset?.url ?? (statusResult.assetId ? videoUrl : currentMetadata.assetUrl),
         originalProviderVideoUrl: statusResult.originalProviderVideoUrl ?? currentMetadata.originalProviderVideoUrl,
@@ -8129,7 +8092,7 @@ export function VisualCanvasWorkspace({
         providerId: statusResult.providerId || task.providerId,
         model: statusResult.model ?? task.model ?? currentMetadata.model,
         taskId: task.taskId,
-        generationJobId: task.taskId,
+        generationJobId,
         lastCheckedAt: checkedAt,
         lastError: {
           errorCode: statusResult.errorCode,
@@ -8146,7 +8109,7 @@ export function VisualCanvasWorkspace({
     scheduleCanvasSave(0)
     showCanvasFeedback(errMsg)
     return errMsg
-  }, [flushLocalSnapshot, handleNodePatch, projectId, scheduleCanvasSave, showCanvasFeedback, workflowId])
+  }, [flushLocalSnapshot, handleNodePatch, scheduleCanvasSave, showCanvasFeedback])
 
   const handleNodeDragStart = useCallback((
     nodeId: string,
@@ -9770,19 +9733,14 @@ export function VisualCanvasWorkspace({
         }
         // Loop exited: either cap reached or abort signal fired.
         if (videoPolls >= MAX_VIDEO_GENERATION_POLLS && !generationController?.signal.aborted) {
-          const timeoutMsg = `视频生成轮询超时（已查询 ${MAX_VIDEO_GENERATION_POLLS} 次），任务可能仍在后台运行，请前往资产库（/assets）检查生成结果。`
+          const timeoutMsg = '视频仍在后台生成，本次自动查询已暂停。可在生成任务中查询原任务结果，请勿重复提交。'
           handleNodePatch(nodeSnapshot.id, {
-            status: 'failed',
-            errorMessage: timeoutMsg,
-            resultPreview: '生成超时',
-            outputLabel: '生成超时',
-            metadataJson: videoErrorMetadata(generationNodeSnapshot, {
-              ...result,
-              errorCode: 'generation_polling_timeout',
-              message: timeoutMsg,
-            }, generationProviderId),
+            status: 'running',
+            errorMessage: undefined,
+            resultPreview: timeoutMsg,
+            outputLabel: '等待生成结果',
+            metadataJson: { ...runningMeta, loading: false, isRegenerating: false, regenerating: false },
           })
-          setDialogError(timeoutMsg)
           showCanvasFeedback(timeoutMsg)
         }
         return

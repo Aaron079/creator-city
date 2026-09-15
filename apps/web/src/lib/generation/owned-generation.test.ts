@@ -106,6 +106,34 @@ beforeEach(() => {
   response = { success: true, providerId: 'custom-video-gateway', mode: 'real', status: 'queued', jobId: 'custom-video-gateway:task-new', message: 'Queued' }
 })
 
+test('Seedance dispatch uses durable FC async acceptance and sends the owned job once', async () => {
+  testProviderId = 'volcengine-seedance-video'
+  const previousBase = process.env.CREATOR_CN_API_BASE_URL
+  const previousFetch = globalThis.fetch
+  process.env.CREATOR_CN_API_BASE_URL = 'https://preview.cn-beijing.fcapp.run'
+  let calls = 0
+  globalThis.fetch = async (url, init) => {
+    calls++
+    assert.equal(String(url), 'https://preview.cn-beijing.fcapp.run/api/jobs/run-video')
+    assert.equal(new Headers(init?.headers).get('x-fc-invocation-type'), 'Async')
+    assert.deepEqual(JSON.parse(String(init?.body)), { generationJobId: 'owned-job' })
+    return new Response(null, { status: 202 })
+  }
+  try {
+    const result = await submit('video')
+    const body = await result.json()
+    assert.equal(body.success, true)
+    assert.equal(body.status, 'queued')
+    assert.equal(body.generationJobId, 'owned-job')
+    assert.equal(calls, 1)
+    assert.equal(created.length, 1)
+  } finally {
+    globalThis.fetch = previousFetch
+    if (previousBase === undefined) delete process.env.CREATOR_CN_API_BASE_URL
+    else process.env.CREATOR_CN_API_BASE_URL = previousBase
+  }
+})
+
 async function submit(kind: string) {
   const original = process.env.ENABLE_PLATFORM_VIDEO_GENERATION
   const disabled = process.env.GENERATION_DISABLED

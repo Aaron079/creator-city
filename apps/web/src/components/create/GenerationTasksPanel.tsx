@@ -147,7 +147,7 @@ export function GenerationTasksPanel({
                           {task.errorMessage ? <p className="canvas-generation-task-error">{task.errorMessage}</p> : null}
                           {task.resultUrl ? <a className="canvas-generation-task-link" href={task.resultUrl} target="_blank" rel="noreferrer">打开结果</a> : null}
                           {noticeById[task.taskId] ? <p className="canvas-generation-task-notice">{noticeById[task.taskId]}</p> : null}
-                          {task.status === 'running' ? (
+                          {task.status !== 'done' ? (
                             <button
                               type="button"
                               className="canvas-generation-task-query"
