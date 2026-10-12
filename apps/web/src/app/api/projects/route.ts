@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { getCurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { CANVAS_BASE_ZOOM } from '@/lib/canvas/viewport'
 import { jsonError, jsonOk, safeErrorMessage } from '@/lib/api/json-response'
 import { ensureOwnerProjectMember } from '@/lib/projects/ensure-active-project'
 import {
@@ -19,7 +20,7 @@ import {
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const MAIN_CANVAS_VIEWPORT = { zoom: 1, pan: { x: 0, y: 0 } }
+const MAIN_CANVAS_VIEWPORT = { zoom: CANVAS_BASE_ZOOM, pan: { x: 0, y: 0 } }
 
 async function loadProjectAssetCounts(userId: string, projectIds: readonly string[]) {
   if (projectIds.length === 0) return new Map<string, number>()

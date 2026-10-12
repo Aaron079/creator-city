@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { CANVAS_BASE_ZOOM } from '@/lib/canvas/viewport'
 
 type ProjectType = 'blank' | 'text' | 'image' | 'video' | 'template'
 type ProjectSource = 'projects' | 'home' | 'dashboard' | 'create'
@@ -52,7 +53,7 @@ export function NewProjectDialog({
           title: displayTitle,
           nodes: [],
           edges: [],
-          viewport: { zoom: 1, pan: { x: 0, y: 0 } },
+          viewport: { zoom: CANVAS_BASE_ZOOM, pan: { x: 0, y: 0 } },
           updatedAt: now,
           syncedAt: now,
           serverUpdatedAt: now,

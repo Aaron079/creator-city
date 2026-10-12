@@ -14,6 +14,7 @@ import {
 } from '@/lib/projects/ensure-active-project'
 import { isDbConnectionError } from '@/lib/db-error'
 import { CANVAS_SAVE_SERVER_DEADLINE_MS } from '@/lib/canvas/canvasSaveIntegrity'
+import { CANVAS_BASE_ZOOM } from '@/lib/canvas/viewport'
 import {
   buildCanvasEdgeBulkUpsert,
   buildCanvasNodeBulkUpsert,
@@ -147,7 +148,7 @@ async function ensureWorkflow(projectId: string) {
       data: {
         projectId,
         name: 'Main Canvas',
-        viewportJson: { zoom: 1, pan: { x: 0, y: 0 } },
+        viewportJson: { zoom: CANVAS_BASE_ZOOM, pan: { x: 0, y: 0 } },
       },
       select: WORKFLOW_SELECT,
     })
@@ -235,7 +236,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       data: {
         projectId: params.projectId,
         name: 'Main Canvas',
-        viewportJson: { zoom: 1, pan: { x: 0, y: 0 } },
+        viewportJson: { zoom: CANVAS_BASE_ZOOM, pan: { x: 0, y: 0 } },
       },
       select: WORKFLOW_SELECT,
     })

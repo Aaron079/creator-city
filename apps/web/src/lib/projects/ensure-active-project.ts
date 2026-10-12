@@ -1,8 +1,9 @@
 import type { Prisma, ProjectStatus, ProjectVisibility } from '@prisma/client'
 import type { CurrentUser } from '@/lib/auth/current-user'
 import { db } from '@/lib/db'
+import { CANVAS_BASE_ZOOM } from '@/lib/canvas/viewport'
 
-const MAIN_CANVAS_VIEWPORT = { zoom: 1, pan: { x: 0, y: 0 } }
+const MAIN_CANVAS_VIEWPORT = { zoom: CANVAS_BASE_ZOOM, pan: { x: 0, y: 0 } }
 const OWNER_ROLE_ID = 'OWNER'
 const OWNER_ROLE_NAME = 'OWNER'
 const PRODUCER_ROLE_ID = 'PRODUCER'

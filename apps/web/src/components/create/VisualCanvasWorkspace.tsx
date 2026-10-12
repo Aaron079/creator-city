@@ -2,6 +2,7 @@
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { CANVAS_BASE_ZOOM, canvasZoomPercent } from '@/lib/canvas/viewport'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CanvasFlowEdge } from '@/components/create/CanvasFlowEdge'
 import { type CanvasNodePreviewType, type VisualCanvasNode as CanvasNodeCardNode, type VisualCanvasNodeKind } from '@/components/create/CanvasNodeCard'
@@ -2829,7 +2830,7 @@ export function VisualCanvasWorkspace({
     x2: number
     y2: number
   } | null>(null)
-  const [canvasZoom, setCanvasZoom] = useState(1)
+  const [canvasZoom, setCanvasZoom] = useState(CANVAS_BASE_ZOOM)
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
   const [canvasStageBounds, setCanvasStageBounds] = useState<CanvasStageRect | undefined>(undefined)
   const [isPanning, setIsPanning] = useState(false)
@@ -2875,7 +2876,7 @@ export function VisualCanvasWorkspace({
   const latestNodesRef = useRef<VisualCanvasNode[]>([])
   const latestEdgesRef = useRef<CanvasEdge[]>([])
   const prevEditingNodeIdRef = useRef<string | null>(null)
-  const latestViewportRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } })
+  const latestViewportRef = useRef({ zoom: CANVAS_BASE_ZOOM, pan: { x: 0, y: 0 } })
   const latestCommentsRef = useRef<CanvasComment[]>([])
   const directorDeferredBoardFlushRef = useRef<() => boolean>(() => true)
   const mediaReviewZRef = useRef(1)
@@ -3396,7 +3397,7 @@ export function VisualCanvasWorkspace({
       if (!workflow) return null
       const viewport = parsed.viewport && typeof parsed.viewport === 'object'
         ? parsed.viewport as CanvasLocalSnapshot['viewport']
-        : { zoom: 1, pan: { x: 0, y: 0 } }
+        : { zoom: CANVAS_BASE_ZOOM, pan: { x: 0, y: 0 } }
       return {
         version: 1,
         source: 'local',
@@ -3703,11 +3704,11 @@ export function VisualCanvasWorkspace({
     dirtyEdgeRevisionRef.current.clear()
     forceFullCanvasSaveRef.current = args.forceFullSave ?? false
     const viewport = args.viewport as { zoom?: number; pan?: { x?: number; y?: number } } | undefined
-    if (viewport?.zoom) setCanvasZoom(Number(viewport.zoom))
+    setCanvasZoom(Number(viewport?.zoom ?? CANVAS_BASE_ZOOM))
     if (viewport?.pan) setCanvasPan({ x: Number(viewport.pan.x ?? 0), y: Number(viewport.pan.y ?? 0) })
     if (viewport) {
       latestViewportRef.current = {
-        zoom: Number(viewport.zoom ?? 1),
+        zoom: Number(viewport.zoom ?? CANVAS_BASE_ZOOM),
         pan: { x: Number(viewport.pan?.x ?? 0), y: Number(viewport.pan?.y ?? 0) },
       }
     }
@@ -4779,7 +4780,7 @@ export function VisualCanvasWorkspace({
   }, [])
 
   const resetCanvasView = useCallback(() => {
-    setCanvasZoom(1)
+    setCanvasZoom(CANVAS_BASE_ZOOM)
     setCanvasPan({ x: 0, y: 0 })
   }, [])
 
@@ -14002,6 +14003,7 @@ export function VisualCanvasWorkspace({
         </button>
         <input
           aria-label="Canvas zoom"
+          aria-valuetext={`${canvasZoomPercent(canvasZoom)}%`}
           type="range"
           min={MIN_CANVAS_ZOOM}
           max={MAX_CANVAS_ZOOM}
@@ -14011,7 +14013,7 @@ export function VisualCanvasWorkspace({
           className="canvas-zoom-slider"
         />
         <button type="button" onClick={resetCanvasView} className="canvas-zoom-reset">
-          {Math.round(canvasZoom * 100)}%
+          {canvasZoomPercent(canvasZoom)}%
         </button>
       </div>
 
