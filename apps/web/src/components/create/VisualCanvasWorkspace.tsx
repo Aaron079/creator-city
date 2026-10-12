@@ -5805,7 +5805,7 @@ export function VisualCanvasWorkspace({
         workflowId,
         type: 'text',
         title: '三维预演交付包',
-        dataUrl: JSON.stringify(delivery, null, 2),
+        dataUrl: `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(delivery, null, 2))}`,
         mimeType: 'application/json',
         providerId: 'spatial-previs',
         metadataJson: { previsDelivery: delivery },

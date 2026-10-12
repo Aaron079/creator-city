@@ -155,7 +155,21 @@ test('existing delivery buttons preserve one snapshot through node, download and
     const asset = await (await page.request.get(`${url}/api/projects/delivery-browser/assets`)).json()
     assert.equal(asset.mimeType, 'application/json')
     assert.deepEqual(asset.metadataJson.previsDelivery, delivery)
-    assert.deepEqual(JSON.parse(asset.dataUrl), delivery)
+    assert.match(asset.dataUrl, /^data:application\/json;charset=utf-8,/)
+    assert.deepEqual(JSON.parse(decodeURIComponent(asset.dataUrl.split(',').slice(1).join(','))), delivery)
+    const assetDownloadPromise = page.waitForEvent('download')
+    await page.evaluate(href => {
+      const anchor = document.createElement('a')
+      anchor.href = href
+      anchor.download = 'saved-delivery.json'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+    }, asset.dataUrl)
+    const assetDownload = await assetDownloadPromise
+    const assetFilename = path.join(evidence, assetDownload.suggestedFilename())
+    await assetDownload.saveAs(assetFilename)
+    assert.deepEqual(JSON.parse(await readFile(assetFilename, 'utf8')), delivery)
     await writeFile(path.join(evidence, 'local-asset-readback.json'), JSON.stringify(asset, null, 2))
     await page.getByRole('button', { name: '添加人物', exact: true }).click()
     await page.getByRole('button', { name: '生成预演节点', exact: true }).click()

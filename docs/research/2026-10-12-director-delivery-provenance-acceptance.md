@@ -74,3 +74,11 @@ Confirmed experience impact: none
 原 Vercel 项目经 CLI 验证可访问，项目 `prj_I2m11p7CA1BUNFiAxJfPDgfMnUOg`，团队 `aarons-projects-e26427fd`。连接器仍报 403，但 CLI 与已登录浏览器可用。Preview Secret 在云端有配置，本地 env pull 得到空值，因此不把本地缺值误报成线上数据库配置丢失，不复制或改动云端密钥。
 
 真实 Preview 已创建独立测试项目 `2644ebbc-9968-4974-a737-0425ba2f81b5`，标题“QA 交付引用独立验收 2026-10-12”。通过原有 UI 创建地面、人物、旧版交付节点，保存素材与预演，页面返回成功。尚需新版本发布后的刷新、下载内容及云端保存回读核验；当前段落不作为新版本线上通过结论。
+
+### 真实试用追加修复
+
+刷新后主动选择服务器版本，旧交付节点仍可恢复；独立资产详情也读回旧版交付 JSON。试用发现原保存回调把 JSON 正文写入 dataUrl，详情页下载链接因此不是有效文件 URL。这不是元数据丢失，但会影响实际下载。
+
+只修改预演保存回调的一行，编码为 application/json 的 UTF-8 data URL，保留 metadataJson 中原始交付快照。不改资产中心界面、数据库结构、登录或用户旧资产。旧测试资产原样保留作为兼容性证据。
+
+浏览器回归先增加有效 data URL 及实际下载内容断言，旧实现复现失败；修复后两项浏览器测试通过，保存后下载的 JSON 与节点/直接下载内容完全一致。类型检查通过。证据：`/tmp/director-asset-download-red.log`、`/tmp/director-asset-download-green.log`。部署后的最终证据另存本地 QA 目录，避免仅为补记验收报告再次触发部署。
