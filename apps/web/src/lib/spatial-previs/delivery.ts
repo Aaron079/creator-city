@@ -5,6 +5,7 @@ import type {
   SpatialPrevisState,
   Vec3,
 } from './types'
+import { buildDeliveryProvenance } from './delivery-provenance'
 
 export type PrevisDeliveryPackage = Readonly<{
   kind: 'spatial-previs-delivery'
@@ -13,6 +14,7 @@ export type PrevisDeliveryPackage = Readonly<{
   masterTake: MasterTake
   scene: SpatialPrevisScene
   studio?: SpatialPrevisState['studio']
+  provenance?: ReturnType<typeof buildDeliveryProvenance>
 }>
 
 function cloneVec3(value: Vec3): Vec3 {
@@ -33,7 +35,7 @@ function cloneCameraTrack(track: CameraTrack): CameraTrack {
 
 function cloneScene(scene: SpatialPrevisScene): SpatialPrevisScene {
   return {
-    ...scene,
+    ...structuredClone(scene),
     references: scene.references.map((reference) => ({ ...reference })),
     assetSets: scene.assetSets.map((assetSet) => ({
       ...assetSet,
@@ -79,6 +81,7 @@ export function buildPrevisDeliveryPackage(state: SpatialPrevisState): PrevisDel
     projectId: state.projectId,
     masterTake: cloneMasterTake(state.masterTake),
     scene: cloneScene(state.scene),
+    provenance: buildDeliveryProvenance(state),
     ...(state.studio ? { studio: structuredClone(state.studio) } : {}),
   })
 }
